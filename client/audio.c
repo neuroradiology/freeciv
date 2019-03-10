@@ -44,7 +44,7 @@
 #define SNDSPEC_SUFFIX		".soundspec"
 #define MUSICSPEC_SUFFIX        ".musicspec"
 
-#define SOUNDSPEC_CAPSTR "+Freeciv-soundset-Devel-2018-02-27"
+#define SOUNDSPEC_CAPSTR "+Freeciv-soundset-Devel-2019-02-28"
 #define MUSICSPEC_CAPSTR "+Freeciv-2.6-musicset"
 
 /* keep it open throughout */
@@ -459,11 +459,11 @@ static int audio_play_tag(struct section_file *sfile,
       }
     }
     if (NULL == soundfile) {
-      log_verbose("No sound file for tag %s (file %s)", tag, soundfile);
+      log_verbose("No sound file for tag %s", tag);
     } else {
       fullpath = fileinfoname(get_data_dirs(), soundfile);
       if (!fullpath) {
-        log_error("Cannot find audio file %s", soundfile);
+        log_error("Cannot find audio file %s for tag %s", soundfile, tag);
       }
     }
   }
@@ -556,6 +556,14 @@ void audio_play_track(const char *const tag, char *const alt_tag)
   current_usage = MU_SINGLE;
 
   real_audio_play_music(tag, alt_tag, TRUE);
+}
+
+/**********************************************************************//**
+  Play given file
+**************************************************************************/
+bool audio_play_from_path(const char *path, audio_finished_callback cb)
+{
+  return plugins[selected_plugin].play("", path, FALSE, cb);
 }
 
 /**********************************************************************//**

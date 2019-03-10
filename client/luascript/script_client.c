@@ -212,7 +212,16 @@ bool script_client_init(void)
   api_specenum_open(main_fcl->state);
   tolua_game_open(main_fcl->state);
   tolua_signal_open(main_fcl->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_client_open(main_fcl->state);
+#else  /* MESON_BUILD */
   tolua_client_open(main_fcl->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(main_fcl->state);
 
   script_client_code_init();
@@ -308,12 +317,12 @@ void script_client_state_save(struct section_file *file)
 /*************************************************************************//**
   Invoke all the callback functions attached to a given signal.
 *****************************************************************************/
-void script_client_signal_emit(const char *signal_name, int nargs, ...)
+void script_client_signal_emit(const char *signal_name, ...)
 {
   va_list args;
 
-  va_start(args, nargs);
-  luascript_signal_emit_valist(main_fcl, signal_name, nargs, args);
+  va_start(args, signal_name);
+  luascript_signal_emit_valist(main_fcl, signal_name, args);
   va_end(args);
 }
 

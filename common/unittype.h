@@ -35,7 +35,7 @@ struct ai_type;
  * it can also be used for fixed allocations to ensure able
  * to hold full number of unit types.
  * Used in the network protocol. */
-#define U_LAST MAX_NUM_ITEMS
+#define U_LAST MAX_NUM_UNITS
 
 /* The largest distance a ruleset can allow a unit to paradrop.
  *
@@ -131,7 +131,7 @@ struct unit_class_list;
 struct unit_class {
   Unit_Class_id item_number;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
   enum unit_move_type move_type;
   int min_speed;           /* Minimum speed after damage and effects */
   int hp_loss_pct;         /* Percentage of hitpoints lost each turn not in city or airbase */
@@ -159,7 +159,7 @@ struct unit_class {
  * for bits, though unit_type.flags is still a bitfield, and code
  * which uses unit_has_type_flag() without twiddling bits is unchanged.
  * (It is easier to go from i to (1<<i) than the reverse.)
- * See data/default/units.ruleset for documentation of their effects.
+ * See data/classic/units.ruleset for documentation of their effects.
  * Change the array *flag_names[] in unittype.c accordingly.
  * Used in the network protocol.
  */
@@ -461,7 +461,7 @@ struct veteran_level {
   struct name_translation name; /* level/rank name */
   int power_fact; /* combat/work speed/diplomatic power factor (in %) */
   int move_bonus;
-  int raise_chance; /* server only */
+  int base_raise_chance; /* server only */
   int work_raise_chance; /* server only */
 };
 
@@ -474,7 +474,7 @@ struct veteran_system {
 struct unit_type {
   Unit_type_id item_number;
   struct name_translation name;
-  bool disabled;                        /* Does not really exist - hole in improvments array */
+  bool ruledit_disabled;              /* Does not really exist - hole in improvments array */
   char graphic_str[MAX_LEN_NAME];
   char graphic_alt[MAX_LEN_NAME];
   char sound_move[MAX_LEN_NAME];
@@ -607,33 +607,33 @@ bool utype_can_freely_unload(const struct unit_type *pcargotype,
 
 bool utype_may_act_at_all(const struct unit_type *putype);
 bool utype_can_do_action(const struct unit_type *putype,
-                         const int action_id);
+                         const action_id act_id);
 bool utype_acts_hostile(const struct unit_type *putype);
 
 bool can_unit_act_when_ustate_is(const struct unit_type *punit_type,
                                  const enum ustate_prop prop,
                                  const bool is_there);
 bool utype_can_do_act_when_ustate(const struct unit_type *punit_type,
-                                  const int action_id,
+                                  const action_id act_id,
                                   const enum ustate_prop prop,
                                   const bool is_there);
 
 bool utype_can_do_act_if_tgt_citytile(const struct unit_type *punit_type,
-                                      const int action_id,
+                                      const action_id act_id,
                                       const enum citytile_type prop,
                                       const bool is_there);
 
 bool can_utype_do_act_if_tgt_diplrel(const struct unit_type *punit_type,
-                                     const int action_id,
+                                     const action_id act_id,
                                      const int prop,
                                      const bool is_there);
 
 bool utype_may_act_move_frags(struct unit_type *punit_type,
-                              const int action_id,
+                              const action_id act_id,
                               const int move_fragments);
 
 bool utype_may_act_tgt_city_tile(struct unit_type *punit_type,
-                                 const int action_id,
+                                 const action_id act_id,
                                  const enum citytile_type prop,
                                  const bool is_there);
 
@@ -694,11 +694,15 @@ void set_user_unit_class_flag_name(enum unit_class_flag_id id,
 const char *unit_class_flag_helptxt(enum unit_class_flag_id id);
 
 /* Ancillary routines */
-int unit_build_shield_cost(const struct unit *punit);
-int utype_build_shield_cost(const struct unit_type *punittype);
+int unit_build_shield_cost(const struct city *pcity, const struct unit *punit);
+int utype_build_shield_cost(const struct city *pcity,
+                            const struct unit_type *punittype);
+int utype_build_shield_cost_base(const struct unit_type *punittype);
+int unit_build_shield_cost_base(const struct unit *punit);
 
-int utype_buy_gold_cost(const struct unit_type *punittype,
-			int shields_in_stock);
+int utype_buy_gold_cost(const struct city *pcity,
+                        const struct unit_type *punittype,
+                        int shields_in_stock);
 
 const struct veteran_system *
   utype_veteran_system(const struct unit_type *punittype);
@@ -770,11 +774,11 @@ const struct unit_type *unit_type_array_last(void);
   }									\
 }
 
-#define unit_active_type_iterate(_p)                                    \
+#define unit_type_re_active_iterate(_p)                                 \
   unit_type_iterate(_p) {                                               \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define unit_active_type_iterate_end                                    \
+#define unit_type_re_active_iterate_end                                 \
     }                                                                   \
   } unit_type_iterate_end;
 
@@ -807,11 +811,11 @@ const struct unit_class *unit_class_array_last(void);
   }									\
 }
 
-#define unit_active_class_iterate(_p)                                    \
+#define unit_class_re_active_iterate(_p)                                 \
   unit_class_iterate(_p) {                                               \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define unit_active_class_iterate_end                                    \
+#define unit_class_re_active_iterate_end                                 \
     }                                                                    \
   } unit_class_iterate_end;
 

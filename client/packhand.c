@@ -223,6 +223,7 @@ static struct unit *unpackage_unit(const struct packet_unit_info *packet)
   punit->goto_tile = index_to_tile(&(wld.map), packet->goto_tile);
   punit->paradropped = packet->paradropped;
   punit->done_moving = packet->done_moving;
+  punit->stay = packet->stay;
 
   /* Transporter / transporting information. */
   punit->client.occupied = packet->occupied;
@@ -252,8 +253,7 @@ static struct unit *unpackage_unit(const struct packet_unit_info *packet)
       punit->orders.list[i].order = packet->orders[i];
       punit->orders.list[i].dir = packet->orders_dirs[i];
       punit->orders.list[i].activity = packet->orders_activities[i];
-      punit->orders.list[i].target = packet->orders_targets[i];
-      punit->orders.list[i].extra = packet->orders_extras[i];
+      punit->orders.list[i].sub_target = packet->orders_sub_targets[i];
       punit->orders.list[i].action = packet->orders_actions[i];
 
       /* Just an assert. The client doesn't use the action data. */
@@ -711,6 +711,7 @@ void handle_city_info(const struct packet_city_info *packet)
 
   pcity->history = packet->history;
   pcity->client.culture = packet->culture;
+  pcity->client.buy_cost = packet->buy_cost;
 
   pcity->city_radius_sq = packet->city_radius_sq;
 
@@ -824,6 +825,7 @@ void handle_city_info(const struct packet_city_info *packet)
   }
   pcity->style = packet->style;
   pcity->client.city_image = packet->city_image;
+  pcity->steal = packet->steal;
 
   pcity->client.happy = city_happy(pcity);
   pcity->client.unhappy = city_unhappy(pcity);
@@ -882,7 +884,7 @@ void handle_city_info(const struct packet_city_info *packet)
                                   action_selection_actor_unit(),
                                   action_selection_target_unit(),
                                   city_tile(pcity)->index,
-                                  EXTRA_NONE,
+                                  action_selection_target_extra(),
                                   FALSE);
   }
 
@@ -894,12 +896,12 @@ void handle_city_info(const struct packet_city_info *packet)
 }
 
 /************************************************************************//**
-  This is packet that only the web-client needs. Regular client has no use
-  for it.
-  TODO: Do not generate code calling this in C-client.
+  This is a packet that only the web-client needs. The regular client has no
+  use for it.
+  TODO: Do not generate code calling this in the C-client.
 ****************************************************************************/
 void handle_web_city_info_addition(int id, int granary_size,
-                                   int granary_turns, int buy_gold_cost)
+                                   int granary_turns)
 {
 }
 
@@ -1431,6 +1433,23 @@ void handle_connect_msg(const char *message)
 }
 
 /************************************************************************//**
+  Handle server info packet. Server sends info packet as soon as it knows
+  client to be compatible.
+****************************************************************************/
+void handle_server_info(const char *version_label, int major_version,
+                        int minor_version, int patch_version, int emerg_version)
+{
+  if (emerg_version > 0) {
+    log_verbose("Server has version %d.%d.%d.%d%s",
+                major_version, minor_version, patch_version, emerg_version,
+                version_label);
+  } else {
+    log_verbose("Server has version %d.%d.%d%s",
+                major_version, minor_version, patch_version, version_label);
+  }
+}
+
+/************************************************************************//**
   Page_msg header handler.
 ****************************************************************************/
 void handle_page_msg(const char *caption, const char *headline,
@@ -1783,6 +1802,7 @@ static bool handle_unit_packet_common(struct unit *packet_unit)
     punit->fuel = packet_unit->fuel;
     punit->goto_tile = packet_unit->goto_tile;
     punit->paradropped = packet_unit->paradropped;
+    punit->stay = packet_unit->stay;
     if (punit->done_moving != packet_unit->done_moving) {
       punit->done_moving = packet_unit->done_moving;
       check_focus = TRUE;
@@ -1983,9 +2003,9 @@ void handle_set_topology(int topology_id)
 {
   wld.map.topology_id = topology_id;
 
-  if ((forced_tileset_name[0] == '\0'
-      && tileset_map_topo_compatible(topology_id, tileset) != TOPO_COMPATIBLE)
-      || strcmp(tileset_basename(tileset), game.control.preferred_tileset)) {
+  if (forced_tileset_name[0] == '\0'
+      && (tileset_map_topo_compatible(topology_id, tileset) == TOPO_INCOMP_HARD
+          || strcmp(tileset_basename(tileset), game.control.preferred_tileset))) {
     const char *ts_to_load;
 
     ts_to_load = tileset_name_for_topology(topology_id);
@@ -2035,18 +2055,19 @@ void handle_map_info(int xsize, int ysize, int topology_id)
 void handle_game_info(const struct packet_game_info *pinfo)
 {
   bool boot_help;
-  bool update_aifill_button = FALSE;
+  bool update_aifill_button = FALSE, update_ai_skill_level = FALSE;
 
   if (game.info.aifill != pinfo->aifill) {
     update_aifill_button = TRUE;
+  }
+  if (game.info.skill_level != pinfo->skill_level) {
+    update_ai_skill_level = TRUE;
   }
 
   if (game.info.is_edit_mode != pinfo->is_edit_mode) {
     popdown_all_city_dialogs();
     /* Clears the current goto command. */
-    set_hover_state(NULL, HOVER_NONE,
-                    ACTIVITY_LAST, NULL,
-                    EXTRA_NONE, ACTION_NONE, ORDER_LAST);
+    clear_hover_state();
 
     if (pinfo->is_edit_mode && game.scenario.handmade) {
       if (!handmade_scenario_warning()) {
@@ -2086,7 +2107,7 @@ void handle_game_info(const struct packet_game_info *pinfo)
   unit_focus_update();
   menus_update();
   players_dialog_update();
-  if (update_aifill_button) {
+  if (update_aifill_button || update_ai_skill_level) {
     update_start_page();
   }
   
@@ -2393,7 +2414,7 @@ void handle_player_info(const struct packet_player_info *pinfo)
   upgrade_canvas_clipboard();
 
   players_dialog_update();
-  conn_list_dialog_update();
+  update_start_page();
 
   if (is_new_nation) {
     races_toggles_set_sensitive();
@@ -2412,6 +2433,15 @@ void handle_player_info(const struct packet_player_info *pinfo)
   editgui_refresh();
   editgui_notify_object_changed(OBJTYPE_PLAYER, player_number(pplayer),
                                 FALSE);
+}
+
+/************************************************************************//**
+  This is a packet that only the web-client needs. The regular client has no
+  use for it.
+  TODO: Do not generate code calling this in the C-client.
+****************************************************************************/
+void handle_web_player_info_addition(int playerno, int expected_income)
+{
 }
 
 /************************************************************************//**
@@ -2478,7 +2508,7 @@ void handle_research_info(const struct packet_research_info *packet)
         if (0 < get_num_units_in_focus()) {
           menus_update();
         }
-	script_client_signal_emit("new_tech", 0);
+	script_client_signal_emit("new_tech");
 
         /* If we got a new tech the tech tree news an update. */
         science_report_dialog_redraw();
@@ -2578,7 +2608,10 @@ void handle_player_diplstate(const struct packet_player_diplstate *packet)
       }
     }
 
-    if (tgt_tile) {
+    if (tgt_tile
+        || ((tgt_tile = index_to_tile(&(wld.map),
+                                      action_selection_target_tile()))
+            && tile_owner(tgt_tile) == plr1)) {
       /* The diplomatic relationship to the target in an open action
        * selection dialog have changed. This probably changes
        * the set of available actions. */
@@ -2586,7 +2619,7 @@ void handle_player_diplstate(const struct packet_player_diplstate *packet)
                                     action_selection_actor_unit(),
                                     action_selection_target_unit(),
                                     tgt_tile->index,
-                                    MAX_EXTRA_TYPES,
+                                    action_selection_target_extra(),
                                     FALSE);
     }
   }
@@ -3351,7 +3384,8 @@ void handle_ruleset_unit(const struct packet_ruleset_unit *p)
     for (i = 0; i < p->veteran_levels; i++) {
       veteran_system_definition(u->veteran, i, p->veteran_name[i],
                                 p->power_fact[i], p->move_bonus[i],
-                                p->raise_chance[i], p->work_raise_chance[i]);
+                                p->base_raise_chance[i],
+                                p->work_raise_chance[i]);
     }
   }
 
@@ -3360,6 +3394,15 @@ void handle_ruleset_unit(const struct packet_ruleset_unit *p)
   u->adv.worker = p->worker;
 
   tileset_setup_unit_type(tileset, u);
+}
+
+/************************************************************************//**
+  This is a packet that only the web-client needs. The regular client has no
+  use for it.
+  TODO: Do not generate code calling this in the C-client.
+****************************************************************************/
+void handle_web_ruleset_unit_addition(int id, bv_actions utype_actions)
+{
 }
 
 /************************************************************************//**
@@ -3819,10 +3862,20 @@ void handle_ruleset_extra(const struct packet_ruleset_extra *p)
   names_set(&pextra->name, NULL, p->name, p->rule_name);
 
   pextra->category = p->category;
-  pextra->causes = p->causes;
-  pextra->rmcauses = p->rmcauses;
 
-  extra_to_category_list(pextra, pextra->category);
+  pextra->causes = 0;
+  for (i = 0; i < EC_COUNT; i++) {
+    if (BV_ISSET(p->causes, i)) {
+      pextra->causes |= (1 << i);
+    }
+  }
+
+  pextra->rmcauses = 0;
+  for (i = 0; i < ERM_COUNT; i++) {
+    if (BV_ISSET(p->rmcauses, i)) {
+      pextra->rmcauses |= (1 << i);
+    }
+  }
 
   if (pextra->causes == 0) {
     extra_to_caused_by_list(pextra, EC_NONE);
@@ -3888,6 +3941,7 @@ void handle_ruleset_extra(const struct packet_ruleset_extra *p)
 
   pextra->visibility_req = p->visibility_req;
   pextra->buildable = p->buildable;
+  pextra->generated = p->generated;
   pextra->build_time = p->build_time;
   pextra->build_time_factor = p->build_time_factor;
   pextra->removal_time = p->removal_time;
@@ -4324,6 +4378,18 @@ void handle_ruleset_style(const struct packet_ruleset_style *p)
 }
 
 /************************************************************************//**
+  Handle a packet about a particular clause.
+****************************************************************************/
+void handle_ruleset_clause(const struct packet_ruleset_clause *p)
+{
+  struct clause_info *info = clause_info_get(p->type);
+
+  fc_assert_ret_msg(NULL != info, "Bad clause %d.", p->type);
+
+  info->enabled = p->enabled;
+}
+
+/************************************************************************//**
   Handle city style packet.
 ****************************************************************************/
 void handle_ruleset_city(const struct packet_ruleset_city *packet)
@@ -4406,7 +4472,7 @@ void handle_ruleset_game(const struct packet_ruleset_game *packet)
   for (i = 0; i < packet->veteran_levels; i++) {
     veteran_system_definition(game.veteran, i, packet->veteran_name[i],
                               packet->power_fact[i], packet->move_bonus[i],
-                              packet->raise_chance[i],
+                              packet->base_raise_chance[i],
                               packet->work_raise_chance[i]);
   }
 
@@ -4484,7 +4550,7 @@ void handle_city_name_suggestion_info(int unit_id, const char *name)
   ACTION_NONE indicates that performing the action is impossible.
 ****************************************************************************/
 void handle_unit_action_answer(int diplomat_id, int target_id, int cost,
-                               enum gen_action action_type,
+                               action_id action_type,
                                bool disturb_player)
 {
   struct city *pcity = game_city_by_number(target_id);
@@ -4519,7 +4585,7 @@ void handle_unit_action_answer(int diplomat_id, int target_id, int cost,
     return;
   }
 
-  switch (action_type) {
+  switch ((enum gen_action)action_type) {
   case ACTION_SPY_BRIBE_UNIT:
     if (punit && client.conn.playing
         && is_human(client.conn.playing)) {
@@ -4600,14 +4666,15 @@ void handle_unit_action_answer(int diplomat_id, int target_id, int cost,
   Returns a possibly legal attack action iff it is the only interesting
   action that currently is legal.
 ****************************************************************************/
-static enum gen_action auto_attack_act(const struct act_prob *act_probs)
+static action_id auto_attack_act(const struct act_prob *act_probs)
 {
-  enum gen_action attack_action = ACTION_NONE;
+  action_id attack_action = ACTION_NONE;
 
   action_iterate(act) {
     if (action_prob_possible(act_probs[act])) {
       switch ((enum gen_action)act) {
       case ACTION_DISBAND_UNIT:
+      case ACTION_FORTIFY:
       case ACTION_CONVERT:
         /* Not interesting. */
         break;
@@ -4615,6 +4682,7 @@ static enum gen_action auto_attack_act(const struct act_prob *act_probs)
       case ACTION_BOMBARD:
       case ACTION_NUKE:
       case ACTION_ATTACK:
+      case ACTION_SUICIDE_ATTACK:
       case ACTION_CONQUER_CITY:
         /* An attack. */
         if (attack_action == ACTION_NONE) {
@@ -4667,8 +4735,10 @@ static enum gen_action auto_attack_act(const struct act_prob *act_probs)
       case ACTION_IRRIGATE_TF:
       case ACTION_MINE_TF:
       case ACTION_PILLAGE:
-      case ACTION_FORTIFY:
       case ACTION_ROAD:
+      case ACTION_BASE:
+      case ACTION_MINE:
+      case ACTION_IRRIGATE:
         /* An interesting non attack action has been found. */
         return ACTION_NONE;
         break;
@@ -4693,6 +4763,8 @@ void handle_unit_actions(const struct packet_unit_actions *packet)
   struct unit *actor_unit = game_unit_by_number(packet->actor_unit_id);
 
   struct tile *target_tile = index_to_tile(&(wld.map), packet->target_tile_id);
+  struct extra_type *target_extra = packet->target_extra_id == EXTRA_NONE ?
+      NULL : extra_by_number(packet->target_extra_id);
   struct city *target_city = game_city_by_number(packet->target_city_id);
   struct unit *target_unit = game_unit_by_number(packet->target_unit_id);
 
@@ -4715,7 +4787,7 @@ void handle_unit_actions(const struct packet_unit_actions *packet)
   if (valid && disturb_player) {
     /* The player can select an action and should be informed. */
 
-    enum gen_action auto_action;
+    action_id auto_action;
 
     if (gui_options.popup_attack_actions) {
       /* Pop up the action selection dialog no matter what. */
@@ -4768,7 +4840,8 @@ void handle_unit_actions(const struct packet_unit_actions *packet)
     } else {
       /* Show the client specific action dialog */
       popup_action_selection(actor_unit,
-                             target_city, target_unit, target_tile,
+                             target_city, target_unit,
+                             target_tile, target_extra,
                              act_probs);
     }
   } else if (disturb_player) {
@@ -4782,7 +4855,8 @@ void handle_unit_actions(const struct packet_unit_actions *packet)
     if (action_selection_actor_unit() == actor_unit->id) {
       /* The situation may have changed. */
       action_selection_refresh(actor_unit,
-                               target_city, target_unit, target_tile,
+                               target_city, target_unit,
+                               target_tile, target_extra,
                                act_probs);
     }
   }
@@ -4793,13 +4867,13 @@ void handle_unit_actions(const struct packet_unit_actions *packet)
 ****************************************************************************/
 void handle_city_sabotage_list(int diplomat_id, int city_id,
                                bv_imprs improvements,
-                               enum gen_action action_id,
+                               action_id act_id,
                                bool disturb_player)
 {
   struct city *pcity = game_city_by_number(city_id);
   struct unit *pdiplomat = player_unit_by_number(client_player(),
                                                  diplomat_id);
-  struct action *paction = action_by_number(action_id);
+  struct action *paction = action_by_number(act_id);
 
   if (!pdiplomat) {
     log_debug("Bad diplomat %d.", diplomat_id);
@@ -5144,6 +5218,15 @@ void handle_vote_resolve(int vote_no, bool passed)
   vi->passed = passed;
 
   voteinfo_gui_update();
+}
+
+/************************************************************************//**
+  Shows image with text and play music
+****************************************************************************/
+void handle_show_img_play_sound(const char *img_path, const char *snd_path,
+                                const char *desc, bool fullsize)
+{
+  show_img_play_snd(img_path, snd_path, desc, fullsize);
 }
 
 /************************************************************************//**

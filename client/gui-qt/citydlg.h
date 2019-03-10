@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ class QTabWidget;
 class QVariant;
 class QVBoxLayout;
 
-#define NUM_INFO_FIELDS 13
+#define NUM_INFO_FIELDS 14
 
 // common
 #include "unittype.h"
@@ -62,8 +62,9 @@ class QImage;
 
 QString get_tooltip(QVariant qvar);
 QString get_tooltip_improvement(impr_type *building,
-                                struct city *pcity = nullptr);
-QString get_tooltip_unit(struct unit_type *unit);
+                                struct city *pcity = nullptr,
+                                bool ext = false);
+QString get_tooltip_unit(struct unit_type *unit, bool ext = false);
 QString bold(QString text);
 
 class fc_tooltip : public QObject

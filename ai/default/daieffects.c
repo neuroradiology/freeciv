@@ -534,15 +534,7 @@ adv_want dai_effect_value(struct player *pplayer, struct government *gov,
   case EFT_OUTPUT_INC_TILE_CELEBRATE:
   case EFT_TRADE_REVENUE_BONUS:
   case EFT_TILE_WORKABLE:
-  case EFT_IRRIG_POSSIBLE:
   case EFT_COMBAT_ROUNDS:
-  case EFT_MINING_POSSIBLE:
-  case EFT_UNUSED1:
-  case EFT_UNUSED2:
-  case EFT_PERFORMANCE:
-  case EFT_HISTORY:
-  case EFT_NATION_PERFORMANCE:
-  case EFT_NATION_HISTORY:
   case EFT_ILLEGAL_ACTION_MOVE_COST:
   case EFT_CASUS_BELLI_CAUGHT:
   case EFT_CASUS_BELLI_SUCCESS:
@@ -555,8 +547,26 @@ adv_want dai_effect_value(struct player *pplayer, struct government *gov,
   case EFT_CITY_IMAGE:
   case EFT_SHIELD2GOLD_FACTOR:
     break;
+  case EFT_PERFORMANCE:
+  case EFT_NATION_PERFORMANCE:
+    /* Consider each culture point worth 1/10 point, minimum of 1 point... */
+    v += amount / 10 + 1;
+    break;
+  case EFT_HISTORY:
+  case EFT_NATION_HISTORY:
+    /* ...and history effect to accumulate those points for 50 turns. */
+    v += amount * 5;
+    break;
   case EFT_TECH_COST_FACTOR:
     v -= amount * 50;
+    break;
+  case EFT_IMPR_BUILD_COST_PCT:
+  case EFT_UNIT_BUILD_COST_PCT:
+    v -= amount * 30;
+    break;
+  case EFT_IMPR_BUY_COST_PCT:
+  case EFT_UNIT_BUY_COST_PCT:
+    v -= amount * 25;
     break;
   case EFT_CITY_RADIUS_SQ:
     v += amount * 10; /* AI wants bigger city radii */

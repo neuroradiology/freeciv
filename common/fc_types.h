@@ -38,6 +38,9 @@ extern "C" {
 #define MAX_NUM_CONNECTIONS (2 * (MAX_NUM_PLAYER_SLOTS))
 /* e.g. unit_types. Used in the network protocol. */
 #define MAX_NUM_ITEMS   200
+#define MAX_NUM_ADVANCES  250 /* Used in the network protocol. */
+#define MAX_NUM_UNITS     250 /* Used in the network protocol. */
+#define MAX_NUM_BUILDINGS 200 /* Used in the network protocol. */
 #define MAX_NUM_TECH_LIST 10 /* Used in the network protocol. */
 #define MAX_NUM_UNIT_LIST 10 /* Used in the network protocol. */
 #define MAX_NUM_BUILDING_LIST 10 /* Used in the network protocol. */
@@ -137,6 +140,9 @@ enum output_type_id {
 #define SPECENUM_COUNT ACTIVITY_LAST
 #include "specenum_gen.h"
 
+/* Happens at once, not during turn change. */
+#define ACT_TIME_INSTANTANEOUS (-1)
+
 enum adv_unit_task { AUT_NONE, AUT_AUTO_SETTLER, AUT_BUILD_CITY };
 
 typedef signed short Continent_id;
@@ -156,6 +162,7 @@ typedef int Disaster_type_id;
 typedef int Multiplier_type_id;
 typedef int Goods_type_id;
 typedef unsigned char citizens;
+typedef int action_id;
 
 struct advance;
 struct city;
@@ -263,8 +270,6 @@ typedef int Unit_Class_id;
 
 #define SPECENUM_COUNT AI_LEVEL_COUNT
 #include "specenum_gen.h"
-
-#define AI_LEVEL_DEFAULT AI_LEVEL_NOVICE
 
 /* pplayer->ai.barbarian_type and nations use this enum. */
 #define SPECENUM_NAME barbarian_type
@@ -563,6 +568,14 @@ BV_DEFINE(bv_startpos_nations, MAX_NUM_STARTPOS_NATIONS);
 #include "specenum_gen.h"
 
 /* Used in the network protocol. */
+#define SPECENUM_NAME caravan_bonus_style
+#define SPECENUM_VALUE0 CBS_CLASSIC
+#define SPECENUM_VALUE0NAME "Classic"
+#define SPECENUM_VALUE1 CBS_LOGARITHMIC
+#define SPECENUM_VALUE1NAME "Logarithmic"
+#include "specenum_gen.h"
+
+/* Used in the network protocol. */
 #define SPECENUM_NAME persistent_ready
 #define SPECENUM_VALUE0  PERSISTENTR_DISABLED
 #define SPECENUM_VALUE0NAME "Disabled"
@@ -607,6 +620,14 @@ BV_DEFINE(bv_startpos_nations, MAX_NUM_STARTPOS_NATIONS);
 /* Tech upkeep multiplied by number of cities */
 #define SPECENUM_VALUE2 TECH_UPKEEP_PER_CITY
 #define SPECENUM_VALUE2NAME "Cities"
+#include "specenum_gen.h"
+
+/* Used in the network protocol. */
+#define SPECENUM_NAME trade_revenue_style
+#define SPECENUM_VALUE0 TRS_CLASSIC
+#define SPECENUM_VALUE0NAME "Classic"
+#define SPECENUM_VALUE1 TRS_SIMPLE
+#define SPECENUM_VALUE1NAME "Simple"
 #include "specenum_gen.h"
 
 /* Used in the network protocol. */
@@ -677,7 +698,6 @@ typedef int server_setting_id;
 #define SPECENUM_COUNT ECAT_COUNT
 #include "specenum_gen.h"
 #define ECAT_NONE ECAT_COUNT
-#define ECAT_LAST ECAT_COUNT
 
 /* Used in the network protocol. */
 #define SPECENUM_NAME extra_cause
@@ -700,6 +720,7 @@ typedef int server_setting_id;
 #define SPECENUM_VALUE8 EC_RESOURCE
 #define SPECENUM_VALUE8NAME "Resource"
 #define SPECENUM_COUNT EC_COUNT
+#define SPECENUM_BITVECTOR bv_causes
 #include "specenum_gen.h"
 #define EC_NONE EC_COUNT
 #define EC_SPECIAL (EC_NONE + 1)
@@ -707,7 +728,7 @@ typedef int server_setting_id;
 #define EC_NATURAL_DEFENSIVE (EC_NONE + 3)
 #define EC_LAST (EC_NONE + 4)
 
-/* packets.def and struct extra_type reserve 16 bits (0-15) for these. */
+/* struct extra_type reserve 16 bits (0-15) for these. */
 FC_STATIC_ASSERT(EC_COUNT < 16, extra_causes_over_limit);
 
 /* Used in the network protocol. */
@@ -721,10 +742,11 @@ FC_STATIC_ASSERT(EC_COUNT < 16, extra_causes_over_limit);
 #define SPECENUM_VALUE3 ERM_DISAPPEARANCE
 #define SPECENUM_VALUE3NAME "Disappear"
 #define SPECENUM_COUNT ERM_COUNT
+#define SPECENUM_BITVECTOR bv_rmcauses
 #include "specenum_gen.h"
 #define ERM_NONE ERM_COUNT
 
-/* packets.def and struct extra_type reserve 8 bits (0-7) for these. */
+/* struct extra_type reserve 8 bits (0-7) for these. */
 FC_STATIC_ASSERT(ERM_COUNT < 8, extra_rmcauses_over_limit);
 
 #define SPECENUM_NAME extra_unit_seen_type

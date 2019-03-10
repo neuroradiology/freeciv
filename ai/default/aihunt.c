@@ -98,7 +98,7 @@ static struct unit_type *dai_hunter_guess_best(struct city *pcity,
     }
 
     /* Temporary hack because pathfinding can't handle Fighters. */
-    if (!uclass_has_flag(utype_class(ut), UCF_MISSILE)
+    if (!utype_can_do_action(ut, ACTION_SUICIDE_ATTACK)
         && 1 == utype_fuel(ut)) {
       continue;
     }
@@ -135,12 +135,12 @@ static struct unit_type *dai_hunter_guess_best(struct city *pcity,
     }
 
     desire = amortize(desire,
-		      (utype_build_shield_cost(ut)
+		      (utype_build_shield_cost(pcity, ut)
 		       / MAX(pcity->surplus[O_SHIELD], 1)));
 
     if (desire > best) {
-        best = desire;
-        bestid = ut;
+      best = desire;
+      bestid = ut;
     }
   } unit_type_iterate_end;
 
@@ -160,13 +160,14 @@ static void dai_hunter_missile_want(struct player *pplayer,
 
   unit_list_iterate(pcity->tile->units, punit) {
     if (dai_hunter_qualify(pplayer, punit)) {
-      unit_class_iterate(uclass) {
-        if (can_unit_type_transport(unit_type_get(punit), uclass)
-            && uclass_has_flag(uclass, UCF_MISSILE)) {
+      unit_type_iterate(pcargo) {
+        if (can_unit_type_transport(unit_type_get(punit),
+                                    utype_class(pcargo))
+            && utype_can_do_action(pcargo, ACTION_SUICIDE_ATTACK)) {
           hunter = punit;
           break;
         }
-      } unit_class_iterate_end;
+      } unit_type_iterate_end;
       if (hunter) {
         break;
       }
@@ -180,8 +181,8 @@ static void dai_hunter_missile_want(struct player *pplayer,
   unit_type_iterate(ut) {
     int desire;
 
-    if (!uclass_has_flag(utype_class(ut), UCF_MISSILE)
-     || !can_city_build_unit_now(pcity, ut)) {
+    if (!utype_can_do_action(ut, ACTION_SUICIDE_ATTACK)
+        || !can_city_build_unit_now(pcity, ut)) {
       continue;
     }
 
@@ -203,7 +204,7 @@ static void dai_hunter_missile_want(struct player *pplayer,
     }
 
     desire = amortize(desire,
-		      (utype_build_shield_cost(ut)
+		      (utype_build_shield_cost(pcity, ut)
 		       / MAX(pcity->surplus[O_SHIELD], 1)));
 
     if (desire > best) {
@@ -317,7 +318,8 @@ static void dai_hunter_try_launch(struct ai_type *ait,
     struct unit *sucker = NULL;
 
     if (unit_owner(missile) == pplayer
-        && uclass_has_flag(unit_class_get(missile), UCF_MISSILE)) {
+        && utype_can_do_action(unit_type_get(missile),
+                               ACTION_SUICIDE_ATTACK)) {
       UNIT_LOG(LOGLEVEL_HUNT, missile, "checking for hunt targets");
       pft_fill_unit_parameter(&parameter, punit);
       parameter.omniscience = !has_handicap(pplayer, H_MAP);
@@ -405,7 +407,7 @@ static void dai_hunter_juiciness(struct player *pplayer, struct unit *punit,
     if (utype_acts_hostile(unit_type_get(sucker))) {
       *stackthreat += 500; /* extra threatening */
     }
-    *stackcost += unit_build_shield_cost(sucker);
+    *stackcost += unit_build_shield_cost_base(sucker);
   } unit_list_iterate_end;
 
   *stackthreat *= 9; /* WAG - reduced by distance later */
@@ -518,10 +520,10 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
       dai_hunter_juiciness(pplayer, punit, target, &stackthreat, &stackcost);
       stackcost *= unit_win_chance(punit, get_defender(punit,
                                                        unit_tile(target)));
-      if (stackcost < unit_build_shield_cost(punit)) {
+      if (stackcost < unit_build_shield_cost_base(punit)) {
         UNIT_LOG(LOGLEVEL_HUNT, punit, "%d is too expensive (it %d vs us %d)",
                  target->id, stackcost,
-		 unit_build_shield_cost(punit));
+		 unit_build_shield_cost_base(punit));
         continue; /* Too expensive */
       }
       stackthreat /= move_cost + 1;
@@ -532,7 +534,7 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
                  target->id, original_target->id);
         continue; /* The threat we found originally was worse than this! */
       }
-      if (stackthreat < unit_build_shield_cost(punit)) {
+      if (stackthreat < unit_build_shield_cost_base(punit)) {
         UNIT_LOG(LOGLEVEL_HUNT, punit, "%d is not worth it", target->id);
         continue; /* Not worth it */
       }

@@ -87,7 +87,7 @@ static bool science_report_combo_get_active(GtkComboBox *combo,
 static void science_report_combo_set_active(GtkComboBox *combo,
                                             Tech_type_id tech);
 static gboolean science_diagram_button_release_callback(GtkWidget *widget,
-    GdkEventButton *event, gpointer data);
+                                                        GdkEvent *ev, gpointer data);
 static gboolean science_diagram_update(GtkWidget *widget,
                                        cairo_t *cr,
                                        gpointer data);
@@ -195,23 +195,36 @@ static void science_report_combo_set_active(GtkComboBox *combo,
   Change tech goal, research or open help dialog.
 ****************************************************************************/
 static gboolean science_diagram_button_release_callback(GtkWidget *widget,
-    GdkEventButton *event, gpointer data)
+                                                        GdkEvent *ev, gpointer data)
 {
   const struct research *presearch = research_get(client_player());
   struct reqtree *reqtree = g_object_get_data(G_OBJECT(widget), "reqtree");
-  Tech_type_id tech = get_tech_on_reqtree(reqtree, event->x, event->y);
+  Tech_type_id tech;
+  GdkEventType type;
+  gdouble x, y;
+  guint button;
+
+  type = gdk_event_get_event_type(ev);
+  if (type != GDK_BUTTON_RELEASE) {
+    return TRUE;
+  }
+
+  gdk_event_get_coords(ev, &x, &y);
+  gdk_event_get_button(ev, &button);
+
+  tech = get_tech_on_reqtree(reqtree, x, y);
 
   if (tech == A_NONE) {
     return TRUE;
   }
 
-  if (event->button == 3) {
+  if (button == 3) {
     /* RMB: get help */
     popup_help_dialog_typed(research_advance_name_translation(presearch,
                                                               tech),
                             HELP_TECH);
   } else {
-    if (event->button == 1 && can_client_issue_orders()) {
+    if (button == 1 && can_client_issue_orders()) {
       /* LMB: set research or research goal */
       switch (research_invention_state(research_get(client_player()),
                                        tech)) {
@@ -272,9 +285,6 @@ static GtkWidget *science_diagram_new(void)
   GtkWidget *diagram;
 
   diagram = gtk_layout_new(NULL, NULL);
-  gtk_widget_add_events(diagram,
-                        GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK
-                        | GDK_BUTTON2_MOTION_MASK | GDK_BUTTON3_MOTION_MASK);
   g_signal_connect(diagram, "draw",
                    G_CALLBACK(science_diagram_update), NULL);
   g_signal_connect(diagram, "button-release-event",
@@ -710,7 +720,7 @@ void science_report_dialog_popdown(void)
 /************************************************************************//**
   Update the science report dialog.
 ****************************************************************************/
-void real_science_report_dialog_update(void)
+void real_science_report_dialog_update(void *unused)
 {
   if (NULL != science_report.shell) {
     science_report_update(&science_report);
@@ -1219,7 +1229,7 @@ void economy_report_dialog_popdown(void)
 /************************************************************************//**
   Update the economy report dialog.
 ****************************************************************************/
-void real_economy_report_dialog_update(void)
+void real_economy_report_dialog_update(void *unused)
 {
   if (NULL != economy_report.shell) {
     economy_report_update(&economy_report);
@@ -1737,7 +1747,7 @@ void units_report_dialog_popdown(void)
 /************************************************************************//**
   Update the units report dialog.
 ****************************************************************************/
-void real_units_report_dialog_update(void)
+void real_units_report_dialog_update(void *unused)
 {
   if (NULL != units_report.shell) {
     units_report_update(&units_report);

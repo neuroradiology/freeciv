@@ -39,7 +39,7 @@ struct strvec;          /* Actually defined in "utility/string_vector.h". */
  *
  * Used in the network protocol.
  */
-#define B_LAST MAX_NUM_ITEMS
+#define B_LAST MAX_NUM_BUILDINGS
 
 #define B_NEVER (NULL)
 
@@ -68,7 +68,7 @@ BV_DEFINE(bv_imprs, B_LAST);
 struct impr_type {
   Impr_type_id item_number;
   struct name_translation name;
-  bool disabled;                        /* Does not really exist - hole in improvements array */
+  bool ruledit_disabled;                /* Does not really exist - hole in improvements array */
   char graphic_str[MAX_LEN_NAME];	/* city icon of improv. */
   char graphic_alt[MAX_LEN_NAME];	/* city icon of improv. */
   struct requirement_vector reqs;
@@ -112,8 +112,10 @@ bool improvement_has_flag(const struct impr_type *pimprove,
                           enum impr_flag_id flag);
 
 /* Ancillary routines */
-int impr_build_shield_cost(const struct impr_type *pimprove);
-int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock);
+int impr_build_shield_cost(const struct city *pcity,
+                           const struct impr_type *pimprove);
+int impr_buy_gold_cost(const struct city *pcity, const struct impr_type *pimprove,
+                       int shields_in_stock);
 int impr_sell_gold(const struct impr_type *pimprove);
 
 bool is_improvement_visible(const struct impr_type *pimprove);
@@ -203,11 +205,11 @@ const struct impr_type *improvement_array_last(void);
   }									\
 }
 
-#define improvement_active_iterate(_p)                                  \
+#define improvement_re_active_iterate(_p)                               \
   improvement_iterate(_p) {                                             \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define improvement_active_iterate_end                                  \
+#define improvement_re_active_iterate_end                               \
     }                                                                   \
   } improvement_iterate_end;
 

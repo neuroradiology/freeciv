@@ -24,6 +24,7 @@
 
 // Qt
 #include <QMainWindow>
+#include <QPixmapCache>
 #include <QStackedWidget>
 
 // common
@@ -133,12 +134,15 @@ struct fc_settings
   QByteArray city_splitter1;
   QByteArray city_splitter2;
   QByteArray city_splitter3;
+  QByteArray help_geometry;
+  QByteArray help_splitter1;
   float unit_info_pos_fx;
   float unit_info_pos_fy;
   float minimap_x;
   float minimap_y;
   float minimap_width;
   float minimap_height;
+  float battlelog_scale;
   float battlelog_x;
   float battlelog_y;
 };
@@ -272,6 +276,7 @@ public:
   fc_sidewidget *sw_indicators;
   fc_sidewidget *sw_diplo;
   float map_scale;
+  bool map_font_scale;
   void gimme_place(QWidget* widget, QString str);
   int gimme_index_of(QString str);
   void remove_repo_dlg(QString str);
@@ -329,6 +334,7 @@ private:
   bool check_server_scan(server_scan *scan_data);
   void update_load_page(void);
   void create_cursors(void);
+  void delete_cursors(void);
   void update_scenarios_page(void);
   void set_connection_state(enum connection_state state);
   void update_buttons();
@@ -368,6 +374,7 @@ public:
 
   void set_rulesets(int num_rulesets, char **rulesets);
   void set_aifill(int aifill);
+  void update_ai_level();
   void update_buttons();
 private slots:
   void max_players_change(int i);

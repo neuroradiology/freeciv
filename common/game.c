@@ -262,6 +262,7 @@ static void game_defaults(bool keep_ruleset_value)
   game.info.angrycitizen     = GAME_DEFAULT_ANGRYCITIZEN;
   game.info.borders          = GAME_DEFAULT_BORDERS;
   game.calendar.calendar_skip_0 = FALSE;
+  game.info.caravan_bonus_style = GAME_DEFAULT_CARAVAN_BONUS_STYLE;
   game.info.celebratesize    = GAME_DEFAULT_CELEBRATESIZE;
   game.info.citymindist      = GAME_DEFAULT_CITYMINDIST;
   game.info.cooling          = 0;
@@ -308,6 +309,7 @@ static void game_defaults(bool keep_ruleset_value)
   game.info.tech             = GAME_DEFAULT_TECHLEVEL;
   game.info.timeout          = GAME_DEFAULT_TIMEOUT;
   game.info.trademindist     = GAME_DEFAULT_TRADEMINDIST;
+  game.info.trade_revenue_style = GAME_DEFAULT_TRADE_REVENUE_STYLE;
   game.info.trading_city     = GAME_DEFAULT_TRADING_CITY;
   game.info.trading_gold     = GAME_DEFAULT_TRADING_GOLD;
   game.info.trading_tech     = GAME_DEFAULT_TRADING_TECH;
@@ -368,6 +370,7 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.fogofwar_old      = game.info.fogofwar;
     game.server.last_updated_year = FALSE;
     game.server.freecost          = GAME_DEFAULT_FREECOST;
+    game.server.global_warming_percent = GAME_DEFAULT_GLOBAL_WARMING_PERCENT;
     game.server.homecaughtunits   = GAME_DEFAULT_HOMECAUGHTUNITS;
     game.server.kick_time         = GAME_DEFAULT_KICK_TIME;
     game.server.killunhomed       = GAME_DEFAULT_KILLUNHOMED;
@@ -381,10 +384,12 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.mgr_nationchance  = GAME_DEFAULT_MGR_NATIONCHANCE;
     game.server.mgr_turninterval  = GAME_DEFAULT_MGR_TURNINTERVAL;
     game.server.mgr_worldchance   = GAME_DEFAULT_MGR_WORLDCHANCE;
+    game.server.multiresearch     = GAME_DEFAULT_MULTIRESEARCH;
     game.server.migration         = GAME_DEFAULT_MIGRATION;
     game.server.trait_dist        = GAME_DEFAULT_TRAIT_DIST_MODE;
     game.server.min_players       = GAME_DEFAULT_MIN_PLAYERS;
     game.server.natural_city_names = GAME_DEFAULT_NATURALCITYNAMES;
+    game.server.nuclear_winter_percent = GAME_DEFAULT_NUCLEAR_WINTER_PERCENT;
     game.server.plrcolormode      = GAME_DEFAULT_PLRCOLORMODE;
     game.server.netwait           = GAME_DEFAULT_NETWAIT;
     game.server.occupychance      = GAME_DEFAULT_OCCUPYCHANCE;
@@ -412,6 +417,7 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.scoreturn         = GAME_DEFAULT_SCORETURN - 1;
     game.server.seed              = GAME_DEFAULT_SEED;
     sz_strlcpy(game.server.start_units, GAME_DEFAULT_START_UNITS);
+    game.server.spaceship_travel_time = GAME_DEFAULT_SPACESHIP_TRAVEL_TIME;
     game.server.start_year        = GAME_START_YEAR;
     game.server.tcptimeout        = GAME_DEFAULT_TCPTIMEOUT;
     game.server.techlost_donor    = GAME_DEFAULT_TECHLOST_DONOR;
@@ -529,6 +535,7 @@ void game_ruleset_init(void)
   tech_classes_init();
   user_tech_flags_init();
   multipliers_init();
+  clause_infos_init();
 
   if (is_server()) {
     game.server.luadata = NULL;
@@ -588,6 +595,7 @@ void game_ruleset_free(void)
   ruleset_cache_free();
   nation_sets_groups_free();
   multipliers_free();
+  clause_infos_free();
 
   /* Destroy the default veteran system. */
   veteran_system_destroy(game.veteran);

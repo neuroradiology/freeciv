@@ -616,9 +616,7 @@ static bool sanity_check_boolean_effects(void)
       EFT_HAPPINESS_TO_GOLD,
       EFT_FANATICS,
       EFT_NO_DIPLOMACY,
-      EFT_IRRIG_POSSIBLE,
       EFT_GOV_CENTER,
-      EFT_MINING_POSSIBLE,
       EFT_NOT_TECH_SOURCE,
       EFT_VICTORY,
       EFT_HAVE_CONTACTS,
@@ -798,7 +796,7 @@ bool sanity_check_ruleset_data(bool ignore_retired)
 
     /* Check national initial buildings */
     if (nation_barbarian_type(pnation) != NOT_A_BARBARIAN
-        && pnation->init_buildings[0] != A_LAST) {
+        && pnation->init_buildings[0] != B_LAST) {
       ruleset_error(LOG_ERROR,
                     "Barbarian nation %s has init_buildings set but will "
                     "never see them", nation_rule_name(pnation));
@@ -1277,6 +1275,7 @@ bool autoadjust_ruleset_data(void)
        * tile has no units remains hard coded. Kept "just in case" that
        * changes. */
       { ACTION_CONQUER_CITY, ACTION_ATTACK },
+      { ACTION_CONQUER_CITY, ACTION_SUICIDE_ATTACK },
     };
 
     int i;

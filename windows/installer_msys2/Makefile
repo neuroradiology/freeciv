@@ -14,14 +14,20 @@ ifeq ($(WINARCH),win64)
 ARCHDIR=mingw64
 LIBGCCDLL=libgcc_s_seh-1.dll
 GCCDLL=gcc_s-seh-1.dll
+CRYPTOLIB_SUFFIX=-x64
 else
 ARCHDIR=mingw32
 LIBGCCDLL=libgcc_s_dw2-1.dll
 GCCDLL=gcc_s-1.dll
+CRYPTOLIB_SUFFIX=
 endif
 
 ifeq ($(MIN_WIN_VER),)
 MIN_WIN_VER=0x0601
+endif
+
+ifeq ($(MAKE_PARAMS),)
+MAKE_PARAMS="-j2"
 endif
 
 INSTSUB=${ARCHDIR}
@@ -65,37 +71,26 @@ snapshot:
 	make VERSION_REVTYPE="git" EXTRA_CONFIG="--enable-gitrev --with-project-definition=../../../bootstrap/snapshot.project" buildable
 
 
-# build Freeciv
+# configure Freeciv
 
-build-freeciv-common:
+configure-freeciv-common:
 	# create build directory
 	mkdir -p build-$(WINARCH)-$(GUI)
 	# configure
-	cd build-$(WINARCH)-$(GUI); ../../../configure FREECIV_LABEL_FORCE="<base>-msys2" CPPFLAGS="-D_WIN32_WINNT=$(MIN_WIN_VER)" --enable-client=$(GUI) --with-followtag="windows-S3_1" --with-tinycthread --without-readline --enable-fcdb=sqlite3 --with-sqlite3-prefix=/$(ARCHDIR) --enable-fcmp=$(FCMP) $(EXTRA_CONFIG)
-	# make
-	make -C build-$(WINARCH)-$(GUI) $(MAKE_PARAMS)
-	make -C build-$(WINARCH)-$(GUI)/translations/core update-po
-	make -C build-$(WINARCH)-$(GUI)/bootstrap langstat_core.txt
+	cd build-$(WINARCH)-$(GUI); ../../../configure FREECIV_LABEL_FORCE="<base>-msys2" CPPFLAGS="-D_WIN32_WINNT=$(MIN_WIN_VER)" --enable-client=$(GUI) --with-followtag="windows-S3_1" --with-tinycthread --without-readline --disable-sys-lua --enable-fcdb=sqlite3 --with-sqlite3-prefix=/$(ARCHDIR) --enable-fcmp=$(FCMP) $(EXTRA_CONFIG)
 
-build-freeciv-ruledit:
+configure-freeciv-ruledit:
 	# create build directory
 	mkdir -p build-$(WINARCH)-ruledit
 	# configure
-	cd build-$(WINARCH)-ruledit; ../../../configure FREECIV_LABEL_FORCE="<base>-msys2" CPPFLAGS="-D_WIN32_WINNT=$(MIN_WIN_VER)" --disable-client --disable-server --disable-fcmp --disable-freeciv-manual --enable-ruledit --with-qt5-includes=/$(ARCHDIR)/include --with-qt5-libs=/$(ARCHDIR)/lib $(EXTRA_CONFIG)
-	# make
-	make -C build-$(WINARCH)-ruledit $(MAKE_PARAMS)
-	make -C build-$(WINARCH)-ruledit/translations/ruledit update-po
-	make -C build-$(WINARCH)-ruledit/bootstrap langstat_ruledit.txt
-
-build-freeciv-gtk3.22: build-freeciv-common
-
-build-freeciv-sdl2: build-freeciv-common
-
-build-freeciv-qt: build-freeciv-common
+	cd build-$(WINARCH)-ruledit; ../../../configure FREECIV_LABEL_FORCE="<base>-msys2" CPPFLAGS="-D_WIN32_WINNT=$(MIN_WIN_VER)" --disable-client --disable-server --disable-fcmp --disable-freeciv-manual --disable-sys-lua --enable-ruledit --enable-ai-static=stub --with-qt5-includes=/$(ARCHDIR)/include --with-qt5-libs=/$(ARCHDIR)/lib $(EXTRA_CONFIG)
 
 # install Freeciv
 
-install-freeciv-common:
+install-freeciv-common: configure-freeciv-common
+	# make langstat files
+	make -C build-$(WINARCH)-$(GUI)/translations/core update-po
+	make -C build-$(WINARCH)-$(GUI)/bootstrap langstat_core.txt
 	# make install
 	make -C build-$(WINARCH)-$(GUI) DESTDIR=`pwd`/install-$(WINARCH)-$(GUI) $(MAKE_PARAMS) install
 	# reorder directory layout
@@ -128,7 +123,10 @@ install-freeciv-qt: install-freeciv-common
 install-ruledit-dir:
 	mkdir -p install-$(WINARCH)-ruledit/share
 
-install-ruledit: install-ruledit-dir
+install-ruledit: configure-freeciv-ruledit install-ruledit-dir
+	# make langstat files
+	make -C build-$(WINARCH)-ruledit/translations/ruledit update-po
+	make -C build-$(WINARCH)-ruledit/bootstrap langstat_ruledit.txt
 	# make install
 	make -C build-$(WINARCH)-ruledit DESTDIR=`pwd`/install-$(WINARCH)-ruledit/ $(MAKE_PARAMS) install
 	# reorder directory layout
@@ -151,10 +149,9 @@ install-ruledit: install-ruledit-dir
 
 SOUND_DLLS := \
 	SDL2.dll \
-	libSDL2_mixer-2-0-0.dll \
+	SDL2_mixer.dll \
 	libFLAC-8.dll \
-	libfluidsynth-1.dll \
-	libmad-0.dll \
+	libfluidsynth-2.dll \
 	libmodplug-1.dll \
 	libvorbis-0.dll \
 	libvorbisenc-2.dll \
@@ -162,12 +159,16 @@ SOUND_DLLS := \
 	libogg-0.dll \
 	libportaudio-2.dll \
 	libsndfile-1.dll \
-	libspeex-1.dll
+	libspeex-1.dll \
+	libmpg123-0.dll \
+	libopusfile-0.dll \
+	libopus-0.dll
 
 COMMON_DLLS := \
 	libstdc++-6.dll \
-	libeay32.dll \
-	ssleay32.dll \
+	libcrypto-1_1${CRYPTOLIB_SUFFIX}.dll \
+	libpsl-5.dll \
+	libssl-1_1${CRYPTOLIB_SUFFIX}.dll \
 	libidn2-0.dll \
 	libnghttp2-14.dll \
 	libssh2-1.dll \
@@ -195,16 +196,21 @@ COMMON_DLLS := \
 	libpango-1.0-0.dll \
 	libpangocairo-1.0-0.dll \
 	libpangowin32-1.0-0.dll \
+	libfribidi-0.dll \
 	libpixman-1-0.dll \
 	libpng16-16.dll \
 	libxml2-2.dll \
 	zlib1.dll \
 	libwinpthread-1.dll \
-	libicuuc58.dll \
-	libicudt58.dll \
+	libicuuc62.dll \
+	libicudt62.dll \
 	libsqlite3-0.dll \
 	exchndl.dll \
 	mgwhelp.dll \
+	libbrotlidec.dll \
+	libbrotlicommon.dll \
+	libreadline7.dll \
+	libtermcap-0.dll \
 	$(SOUND_DLLS)
 
 install-env-common:
@@ -219,6 +225,8 @@ DEFAULT_FCMP_DLLS := \
 	libepoxy-0.dll \
 	libgraphite2.dll \
 	libpangoft2-1.0-0.dll \
+	libthai-0.dll \
+	libdatrie-1.dll \
 	libpcre-1.dll \
 	libunistring-2.dll \
 	librsvg-2-2.dll \
@@ -248,16 +256,17 @@ SDL2_DLLS := \
 	SDL2_ttf.dll \
 	libjpeg-8.dll \
 	libtiff-5.dll \
-	libwebp-7.dll
+	libwebp-7.dll \
+	libzstd.dll
 
 install-env-sdl2: install-env-default-fcmp
 	# add DLLs
 	cp -R $(addprefix $(DLLPATH_PREFIX), $(SDL2_DLLS)) install-$(WINARCH)-$(GUI)/
 
 QT_DLLS := \
-	libicuin58.dll \
-	libicuuc58.dll \
-	libicudt58.dll \
+	libicuin62.dll \
+	libicuuc62.dll \
+	libicudt62.dll \
 	libpcre16-0.dll \
 	libharfbuzz-0.dll \
 	libsqlite3-0.dll \
@@ -267,7 +276,9 @@ QT_DLLS := \
 	libgraphite2.dll \
 	libpcre-1.dll \
 	libpcre2-16-0.dll \
-	libunistring-2.dll
+	libunistring-2.dll \
+	libbrotlidec.dll \
+	libbrotlicommon.dll
 
 install-env-qt: install-env-common
 	# add DLLs
@@ -279,8 +290,9 @@ install-env-qt: install-env-common
 
 RULEDIT_DLLS := \
         libstdc++-6.dll \
-	libeay32.dll \
-	ssleay32.dll \
+	libcrypto-1_1${CRYPTOLIB_SUFFIX}.dll \
+	libpsl-5.dll \
+	libssl-1_1${CRYPTOLIB_SUFFIX}.dll \
 	libidn2-0.dll \
 	libnghttp2-14.dll \
 	libssh2-1.dll \
@@ -342,13 +354,13 @@ installer-ruledit: clean-install-ruledit install-ruledit install-env-ruledit
 	mkdir -p Output
 	makensis Freeciv-$(WINARCH)-$(FREECIV_VERSION)-ruledit.nsi
 
-wrap-gtk3.22: build-freeciv-gtk3.22 installer-common
+wrap-gtk3.22: installer-common
 
-wrap-sdl2: build-freeciv-sdl2 installer-common
+wrap-sdl2: installer-common
 
-wrap-qt: build-freeciv-qt installer-common
+wrap-qt: installer-common
 
-wrap-ruledit: build-freeciv-ruledit installer-ruledit
+wrap-ruledit: installer-ruledit
 
 
 # cleanup

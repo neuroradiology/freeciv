@@ -32,7 +32,6 @@ static struct extra_type extras[MAX_EXTRA_TYPES];
 
 static struct user_flag user_extra_flags[MAX_NUM_USER_EXTRA_FLAGS];
 
-static struct extra_type_list *category_extra[ECAT_COUNT];
 static struct extra_type_list *caused_by[EC_LAST];
 static struct extra_type_list *removed_by[ERM_COUNT];
 static struct extra_type_list *unit_hidden;
@@ -49,9 +48,6 @@ void extras_init(void)
   }
   for (i = 0; i < ERM_COUNT; i++) {
     removed_by[i] = extra_type_list_new();
-  }
-  for (i = 0; i < ECAT_COUNT; i++) {
-    category_extra[i] = extra_type_list_new();
   }
   unit_hidden = extra_type_list_new();
 
@@ -70,7 +66,7 @@ void extras_init(void)
     extras[i].causes = 0;
     extras[i].rmcauses = 0;
     extras[i].helptext = NULL;
-    extras[i].disabled = FALSE;
+    extras[i].ruledit_disabled = FALSE;
     extras[i].visibility_req = A_NONE;
   }
 }
@@ -109,11 +105,6 @@ void extras_free(void)
   for (i = 0; i < ERM_COUNT; i++) {
     extra_type_list_destroy(removed_by[i]);
     removed_by[i] = NULL;
-  }
-
-  for (i = 0; i < ECAT_COUNT; i++) {
-    extra_type_list_destroy(category_extra[i]);
-    category_extra[i] = NULL;
   }
 
   extra_type_list_destroy(unit_hidden);
@@ -250,16 +241,6 @@ struct extra_type_list *extra_type_list_by_cause(enum extra_cause cause)
 }
 
 /************************************************************************//**
-  Returns extra types of the category.
-****************************************************************************/
-struct extra_type_list *extra_type_list_for_category(enum extra_category cat)
-{
-  fc_assert(cat < ECAT_LAST);
-
-  return category_extra[cat];
-}
-
-/************************************************************************//**
   Returns extra types that hide units.
 ****************************************************************************/
 struct extra_type_list *extra_type_list_of_unit_hiders(void)
@@ -270,7 +251,8 @@ struct extra_type_list *extra_type_list_of_unit_hiders(void)
 /************************************************************************//**
   Return random extra type for given cause that is native to the tile.
 ****************************************************************************/
-struct extra_type *rand_extra_for_tile(struct tile *ptile, enum extra_cause cause)
+struct extra_type *rand_extra_for_tile(struct tile *ptile, enum extra_cause cause,
+                                       bool generated)
 {
   struct extra_type_list *full_list = extra_type_list_by_cause(cause);
   struct extra_type_list *potential = extra_type_list_new();
@@ -278,7 +260,8 @@ struct extra_type *rand_extra_for_tile(struct tile *ptile, enum extra_cause caus
   struct extra_type *selected = NULL;
 
   extra_type_list_iterate(full_list, pextra) {
-    if (is_native_tile_to_extra(pextra, ptile)) {
+    if ((!generated || pextra->generated)
+        && is_native_tile_to_extra(pextra, ptile)) {
       extra_type_list_append(potential, pextra);
     }
   } extra_type_list_iterate_end;
@@ -305,16 +288,6 @@ void extra_to_caused_by_list(struct extra_type *pextra, enum extra_cause cause)
 }
 
 /************************************************************************//**
-  Add extra type to list of extras of a category
-****************************************************************************/
-void extra_to_category_list(struct extra_type *pextra, enum extra_category cat)
-{
-  fc_assert(cat < ECAT_LAST);
-
-  extra_type_list_append(category_extra[cat], pextra);
-}
-
-/************************************************************************//**
   Returns extra type for given rmcause.
 ****************************************************************************/
 struct extra_type_list *extra_type_list_by_rmcause(enum extra_rmcause rmcause)
@@ -336,7 +309,7 @@ void extra_to_removed_by_list(struct extra_type *pextra,
 }
 
 /************************************************************************//**
-  Is given cause one of the removal causes for given extra?
+  Is given cause one of the removal causes for the given extra?
 ****************************************************************************/
 bool is_extra_removed_by(const struct extra_type *pextra,
                          enum extra_rmcause rmcause)
@@ -450,7 +423,7 @@ bool player_can_build_extra(const struct extra_type *pextra,
 /************************************************************************//**
   Tells if unit can build extra on tile.
 ****************************************************************************/
-bool can_build_extra(struct extra_type *pextra,
+bool can_build_extra(const struct extra_type *pextra,
                      const struct unit *punit,
                      const struct tile *ptile)
 {

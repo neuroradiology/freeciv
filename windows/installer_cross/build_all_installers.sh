@@ -14,11 +14,20 @@
 #***********************************************************************/
 
 if test "x$1" = x || test "x$1" = "x-h" || test "x$1" = "x--help" ; then
-  echo "Usage: $0 <crosser dir>"
+  USAGE_NEEDED=yes
+fi
+
+if test "x$2" != "xsnapshot" && test "x$2" != "xrelease" ; then
+  USAGE_NEEDED=yes
+fi
+
+if test "x$USAGE_NEEDED" = "xyes" ; then
+  echo "Usage: $0 <crosser dir> <snapshot|release>"
   exit 1
 fi
 
 DLLSPATH="$1"
+export INST_CROSS_MODE="$2"
 
 if ! test -d "$DLLSPATH" ; then
   echo "Dllstack directory \"$DLLSPATH\" not found!" >&2
@@ -32,6 +41,11 @@ fi
 
 RET=0
 
+if grep "CROSSER_QT" $DLLSPATH/crosser.txt | grep yes > /dev/null
+then
+  CROSSER_QT=yes
+fi
+
 if ! ./installer_build.sh $DLLSPATH gtk3.22 ; then
   RET=1
   GTK322="Fail"
@@ -39,7 +53,9 @@ else
   GTK322="Success"
 fi
 
-if ! ./installer_build.sh $DLLSPATH qt ; then
+if test "x$CROSSER_QT" != "xyes" ; then
+  QT="N/A"
+elif ! ./installer_build.sh $DLLSPATH qt ; then
   RET=1
   QT="Fail"
 else
@@ -53,7 +69,9 @@ else
   SDL2="Success"
 fi
 
-if ! ./installer_build.sh $DLLSPATH ruledit ; then
+if test "x$CROSSER_QT" != "xyes" ; then
+  RULEDIT="N/A"
+elif ! ./installer_build.sh $DLLSPATH ruledit ; then
   RET=1
   RULEDIT="Fail"
 else

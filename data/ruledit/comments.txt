@@ -94,7 +94,7 @@ techs = "\
 ; /* <-- avoid gettext warnings\n\
 ;\n\
 ; Below: The individual advances, one per section.\n\
-; The number can be variable, up to 196.\n\
+; The number can be variable, up to 250.\n\
 ;\n\
 ; The actual tag used (the * in [advance_*]) does not matter, except\n\
 ; it must be unique within this file, and it may be used in debug\n\
@@ -111,11 +111,16 @@ techs = "\
 ; class         = tech class this tech belongs to, if they have been defined.\n\
 ;                 Default is first one defined above.\n\
 ; req1, req2    = advances required before researching this one\n\
-; root_req      = tech required before acquiring this tech, by any\n\
-;                 means, inherited by all techs that require this tech in turn\n\
-;                 unless \"None\" is given here explicitly; and you can make\n\
-;                 a tech available only through the init_tech of a nation by\n\
-;                 making it root_req itself.\n\
+; root_req      = tech required before acquiring this tech, by any means.\n\
+;                 All techs with any direct or indirect dependency on this\n\
+;                 one will *also* have this root_req, as well as their own\n\
+;                 and any others they inherit.\n\
+;                 Giving \"None\" explicitly here prevents a tech from\n\
+;                 inheriting root_reqs in this way, and stops root_req\n\
+;                 inheritance through that tech.\n\
+;                 Specifying a tech's root_req as itself means that the tech\n\
+;                 can only be acquired by special means (nation's init_techs,\n\
+;                 scripting, etc).\n\
 ; research_reqs = requirements before researching this one. Can have non\n\
 ;                 tech requirements because it is a requirement vector.\n\
 ;                 See doc/README.effects to learn more about requirement\n\
@@ -334,7 +339,8 @@ utypes = "\
 ; vision_radius_sq = base vision of unit: unit can see tile up to the square\n\
 ;                 root of this value away\n\
 ; convert_to    = can be converted to another type of unit by name\n\
-; convert_time  = time it takes to convert to another unit type\n\
+; convert_time  = number of movement points it takes to convert to\n\
+;                 another unit type\n\
 ; class         = One of the classes listed above\n\
 ; transport_cap = Number of units (ground, or air/missiles, depending on flags)\n\
 ; fuel          = Number of turns unit can spend outside refuel points.\n\
@@ -372,7 +378,7 @@ utypes = "\
 ; veteran_names = Special veteran level for this unit. See the definitions in\n\
 ;                 game.ruleset. All of the veteran_* entries have to have the\n\
 ;                 same length!\n\
-; veteran_raise_chance =\n\
+; veteran_base_raise_chance =\n\
 ; veteran_work_raise_chance =\n\
 ; veteran_power_fact =\n\
 ; veteran_move_bonus =\n\
@@ -444,7 +450,7 @@ utypes = "\
 ;		  therefore will not revolt along with its city of origin should\n\
 ;		  it be incited\n\
 ; \"NoVeteran\"   = this unit cannot gain veteran levels through experience\n\
-;                 (as if both raise_chance and work_raise_chance were zero);\n\
+;                 (as if both base_raise_chance and work_raise_chance were zero);\n\
 ;                 it can still gain veterancy through Veteran_Build, etc\n\
 ; \"CityBuster\"  = this unit has double firepower against cities\n\
 ; \"NoBuild\"     = this unit cannot be built\n\
@@ -474,7 +480,7 @@ utypes = "\
 ;                 setting is enabled.\n\
 ;\n\
 ; Following actions require extra fields:\n\
-;  \"Attack\"\n\
+;  \"Attack\" and \"Suicide Attack\"\n\
 ;   attack = base attack strength\n\
 ;  \"Bombard\"\n\
 ;   attack       = base attack strength\n\
@@ -574,7 +580,8 @@ terrains = "\
 ; irrigation_result    = result of 'irrigate' activity; one of:\n\
 ;                        \"no\"  -- cannot irrigate\n\
 ;                        \"yes\" -- can build extra\n\
-;                        terrain section -- irrigation changes to that terrain\n\
+;                        terrain rule_name -- irrigation changes to that\n\
+;                          terrain\n\
 ; irrigation_food_incr = increment to food if tile is 100% irrigated\n\
 ;                        (actual bonus controlled by Irrigation_Pct effect)\n\
 ; irrigation_time      = time for 'irrigate' activity; if 0, cannot irrigate\n\
@@ -583,7 +590,7 @@ terrains = "\
 ; mining_result        = result of 'mine' activity; one of:\n\
 ;                        \"no\"  -- cannot mine\n\
 ;                        \"yes\" -- can build extra\n\
-;                        terrain section -- mining changes to that terrain\n\
+;                        terrain rule_name -- mining changes to that terrain\n\
 ; mining_shield_incr   = increment to shields if tile is 100% mined\n\
 ;                        (actual bonus controlled by Mining_Pct effect)\n\
 ; mining_time          = time for 'mine' activity; if 0, cannot mine\n\
@@ -591,7 +598,7 @@ terrains = "\
 ;                        Such extras can modify time with build_time_factor.\n\
 ; transform_result     = result of transformation; one of:\n\
 ;                        \"no\"  -- cannot transform\n\
-;                        terrain section -- transformation changes to that\n\
+;                        terrain rule_name -- transformation changes to that\n\
 ;                          terrain\n\
 ; transform_time       = time to transform; if 0, cannot transform\n\
 ; pillage_time         = time to pillage extra from the tile (0 = impossible)\n\
@@ -604,7 +611,7 @@ terrains = "\
 ; warmer_wetter_result = result of global warming for wet terrains; one of:\n\
 ;                        \"no\"  -- no change; does not count for warming\n\
 ;                        \"yes\" -- no change; counts for warming\n\
-;                        terrain section -- warming changes to that terrain\n\
+;                        terrain rule_name -- warming changes to that terrain\n\
 ; warmer_drier_result  = result of global warming for dry terrains;\n\
 ;                        see warmer_wetter_result\n\
 ; cooler_wetter_result = result of nuclear winter for wet terrains;\n\
@@ -736,6 +743,8 @@ extras = "\
 ; buildable               = Can extra be built? Defaults to TRUE if extra has\n\
 ;                           any causes indicating it can result from worker\n\
 ;                           activity.\n\
+; generated               = Can map generator place the extra? Applicable\n\
+;                           for Hut, Resource, and River extras.\n\
 ; build_time              = how long it takes a unit to build this extra.\n\
 ;                           Value of 0 (default) means that terrain- and\n\
 ;                           build activity specific time is used instead.\n\
@@ -813,13 +822,21 @@ bases = "\
 ; gui_type                = How gui should handle this base.\n\
 ;                           Value can be \"Fortress\", \"Airbase\", or \"Other\"\n\
 ; border_sq               = Base will claim land ownership up to this radius,\n\
-;                           -1 to disable. If enabled, base cannot exist in city tile.\n\
-; vision_main_sq          = Base will have main layer vision to this radius\n\
+;                           -1 to disable. If enabled, base cannot exist in\n\
+;                           city tile.\n\
+;                           Base (and border) ownership will change hands if\n\
+;                           an enemy unit occupies the tile.\n\
+; vision_main_sq          = Base will have main layer vision to this radius.\n\
+;                           Vision initially provided to owner of unit that\n\
+;                           built base; base will not then change hands unless\n\
+;                           it also claims territory, or tile has another such\n\
+;                           base or city, or another base is built (tile only\n\
+;                           tracks one owner for all bases).\n\
 ; vision_invis_sq         = Base will have invisible layer vision to this radius\n\
 ; vision_subs_sq          = Base will have subsurface layer vision to this radius\n\
 ; flags\n\
-;   - \"NoAggressive\"      = Units inside are not considered aggressive if there`s\n\
-;                           friendly city within 3 tiles\n\
+;   - \"NoAggressive\"      = Units inside are not considered aggressive if\n\
+;                           there`s friendly city within 3 tiles\n\
 ;\n\
 ; */ <-- avoid gettext warnings\n\
 "
@@ -865,7 +882,10 @@ roads = "\
 ;                           to, if any: \"Road\", \"Railroad\", \"River\", or \"None\".\n\
 ;                           Used for UI and loading old savegames\n\
 ; integrates              = list of road types that are suitable next steps\n\
-;                           for travel from this road type\n\
+;                           for travel from this road type; such steps are\n\
+;                           possible for units native to both roads and don`t\n\
+;                           get cost from underlying terrain; graphics are\n\
+;                           drawn accordingly\n\
 ; flags\n\
 ;   - \"River\"             = Automatically generated by map generator, always\n\
 ;                           flowing from land tiles to ocean\n\
@@ -1128,4 +1148,18 @@ nationsets = "\
 ;                 always want the choice of all available nations by\n\
 ;                 default.\n\
 ; description   = Optional short user description of this set.\n\
+"
+
+clauses = "\
+\n\
+; /* <-- avoid gettext warnings\n\
+;\n\
+; Clause types\n\
+;\n\
+; Clause types that are not listed here, are not enabled at all.\n\
+;\n\
+; type                   = Type of the clause, one of \"Advance\", \"Gold\", \"Map\", \"Seamap\",\n\
+;                          \"City\", \"Ceasefire\", \"Peace\", \"Alliance\", \"Vision\", \"Embassy\"\n\
+;\n\
+; */ <-- avoid gettext warnings\n\
 "

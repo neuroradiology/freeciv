@@ -176,11 +176,46 @@ bool rscompat_names(struct rscompat_info *info)
 }
 
 /**********************************************************************//**
+  Handle a universal being separated from an original universal.
+
+  A universal may be split into two new universals. An effect may mention
+  the universal that now has been split in its requirement list. In that
+  case two effect - one for the original and one for the universal being
+  separated from it - are needed.
+
+  Check if the original universal is mentioned in the requirement list of
+  peffect. Handle creating one effect for the original and one for the
+  universal that has been separated out if it is.
+**************************************************************************/
+static bool effect_handle_split_universal(struct effect *peffect,
+                                          struct universal original,
+                                          struct universal separated)
+{
+  if (universal_is_mentioned_by_requirements(&peffect->reqs, &original)) {
+    /* Copy the old effect. */
+    effect_copy(peffect);
+
+    /* Replace the original requirement with the separated requirement. */
+    return universal_replace_in_req_vec(&peffect->reqs,
+                                        &original, &separated);
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Adjust effects
 **************************************************************************/
 static bool effect_list_compat_cb(struct effect *peffect, void *data)
 {
-  /* struct rscompat_info *info = (struct rscompat_info *)data; */
+  struct rscompat_info *info = (struct rscompat_info *)data;
+
+  if (info->ver_effects < 20) {
+    /* Attack has been split in regular "Attack" and "Suicide Attack". */
+    effect_handle_split_universal(peffect,
+        universal_by_number(VUT_ACTION, ACTION_ATTACK),
+        universal_by_number(VUT_ACTION, ACTION_SUICIDE_ATTACK));
+  }
 
   /* Go to the next effect. */
   return TRUE;
@@ -189,7 +224,7 @@ static bool effect_list_compat_cb(struct effect *peffect, void *data)
 /**********************************************************************//**
   Turn old effect to an action enabler.
 **************************************************************************/
-static void effect_to_enabler(enum gen_action action, struct section_file *file,
+static void effect_to_enabler(action_id action, struct section_file *file,
                               const char *sec_name, struct rscompat_info *compat,
                               const char *type)
 {
@@ -255,6 +290,14 @@ bool rscompat_old_effect_3_1(const char *type, struct section_file *file,
       effect_to_enabler(ACTION_MINE_TF, file, sec_name, compat, type);
       return TRUE;
     }
+    if (!fc_strcasecmp(type, "Mining_Possible")) {
+      effect_to_enabler(ACTION_MINE, file, sec_name, compat, type);
+      return TRUE;
+    }
+    if (!fc_strcasecmp(type, "Irrig_Possible")) {
+      effect_to_enabler(ACTION_IRRIGATE, file, sec_name, compat, type);
+      return TRUE;
+    }
   }
 
   return FALSE;
@@ -316,6 +359,55 @@ void rscompat_postprocess(struct rscompat_info *info)
     enabler = action_enabler_new();
     enabler->action = ACTION_CONVERT;
     action_enabler_add(enabler);
+
+    enabler = action_enabler_new();
+    enabler->action = ACTION_BASE;
+    e_req = req_from_values(VUT_UTFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
+                            UTYF_SETTLERS);
+    requirement_vector_append(&enabler->actor_reqs, e_req);
+    action_enabler_add(enabler);
+
+    /* Update action enablers. */
+    action_enablers_iterate(ae) {
+      if (action_enabler_obligatory_reqs_missing(ae)) {
+        /* Add previously implicit obligatory hard requirement(s). */
+        action_enabler_obligatory_reqs_add(ae);
+      }
+
+      /* "Attack" is split in a unit consuming and a non unit consuming
+       * version. */
+      if (ae->action == ACTION_ATTACK) {
+        /* The old rule is represented with two action enablers. */
+        enabler = action_enabler_copy(ae);
+
+        /* One allows regular attacks. */
+        requirement_vector_append(&ae->actor_reqs,
+                                  req_from_str("UnitClassFlag", "Local",
+                                               FALSE, FALSE, TRUE,
+                                               "Missile"));
+
+        /* The other allows suicide attacks. */
+        enabler->action = ACTION_SUICIDE_ATTACK;
+        requirement_vector_append(&enabler->actor_reqs,
+                                  req_from_str("UnitClassFlag", "Local",
+                                               FALSE, TRUE, TRUE,
+                                               "Missile"));
+
+        /* Add after the action was changed. */
+        action_enabler_add(enabler);
+      }
+    } action_enablers_iterate_end;
+
+    /* Enable all clause types */
+    {
+      int i;
+
+      for (i = 0; i < CLAUSE_COUNT; i++) {
+        struct clause_info *cinfo = clause_info_get(i);
+
+        cinfo->enabled = TRUE;
+      }
+    }
   }
 
   /* The ruleset may need adjustments it didn't need before compatibility

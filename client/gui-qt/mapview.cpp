@@ -84,47 +84,50 @@ void draw_calculated_trade_routes(QPainter *painter)
   struct color *pcolor;
   QPen pen;
 
-  if (!gui_options.draw_city_trade_routes || !can_client_control()
+  if (!can_client_control()
       || gui()->trade_gen.cities.empty()) {
     return;
   }
   pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_NO_BUILT);
   /* Draw calculated trade routes */
-  foreach (qgilles, gui()->trade_gen.lines) {
-    base_map_distance_vector(&dx, &dy, TILE_XY(qgilles.t1),
-                             TILE_XY(qgilles.t2));
-    map_to_gui_vector(tileset, 1.0, &w, &h, dx, dy);
+  if (gui_options.draw_city_trade_routes) {
 
-    tile_to_canvas_pos(&x1, &y1, qgilles.t1);
-    tile_to_canvas_pos(&x2, &y2, qgilles.t2);
+    foreach (qgilles, gui()->trade_gen.lines) {
+      base_map_distance_vector(&dx, &dy, TILE_XY(qgilles.t1),
+                               TILE_XY(qgilles.t2));
+      map_to_gui_vector(tileset, 1.0, &w, &h, dx, dy);
 
-    /* Dont draw if route was already established */
-    if (tile_city(qgilles.t1) && tile_city(qgilles.t2)
-        && have_cities_trade_route(tile_city(qgilles.t1),
-                                   tile_city(qgilles.t2))) {
+      tile_to_canvas_pos(&x1, &y1, qgilles.t1);
+      tile_to_canvas_pos(&x2, &y2, qgilles.t2);
+
+      /* Dont draw if route was already established */
+      if (tile_city(qgilles.t1) && tile_city(qgilles.t2)
+          && have_cities_trade_route(tile_city(qgilles.t1),
+                                     tile_city(qgilles.t2))) {
         continue;
-    }
+      }
 
-    if (qgilles.autocaravan != nullptr) {
-      pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_SOME_BUILT);
-    }
+      if (qgilles.autocaravan != nullptr) {
+        pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_SOME_BUILT);
+      }
 
-    pen.setColor(pcolor->qcolor);
-    pen.setStyle(Qt::DashLine);
-    pen.setDashOffset(4);
-    pen.setWidth(1);
-    painter->setPen(pen);
-    if (x2 - x1 == w && y2 - y1 == h) {
-      painter->drawLine(x1 + tileset_tile_width(tileset) / 2,
-                        y1 + tileset_tile_height(tileset) / 2,
-                        x1 + tileset_tile_width(tileset) / 2 + w,
-                        y1 + tileset_tile_height(tileset) / 2 + h);
-      continue;
+      pen.setColor(pcolor->qcolor);
+      pen.setStyle(Qt::DashLine);
+      pen.setDashOffset(4);
+      pen.setWidth(1);
+      painter->setPen(pen);
+      if (x2 - x1 == w && y2 - y1 == h) {
+        painter->drawLine(x1 + tileset_tile_width(tileset) / 2,
+                          y1 + tileset_tile_height(tileset) / 2,
+                          x1 + tileset_tile_width(tileset) / 2 + w,
+                          y1 + tileset_tile_height(tileset) / 2 + h);
+        continue;
+      }
+      painter->drawLine(x2 + tileset_tile_width(tileset) / 2,
+                        y2 + tileset_tile_height(tileset) / 2,
+                        x2 + tileset_tile_width(tileset) / 2 - w,
+                        y2 + tileset_tile_height(tileset) / 2 - h);
     }
-    painter->drawLine(x2 + tileset_tile_width(tileset) / 2,
-                      y2 + tileset_tile_height(tileset) / 2,
-                      x2 + tileset_tile_width(tileset) / 2 - w,
-                      y2 + tileset_tile_height(tileset) / 2 - h);
   }
   /* Draw virtual cities */
   foreach (pcity, gui()->trade_gen.virtual_cities) {
@@ -145,6 +148,19 @@ mr_idle::mr_idle()
 {
   connect(&timer, &QTimer::timeout, this, &mr_idle::idling);
   timer.start(5);
+}
+
+/**********************************************************************//**
+  Destructor for idle callbacks
+**************************************************************************/
+mr_idle::~mr_idle()
+{
+  call_me_back* cb;
+
+  while (!callback_list.isEmpty()) {
+    cb = callback_list.dequeue();
+    delete cb;
+  }
 }
 
 /**********************************************************************//**
@@ -364,9 +380,13 @@ void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth,
 **************************************************************************/
 move_widget::move_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::SizeAllCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("move"));
+  pix = fc_icons::instance()->get_pixmap("move");
+  setPixmap(*pix);
+  delete pix;
   setFixedSize(16, 16);
 }
 
@@ -404,9 +424,13 @@ void move_widget::mousePressEvent(QMouseEvent* event)
 **************************************************************************/
 resize_widget::resize_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::SizeFDiagCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("resize"));
+  pix = fc_icons::instance()->get_pixmap("resize");
+  setPixmap(*pix);
+  delete pix;
 }
 
 /**********************************************************************//**
@@ -457,9 +481,13 @@ void resize_widget::mousePressEvent(QMouseEvent* event)
 **************************************************************************/
 close_widget::close_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::ArrowCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("close"));
+  pix = fc_icons::instance()->get_pixmap("close");
+  setPixmap(*pix);
+  delete pix;
 }
 
 /**********************************************************************//**
@@ -1027,6 +1055,9 @@ void fc_client::update_info_label(void)
 **************************************************************************/
 void update_unit_info_label(struct unit_list *punitlist)
 {
+  if (gui()->unitinfo_wdg->isVisible()) {
+    gui()->unitinfo_wdg->update_actions(nullptr);
+  }
 }
 
 /**********************************************************************//**

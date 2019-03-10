@@ -138,7 +138,7 @@ static int dai_evaluate_tile_for_air_attack(struct unit *punit,
   /* Ok, we can attack, but is it worth it? */
 
   /* Cost of our unit */
-  unit_cost = unit_build_shield_cost(punit);
+  unit_cost = unit_build_shield_cost_base(punit);
   /* This is to say "wait, ill unit will get better!" */
   unit_cost = unit_cost * unit_type_get(punit)->hp / punit->hp; 
 
@@ -149,8 +149,10 @@ static int dai_evaluate_tile_for_air_attack(struct unit *punit,
   }
 
   /* Missile would die 100% so we adjust the victim_cost -- GB */
-  if (uclass_has_flag(unit_class_get(punit), UCF_MISSILE)) {
-    victim_cost -= unit_build_shield_cost(punit);
+  if (utype_can_do_action(unit_type_get(punit), ACTION_SUICIDE_ATTACK)) {
+    /* Assume that the attack will be a suicide attack even if a regular
+     * attack may be legal. */
+    victim_cost -= unit_build_shield_cost_base(punit);
   }
 
   unit_attack = (int) (PROB_MULTIPLIER
@@ -465,7 +467,8 @@ bool dai_choose_attacker_air(struct ai_type *ait, struct player *pplayer,
     }
 
     /* Temporary hack because pathfinding can't handle Fighters. */
-    if (!uclass_has_flag(pclass, UCF_MISSILE) && 1 == utype_fuel(punittype)) {
+    if (!utype_can_do_action(punittype, ACTION_SUICIDE_ATTACK)
+        && 1 == utype_fuel(punittype)) {
       continue;
     }
 

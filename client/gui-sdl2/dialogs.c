@@ -1232,7 +1232,7 @@ void unit_select_dialog_popup(struct tile *ptile)
 /**********************************************************************//**
   Update the dialog window to select units on a particular tile.
 **************************************************************************/
-void unit_select_dialog_update_real(void)
+void unit_select_dialog_update_real(void *unused)
 {
   /* PORTME */
 }
@@ -3755,7 +3755,7 @@ bool handmade_scenario_warning(void)
 /**********************************************************************//**
   Update multipliers (policies) dialog.
 **************************************************************************/
-void real_multipliers_dialog_update(void)
+void real_multipliers_dialog_update(void *unused)
 {
   /* PORTME */
 } 
@@ -3776,4 +3776,16 @@ void popup_combat_info(int attacker_unit_id, int defender_unit_id,
                        int attacker_hp, int defender_hp,
                        bool make_att_veteran, bool make_def_veteran)
 {
+}
+
+/**********************************************************************//**
+  Popup dialog showing given image and text,
+  start playing given sound, stop playing sound when popup is closed.
+  Take all space available to show image if fullsize is set.
+  If there are other the same popups show them in queue.
+***************************************************************************/
+void show_img_play_snd(const char *img_path, const char *snd_path,
+                       const char *desc, bool fullsize)
+{
+  /* PORTME */
 }

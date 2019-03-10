@@ -55,7 +55,7 @@ void improvements_init(void)
     p->item_number = i;
     requirement_vector_init(&p->reqs);
     requirement_vector_init(&p->obsolete_by);
-    p->disabled = FALSE;
+    p->ruledit_disabled = FALSE;
   }
 }
 
@@ -246,9 +246,11 @@ const char *improvement_rule_name(const struct impr_type *pimprove)
 /**********************************************************************//**
   Returns the number of shields it takes to build this improvement.
 **************************************************************************/
-int impr_build_shield_cost(const struct impr_type *pimprove)
+int impr_build_shield_cost(const struct city *pcity,
+                           const struct impr_type *pimprove)
 {
-  int base = pimprove->build_cost;
+  int base = pimprove->build_cost
+    * (100 + get_building_bonus(pcity, pimprove, EFT_IMPR_BUILD_COST_PCT)) / 100;
 
   return MAX(base * game.info.shieldbox / 100, 1);
 }
@@ -256,10 +258,11 @@ int impr_build_shield_cost(const struct impr_type *pimprove)
 /**********************************************************************//**
   Returns the amount of gold it takes to rush this improvement.
 **************************************************************************/
-int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
+int impr_buy_gold_cost(const struct city *pcity,
+                       const struct impr_type *pimprove, int shields_in_stock)
 {
   int cost = 0;
-  const int missing = impr_build_shield_cost(pimprove) - shields_in_stock;
+  const int missing = impr_build_shield_cost(pcity, pimprove) - shields_in_stock;
 
   if (improvement_has_flag(pimprove, IF_GOLD)) {
     /* Can't buy capitalization. */
@@ -270,12 +273,13 @@ int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
     cost = 2 * missing;
   }
 
-  if (is_great_wonder(pimprove)) {
-    cost *= 2;
-  }
   if (shields_in_stock == 0) {
     cost *= 2;
   }
+
+  cost = cost
+    * (100 + get_building_bonus(pcity, pimprove, EFT_IMPR_BUY_COST_PCT)) / 100;
+
   return cost;
 }
 
@@ -284,7 +288,7 @@ int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
 **************************************************************************/
 int impr_sell_gold(const struct impr_type *pimprove)
 {
-  return impr_build_shield_cost(pimprove);
+  return MAX(pimprove->build_cost * game.info.shieldbox / 100, 1);
 }
 
 /**********************************************************************//**

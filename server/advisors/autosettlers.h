@@ -59,24 +59,30 @@ bool adv_settler_safe_tile(const struct player *pplayer, struct unit *punit,
 
 adv_want adv_settlers_road_bonus(struct tile *ptile, struct road_type *proad);
 
-extern Activity_type_id as_activities_transform[ACTIVITY_LAST];
+bool auto_settlers_speculate_can_act_at(const struct unit *punit,
+                                        enum unit_activity activity,
+                                        bool omniscient_cheat,
+                                        struct extra_type *target,
+                                        const struct tile *ptile);
 
-#define as_transform_activity_iterate(_act_)                                \
-{                                                                           \
-  activity_type_list_iterate(as_activities_transform, _act_)
+extern action_id as_actions_transform[MAX_NUM_ACTIONS];
 
-#define as_transform_activity_iterate_end                                   \
-  activity_type_list_iterate_end                                            \
+#define as_transform_action_iterate(_act_)                                \
+{                                                                         \
+  action_list_iterate(as_actions_transform, _act_)
+
+#define as_transform_action_iterate_end                                   \
+  action_list_iterate_end                                                 \
 }
 
-extern Activity_type_id as_activities_extra[ACTIVITY_LAST];
+extern action_id as_actions_extra[MAX_NUM_ACTIONS];
 
-#define as_extra_activity_iterate(_act_)                                    \
-{                                                                           \
-  activity_type_list_iterate(as_activities_extra, _act_)
+#define as_extra_action_iterate(_act_)                                    \
+{                                                                         \
+  action_list_iterate(as_actions_extra, _act_)
 
-#define as_extra_activity_iterate_end                                       \
-  activity_type_list_iterate_end                                            \
+#define as_extra_action_iterate_end                                       \
+  action_list_iterate_end                                                 \
 }
 
 extern Activity_type_id as_activities_rmextra[ACTIVITY_LAST];

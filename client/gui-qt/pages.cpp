@@ -174,7 +174,7 @@ void fc_client::create_main_page(void)
                      main_graphics.height() - fm.descent() - fm.height(),
                      msgbuf);
 
-    strncpy(msgbuf, _("Qt client"), sizeof(msgbuf));
+    strncpy(msgbuf, _("Qt client"), sizeof(msgbuf) - 1);
   }
 
   painter.drawText(main_graphics.width()-fm.width(msgbuf)-10,
@@ -892,6 +892,8 @@ void fc_client::update_server_list(enum server_scan_type sstype,
   row = 0;
   server_list_iterate(list, pserver) {
     char buf[20];
+    int tmp;
+    QString tstring;
 
     if (old_row_count <= row) {
       sel->insertRow(row);
@@ -900,14 +902,15 @@ void fc_client::update_server_list(enum server_scan_type sstype,
     if (pserver->humans >= 0) {
       fc_snprintf(buf, sizeof(buf), "%d", pserver->humans);
     } else {
-      strncpy(buf, _("Unknown"), sizeof(buf));
+      strncpy(buf, _("Unknown"), sizeof(buf) - 1);
     }
 
-    int tmp = pserver->port;
-    QString tstring = QString::number(tmp);
+    tmp = pserver->port;
+    tstring = QString::number(tmp);
 
     for (int col = 0; col < 6; col++) {
       QTableWidgetItem *item;
+
       item = new QTableWidgetItem();
 
       switch (col) {
@@ -1635,7 +1638,6 @@ void fc_client::update_start_page()
   players_iterate(pplayer) {
     host = "";
     if (!player_has_flag(pplayer, PLRF_SCENARIO_RESERVED)) {
-      item = new QTreeWidgetItem();
       conn_id = -1;
       conn_list_iterate(pplayer->connections, pconn) {
         if (pconn->playing == pplayer && !pconn->observer) {
@@ -1672,6 +1674,7 @@ void fc_client::update_start_page()
         team = "";
       }
 
+      item = new QTreeWidgetItem();
       for (int col = 0; col < 8; col++) {
         switch (col) {
         case 0:
@@ -1885,6 +1888,7 @@ void fc_client::update_buttons()
   pr_options->setEnabled(sensitive);
 
   gui()->pr_options->update_buttons();
+  gui()->pr_options->update_ai_level();
 }
 
 /**********************************************************************//**
@@ -2059,8 +2063,7 @@ void fc_client::reload_sidebar_icons()
   sw_science->set_pixmap(fc_icons::instance()->get_pixmap("research"));
   sw_economy->set_pixmap(fc_icons::instance()->get_pixmap("economy"));
   sw_endturn->set_pixmap(fc_icons::instance()->get_pixmap("endturn"));
-  sidebar_wdg->resize_me(game_tab_widget->width(),
-                         game_tab_widget->height(), true);
+  sidebar_wdg->resize_me(game_tab_widget->height(), true);
 }
 
 /**********************************************************************//**

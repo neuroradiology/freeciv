@@ -439,6 +439,8 @@ bool tile_is_seen(const struct tile *target_tile,
 
 /************************************************************************//**
   Time to complete the given activity on the given tile.
+
+  See also action_get_act_time()
 ****************************************************************************/
 int tile_activity_time(enum unit_activity activity, const struct tile *ptile,
                        struct extra_type *tgt)
@@ -998,7 +1000,7 @@ struct tile *tile_virtual_new(const struct tile *ptile)
   vtile = fc_calloc(1, sizeof(*vtile));
 
   /* initialise some values */
-  vtile->index = -1;
+  vtile->index = TILE_INDEX_NONE;
   vtile->continent = -1;
 
   BV_CLR_ALL(vtile->extras);

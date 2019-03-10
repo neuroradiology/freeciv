@@ -55,7 +55,7 @@ fc_icons* fc_icons::m_instance = 0;
 fc_font* fc_font::m_instance = 0;
 extern "C" {
   bool get_turn_done_button_state();
-  void real_science_report_dialog_update(void);
+  void real_science_report_dialog_update(void*);
 }
 extern void write_shortcuts();
 
@@ -121,6 +121,7 @@ fc_client::fc_client() : QMainWindow()
   battlelog_wdg = nullptr;
   interface_locked = false;
   map_scale = 1.0f;
+  map_font_scale = true;
   for (int i = 0; i <= PAGE_GAME; i++) {
     pages_layout[i] = NULL;
     pages[i] = NULL;
@@ -153,7 +154,7 @@ void fc_client::init()
   status_bar->addWidget(status_bar_label, 1);
   set_status_bar(_("Welcome to Freeciv"));
   create_cursors();
-  switch_page_mapper = new QSignalMapper;
+  switch_page_mapper = new QSignalMapper(this);
   // PAGE_MAIN
   pages[PAGE_MAIN] = new QWidget(central_wdg);
   page = PAGE_MAIN;
@@ -218,6 +219,7 @@ void fc_client::init()
   game_tab_widget->init();
   chat_listener::listen();
 
+  QPixmapCache::setCacheLimit(80000);
 }
 
 /************************************************************************//**
@@ -226,6 +228,10 @@ void fc_client::init()
 fc_client::~fc_client()
 {
   status_bar_queue.clear();
+  if (fc_shortcuts::sc()) {
+    delete fc_shortcuts::sc();
+  }
+  delete_cursors();
 }
 
 
@@ -370,7 +376,7 @@ void fc_client::switch_page(int new_pg)
     minimapview_wdg->reset();
     overview_size_changed();
     update_sidebar_tooltips();
-    real_science_report_dialog_update();
+    real_science_report_dialog_update(nullptr);
     show_new_turn_info();
     break;
   case PAGE_SCENARIO:
@@ -526,6 +532,21 @@ void fc_client::slot_pregame_start()
   }
 }
 
+/****************************************************************************
+  Deletes cursors
+****************************************************************************/
+void fc_client::delete_cursors(void)
+{
+  int frame;
+  int cursor;
+
+  for (cursor = 0; cursor < CURSOR_LAST; cursor++) {
+    for (frame = 0; frame < NUM_CURSOR_FRAMES; frame++) {
+      delete fc_cursors[cursor][frame];
+    }
+  }
+}
+
 
 /************************************************************************//**
   Finds not used index on game_view_tab and returns it
@@ -639,6 +660,11 @@ void fc_client::read_settings()
   } else {
     qt_settings.minimap_height = 0.2;
   }
+  if (s.contains("battlelog_scale")) {
+    qt_settings.battlelog_scale = s.value("battlelog_scale").toFloat();
+  } else {
+    qt_settings.battlelog_scale = 1;
+  }
 
   if (s.contains("City-dialog")) {
     qt_settings.city_geometry = s.value("City-dialog").toByteArray();
@@ -651,6 +677,12 @@ void fc_client::read_settings()
   }
   if (s.contains("splitter3")) {
     qt_settings.city_splitter3 = s.value("splitter3").toByteArray();
+  }
+  if (s.contains("help-dialog")) {
+    qt_settings.help_geometry = s.value("help-dialog").toByteArray();
+  }
+  if (s.contains("help_splitter1")) {
+    qt_settings.help_splitter1 = s.value("help_splitter1").toByteArray();
   }
   if (s.contains("new_turn_text")) {
     qt_settings.show_new_turn_text = s.value("new_turn_text").toBool();
@@ -693,6 +725,9 @@ void fc_client::read_settings()
   if (qt_settings.battlelog_y < 0.0) {
     qt_settings.battlelog_y = 0.0;
   }
+  if (qt_settings.battlelog_scale > 5.0) {
+    qt_settings.battlelog_y = 5.0;
+  }
   if (qt_settings.minimap_x < 0 || qt_settings.minimap_x > 1) {
     qt_settings.chat_fx_pos = 0.84;
   }
@@ -717,12 +752,15 @@ void fc_client::write_settings()
   s.setValue("splitter1", qt_settings.city_splitter1);
   s.setValue("splitter2", qt_settings.city_splitter2);
   s.setValue("splitter3", qt_settings.city_splitter3);
+  s.setValue("help-dialog", qt_settings.help_geometry);
+  s.setValue("help_splitter1", qt_settings.help_splitter1);
   s.setValue("unit_fx", qt_settings.unit_info_pos_fx);
   s.setValue("unit_fy", qt_settings.unit_info_pos_fy);
   s.setValue("minimap_x", qt_settings.minimap_x);
   s.setValue("minimap_y", qt_settings.minimap_y);
   s.setValue("minimap_width", qt_settings.minimap_width);
   s.setValue("minimap_height", qt_settings.minimap_height);
+  s.setValue("battlelog_scale", qt_settings.battlelog_scale);
   s.setValue("battlelog_x", qt_settings.battlelog_x);
   s.setValue("battlelog_y", qt_settings.battlelog_y);
   s.setValue("new_turn_text", qt_settings.show_new_turn_text);
@@ -950,6 +988,9 @@ QPixmap* fc_icons::get_pixmap(const QString &id)
   QString str;
 
   pm = new QPixmap;
+  if (QPixmapCache::find(id, pm)) {
+    return pm;
+  }
   str = QString("themes") + DIR_SEPARATOR + "gui-qt" + DIR_SEPARATOR;
   status = pm->load(fileinfoname(get_data_dirs(),
                                  QString(str + current_theme
@@ -961,6 +1002,7 @@ QPixmap* fc_icons::get_pixmap(const QString &id)
     pm->load(fileinfoname(get_data_dirs(), QString(str
                           + id + ".png").toLocal8Bit().data()));
   }
+  QPixmapCache::insert(id, *pm);
   return pm;
 }
 
@@ -985,7 +1027,7 @@ void fc_game_tab_widget::resizeEvent(QResizeEvent *event)
   QSize size;
   size = event->size();
   if (C_S_RUNNING <= client_state()) {
-    gui()->sidebar_wdg->resize_me(size.width(), size.height());
+    gui()->sidebar_wdg->resize_me(size.height());
     map_canvas_resized(size.width(), size.height());
     gui()->infotab->resize(qRound((size.width()
                              * gui()->qt_settings.chat_fwidth)),
@@ -1004,6 +1046,7 @@ void fc_game_tab_widget::resizeEvent(QResizeEvent *event)
                                    * mapview.width),
                                    qRound(gui()->qt_settings.minimap_height
                                    * mapview.height));
+    gui()->battlelog_wdg->set_scale(gui()->qt_settings.battlelog_scale);
     gui()->battlelog_wdg->move(qRound(gui()->qt_settings.battlelog_x
                                * mapview.width),
                                qRound(gui()->qt_settings.battlelog_y
@@ -1170,6 +1213,22 @@ void pregame_options::update_buttons()
 }
 
 /************************************************************************//**
+  Updates the AI skill level control
+****************************************************************************/
+void pregame_options::update_ai_level()
+{
+  enum ai_level level = server_ai_level();
+
+  if (ai_level_is_valid(level)) {
+    int i = ailevel->findData(level);
+
+    ailevel->setCurrentIndex(i);
+  } else {
+    ailevel->setCurrentIndex(-1);
+  }
+}
+
+/************************************************************************//**
   Slot for changing aifill value
 ****************************************************************************/
 void pregame_options::max_players_change(int i)
@@ -1182,12 +1241,18 @@ void pregame_options::max_players_change(int i)
 ****************************************************************************/
 void pregame_options::ailevel_change(int i)
 {
-  int k;
-  const char *name;
+  QVariant v = ailevel->currentData();
 
-  k = ailevel->currentData().toInt();
-  name = ai_level_cmd(static_cast<ai_level>(k));
-  send_chat_printf("/%s", name);
+  if (v.isValid()) {
+    enum ai_level k = static_cast<ai_level>(v.toInt());
+
+    /* Suppress changes provoked by server rather than local user */
+    if (server_ai_level() != k) {
+      const char *name = ai_level_cmd(k);
+
+      send_chat_printf("/%s", name);
+    }
+  }
 }
 
 /************************************************************************//**

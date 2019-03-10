@@ -118,7 +118,7 @@ int city_gold_worth(struct city *pcity)
   }
 
   if (u != NULL) {
-    worth += utype_buy_gold_cost(u, 0); /* cost of settler */
+    worth += utype_buy_gold_cost(pcity, u, 0); /* cost of settler */
   }
   for (i = 1; i < city_size_get(pcity); i++) {
     worth += city_granary_size(i); /* cost of growing city */
@@ -133,7 +133,7 @@ int city_gold_worth(struct city *pcity)
       if (punittype && can_city_build_unit_direct(pcity, punittype)) {
         worth += unit_disband_shields(punit); /* obsolete, candidate for disbanding */
       } else {
-        worth += unit_build_shield_cost(punit); /* good stuff */
+        worth += unit_build_shield_cost(pcity, punit); /* good stuff */
       }
     }
   } unit_list_iterate_end;
@@ -141,9 +141,10 @@ int city_gold_worth(struct city *pcity)
     if (improvement_obsolete(pplayer, pimprove, pcity)) {
       worth += impr_sell_gold(pimprove); /* obsolete, candidate for selling */
     } else if (!is_wonder(pimprove)) {
-      worth += impr_build_shield_cost(pimprove) * 2; /* Buy cost, with nonzero shield amount */
+      /* Buy cost, with nonzero shield amount */
+      worth += impr_build_shield_cost(pcity, pimprove) * 2;
     } else {
-      worth += impr_build_shield_cost(pimprove) * 4;
+      worth += impr_build_shield_cost(pcity, pimprove) * 4;
     }
   } city_built_iterate_end;
   if (city_unhappy(pcity)) {

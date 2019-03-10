@@ -11,7 +11,7 @@
 
 WINBUILD_VERSION="2.3.2"
 MIN_WINVER=0x0601 # Windows 7
-CROSSER_FEATURE_LEVEL=1.5
+CROSSER_FEATURE_LEVEL=1.6
 
 if test "x$1" = x || test "x$1" = "x-h" || test "x$1" = "x--help" ; then
   echo "Usage: $0 <crosser dir> [gui]"
@@ -35,10 +35,11 @@ if ! test -f "$DLLSPATH/crosser.txt" ; then
   exit 1
 fi
 
-if test -d ../../.git || test -f ../../.git ; then
-  VERREV="$(../../fc_version)-$(cd ../.. && git rev-parse --short HEAD)"
-else
-  VERREV="$(../../fc_version)"
+VERREV="$(../../fc_version)"
+if test "x$INST_CROSS_MODE" != "xrelease" ; then
+  if test -d ../../.git || test -f ../../.git ; then
+    VERREV="$VERREV-$(cd ../.. && git rev-parse --short HEAD)"
+  fi
 fi
 
 FLVL=$(grep "FeatureLevel=" $DLLSPATH/crosser.txt | sed -e 's/FeatureLevel="//' -e 's/"//')
@@ -48,11 +49,18 @@ if test "x$FLVL" != "x$CROSSER_FEATURE_LEVEL" ; then
   exit 1
 fi
 
+CSET=$(grep "Set=" $DLLSPATH/crosser.txt | sed -e 's/Set="//' -e 's/"//')
+
+if test "x$CSET" != "xcurrent" ; then
+  echo "Crosser set is \"$CSET\", only \"current\" is supported!"
+  exit 1
+fi
+
 SETUP=$(grep "Setup=" $DLLSPATH/crosser.txt | sed -e 's/Setup="//' -e 's/"//')
 
 if test "x$2" = "xruledit" ; then
   SINGLE_GUI=true
-  GUIP="-ruledit"  
+  GUIP="-ruledit"
   RULEDIT="yes"
   CLIENTS="no"
   FCMP="no"
@@ -72,6 +80,7 @@ elif test "x$2" != "x" ; then
     gtk3) FCMP="gtk3" ;;
     sdl2) FCMP="gtk3" ;;
     gtk3.22) FCMP="gtk3" ;;
+    gtk3x) FCMP="gtk3" ;;
     qt) FCMP="qt" ;;
     *) echo "Unknown gui \"$2\"!" >&2
        exit 1 ;;
@@ -82,8 +91,12 @@ else
   RULEDIT="yes"
 fi
 
-if ! mkdir -p build-$SETUP$GUIP ; then
-  echo "Can't create build directory \"build-$SETUP$GUIP\"!" >&2
+if test "x$NAMEP" = "x" ; then
+  NAMEP="$GUIP"
+fi
+
+if ! mkdir -p build-${SETUP}${NAMEP} ; then
+  echo "Can't create build directory \"build-${SETUP}${NAMEP}\"!" >&2
   exit 1
 fi
 
@@ -125,12 +138,18 @@ if ! ../../autogen.sh --no-configure-run ; then
   exit 1
 fi
 
-INSTALL_DIR="$(pwd)/freeciv-${VERREV}${GUIP}"
+INSTALL_DIR="$(pwd)/freeciv-${VERREV}${NAMEP}"
 
 if ! (
-cd build-$SETUP$GUIP
+cd build-${SETUP}${NAMEP}
 
-if ! ../../../configure FREECIV_LABEL_FORCE="<base>-crs" CPPFLAGS="-I${DLLSPATH}/include -D_WIN32_WINNT=${MIN_WINVER}" CFLAGS="-Wno-error" PKG_CONFIG_LIBDIR="${DLLSPATH}/lib/pkgconfig" --enable-sys-tolua-cmd --with-magickwand="${DLLSPATH}/bin" --prefix="/" --enable-client=$CLIENTS --enable-fcmp=$FCMP --enable-debug --host=$TARGET --build=$(../../../bootstrap/config.guess) --with-libiconv-prefix=${DLLSPATH} --with-sqlite3-prefix=${DLLSPATH} --with-followtag="crosser" --enable-crosser ${AIS} --disable-freeciv-manual --enable-sdl-mixer=sdl2 --with-qt5-includes=${DLLSPATH}/include --with-qt5-libs=${DLLSPATH}/lib --with-tinycthread --enable-server=$SERVER --enable-ruledit=$RULEDIT
+if test "x$INST_CROSS_MODE" = "xsnapshot" ; then
+  GITREVP="--enable-gitrev"
+else
+  GITREVP=""
+fi
+
+if ! ../../../configure FREECIV_LABEL_FORCE="<base>-crs" CPPFLAGS="-I${DLLSPATH}/include -D_WIN32_WINNT=${MIN_WINVER}" CFLAGS="-Wno-error" PKG_CONFIG_LIBDIR="${DLLSPATH}/lib/pkgconfig" --enable-sys-tolua-cmd --with-magickwand="${DLLSPATH}/bin" --prefix="/" $GITREVP --enable-client=$CLIENTS --enable-fcmp=$FCMP --enable-debug --host=$TARGET --build=$(../../../bootstrap/config.guess) --with-libiconv-prefix=${DLLSPATH} --with-sqlite3-prefix=${DLLSPATH} --with-followtag="crosser" --enable-crosser ${AIS} --disable-freeciv-manual --enable-sdl-mixer=sdl2 --with-qt5-includes=${DLLSPATH}/include --with-qt5-libs=${DLLSPATH}/lib --with-tinycthread --enable-server=$SERVER --enable-ruledit=$RULEDIT $EXTRA_CONFIG
 then
   echo "Configure failed" >&2
   exit 1
@@ -165,7 +184,7 @@ if ! mkdir -p Output ; then
   exit 1
 fi
 
-if ! 7z a -r Output/freeciv-${VERREV}${GUIP}.7z freeciv-${VERREV}${GUIP}
+if ! 7z a -r Output/freeciv-${VERREV}${NAMEP}.7z freeciv-${VERREV}${NAMEP}
 then
   echo "7z failed" >&2
   exit 1

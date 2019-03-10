@@ -207,7 +207,9 @@ void tab_enabler::add_now()
   // Try to add completely new enabler
   new_enabler = action_enabler_new();
 
-  new_enabler->action = (enum gen_action)(NUM_ACTIONS - 1);
+  fc_assert_ret(NUM_ACTIONS > 0);
+  fc_assert_ret(action_id_exists(NUM_ACTIONS - 1));
+  new_enabler->action = (NUM_ACTIONS - 1);
 
   action_enabler_add(new_enabler);
 
@@ -226,7 +228,7 @@ void tab_enabler::edit_type(QAction *action)
 
   if (selected != nullptr && paction != nullptr) {
     /* Store the old action so it can be changed back. */
-    const enum gen_action old_action = selected->action;
+    const action_id old_action = selected->action;
 
     /* Handle the new action's hard obligatory requirements. */
     selected->action = paction->id;

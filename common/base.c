@@ -72,29 +72,12 @@ bool is_base_flag_near_tile(const struct tile *ptile, enum base_flag_id flag)
 
 /************************************************************************//**
   Returns TRUE iff the given flag is retired.
-
-  If a base flag is retired without being replaced by an extra flag before
-  3.0 is released rscompat_req_type_name_3_0() must be updated.
 ****************************************************************************/
 bool base_flag_is_retired(enum base_flag_id flag)
 {
-  /* All base flags after BF_RETIRED_NO_STACK_DEATH are retired. */
-  return flag >= BF_RETIRED_NO_STACK_DEATH;
-}
-
-/************************************************************************//**
-  Is tile native to base?
-****************************************************************************/
-bool is_native_tile_to_base(const struct base_type *pbase,
-                            const struct tile *ptile)
-{
-  struct extra_type *pextra;
-
-  pextra = base_extra_get(pbase);
-
-  return are_reqs_active(NULL, NULL, NULL, NULL, ptile,
-                         NULL, NULL, NULL, NULL, NULL,
-                         &pextra->reqs, RPT_POSSIBLE);
+  /* No new flags retired in 3.1. Flags that were retired in 3.0 are already
+   * completely removed. */
+  return FALSE;
 }
 
 /************************************************************************//**

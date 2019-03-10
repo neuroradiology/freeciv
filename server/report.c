@@ -254,8 +254,9 @@ static void historian_generic(struct history_report *report,
 	break;
       case HISTORIAN_HAPPIEST: 
 	size[j].value =
-	    (((pplayer->score.happy - pplayer->score.unhappy) * 1000) /
-	     (1 + total_player_citizens(pplayer)));
+            (((pplayer->score.happy - pplayer->score.unhappy
+               - 2 * pplayer->score.angry) * 1000) /
+             (1 + total_player_citizens(pplayer)));
 	break;
       case HISTORIAN_LARGEST:
 	size[j].value = total_player_citizens(pplayer);
@@ -1524,7 +1525,8 @@ void make_history_report(void)
   game.server.scoreturn = (game.info.turn + GAME_DEFAULT_SCORETURN
                            + fc_rand(GAME_DEFAULT_SCORETURN));
 
-  historian_generic(&latest_history_report, game.server.scoreturn % HISTORIAN_LAST);
+  historian_generic(&latest_history_report, game.server.scoreturn
+                    % (HISTORIAN_LAST + 1));
   send_current_history_report(game.est_connections);
 }
 

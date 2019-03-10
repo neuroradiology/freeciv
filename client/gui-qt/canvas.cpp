@@ -356,7 +356,7 @@ QFont *get_font(client_font font)
   switch (font) {
   case FONT_CITY_NAME:
   qf = fc_font::instance()->get_font(fonts::city_names);
-    if (gui()->map_scale != 1.0f) {
+    if (gui()->map_scale != 1.0f && gui()->map_font_scale) {
      ssize = ceil(gui()->map_scale * fc_font::instance()->city_fontsize);
       if (qf->pointSize() != ssize) {
         qf->setPointSize(ssize);
@@ -365,7 +365,7 @@ QFont *get_font(client_font font)
     break;
   case FONT_CITY_PROD:
     qf = fc_font::instance()->get_font(fonts::city_productions);
-    if (gui()->map_scale != 1.0f) {
+    if (gui()->map_scale != 1.0f && gui()->map_font_scale) {
       ssize = ceil(gui()->map_scale * fc_font::instance()->prod_fontsize);
       if (qf->pointSize() != ssize) {
         qf->setPointSize(ssize);
@@ -423,6 +423,5 @@ QRect zealous_crop_rect(QImage &p)
       b = y;
     }
   }
-  return QRect(l, t, r - l, b - t);
+  return QRect(l, t, qMax(0, r - l + 1), qMax(0, b - t + 1));
 }
-

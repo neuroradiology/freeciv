@@ -89,7 +89,6 @@ tab_good::tab_good(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   good_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Good")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
@@ -116,7 +115,7 @@ void tab_good::refresh()
   good_list->clear();
 
   goods_type_iterate(pgood) {
-    if (!pgood->disabled) {
+    if (!pgood->ruledit_disabled) {
       QListWidgetItem *item =
         new QListWidgetItem(QString::fromUtf8(goods_rule_name(pgood)));
 
@@ -172,7 +171,7 @@ void tab_good::name_given()
 {
   if (selected != nullptr) {
     goods_type_iterate(pgood) {
-      if (pgood != selected && !pgood->disabled) {
+      if (pgood != selected && !pgood->ruledit_disabled) {
         if (!strcmp(goods_rule_name(pgood), rname->text().toUtf8().data())) {
           ui->display_msg(R__("A good with that rule name already exists!"));
           return;
@@ -204,7 +203,7 @@ void tab_good::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
 
     refresh();
     update_good_info(nullptr);
@@ -234,9 +233,9 @@ void tab_good::add_now()
 
   // Try to reuse freed good slot
   goods_type_iterate(pgood) {
-    if (pgood->disabled) {
+    if (pgood->ruledit_disabled) {
       if (initialize_new_good(pgood)) {
-        pgood->disabled = false;
+        pgood->ruledit_disabled = false;
         update_good_info(pgood);
         refresh();
       }

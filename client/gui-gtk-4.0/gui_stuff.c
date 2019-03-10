@@ -404,13 +404,24 @@ static gint gui_dialog_delete_tab_handler(struct gui_dialog* dlg)
 /**********************************************************************//**
   Allow the user to close a dialog using Escape or CTRL+W.
 **************************************************************************/
-static gboolean gui_dialog_key_press_handler(GtkWidget *w, GdkEventKey *ev,
+static gboolean gui_dialog_key_press_handler(GtkWidget *w, GdkEvent *ev,
                                              gpointer data)
 {
+  GdkEventType type;
   struct gui_dialog *dlg = data;
+  guint keyval;
+  GdkModifierType state;
 
-  if (ev->keyval == GDK_KEY_Escape
-      || ((ev->state & GDK_CONTROL_MASK) && ev->keyval == GDK_KEY_w)) {
+  type = gdk_event_get_event_type(ev);
+  if (type != GDK_KEY_PRESS) {
+    return FALSE;
+  }
+
+  gdk_event_get_keyval(ev, &keyval);
+  gdk_event_get_state(ev, &state);
+
+  if (keyval == GDK_KEY_Escape
+      || ((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_w)) {
     /* emit response signal. */
     gui_dialog_response(dlg, GTK_RESPONSE_DELETE_EVENT);
   }
@@ -483,17 +494,25 @@ static void gui_dialog_detach(struct gui_dialog* dlg)
 /**********************************************************************//**
   Someone has clicked on a label in a notebook
 **************************************************************************/
-static gboolean click_on_tab_callback(GtkWidget* w,
-                                      GdkEventButton* button,
+static gboolean click_on_tab_callback(GtkWidget *w,
+                                      GdkEvent *button,
                                       gpointer data)
 {
-  if (button->type != GDK_2BUTTON_PRESS) {
+  GdkEventType type;
+  guint button_number;
+
+  type = gdk_event_get_event_type(button);
+  if (type != GDK_BUTTON_PRESS) {
     return FALSE;
   }
-  if (button->button != 1) {
+
+  gdk_event_get_button(button, &button_number);
+
+  if (button_number != 1) {
     return FALSE;
   }
   gui_dialog_detach((struct gui_dialog*) data);
+
   return TRUE;
 }
 
@@ -580,16 +599,13 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       dlg->v.window = window;
       g_signal_connect(window, "delete_event",
         G_CALLBACK(gui_dialog_delete_handler), dlg);
-      
+
     }
     break;
   case GUI_DIALOG_TAB:
     {
-      GtkWidget *hbox, *label, *button, *event_box;
-      gint w, h;
+      GtkWidget *hbox, *label, *button;
       gchar *buf;
-
-      gtk_icon_size_lookup(GTK_ICON_SIZE_MENU, &w, &h);
 
       hbox = gtk_grid_new();
 
@@ -605,7 +621,7 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       button = gtk_button_new();
       gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
       g_signal_connect_swapped(button, "clicked",
-	  G_CALLBACK(gui_dialog_delete_tab_handler), dlg);
+                               G_CALLBACK(gui_dialog_delete_tab_handler), dlg);
 
       buf = g_strdup_printf(_("Close Tab:\n%s"), _("Ctrl+W"));
       gtk_widget_set_tooltip_text(button, buf);
@@ -617,14 +633,10 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
 
       gtk_widget_show(hbox);
 
-      event_box = gtk_event_box_new();
-      gtk_event_box_set_visible_window(GTK_EVENT_BOX(event_box), FALSE);
-      gtk_container_add(GTK_CONTAINER(event_box), hbox);
-
-      gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, event_box);
+      gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, hbox);
       dlg->v.tab.handler_id =
-	g_signal_connect(notebook, "switch-page",
-	    G_CALLBACK(gui_dialog_switch_page_handler), dlg);
+        g_signal_connect(notebook, "switch-page",
+                         G_CALLBACK(gui_dialog_switch_page_handler), dlg);
       dlg->v.tab.child = vbox;
 
       gtk_style_context_add_provider(gtk_widget_get_style_context(label),
@@ -632,9 +644,8 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
                                      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
       dlg->v.tab.label = label;
       dlg->v.tab.notebook = GTK_WIDGET(notebook);
-      
-      gtk_widget_add_events(event_box, GDK_BUTTON2_MOTION_MASK);
-      g_signal_connect(event_box, "button-press-event",
+
+      g_signal_connect(hbox, "button-press-event",
                        G_CALLBACK(click_on_tab_callback), dlg);
     }
     break;
@@ -644,13 +655,13 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
   dlg->action_area = action_area;
 
   dlg->response_callback = gui_dialog_destroyed;
-  
+
   dlg->id = dialog_id_counter;
   dialog_id_counter++;
   dlg->return_dialog_id = -1;
 
   g_signal_connect(vbox, "destroy",
-      G_CALLBACK(gui_dialog_destroy_handler), dlg);
+                   G_CALLBACK(gui_dialog_destroy_handler), dlg);
   g_signal_connect(vbox, "key_press_event",
       G_CALLBACK(gui_dialog_key_press_handler), dlg);
 

@@ -1449,7 +1449,7 @@ static void city_activated_callback(GtkTreeView *view, GtkTreePath *path,
 /************************************************************************//**
   Update the city report dialog
 ****************************************************************************/
-void real_city_report_dialog_update(void)
+void real_city_report_dialog_update(void *unused)
 {
   GHashTable *selected;
   ITree iter;
@@ -1979,7 +1979,7 @@ static void update_total_buy_cost(void)
     path = p->data;
     if (gtk_tree_model_get_iter(model, &iter, path)) {
       if ((pcity = city_model_get(model, &iter))) {
-        total += city_production_buy_gold_cost(pcity);
+        total += pcity->client.buy_cost;
       }
     }
     gtk_tree_path_free(path);

@@ -378,7 +378,7 @@ void popup_impr_info(Impr_type_id impr)
   pDock = pImprNameLabel;
 
   if (!improvement_has_flag(pImpr_type, IF_GOLD)) {
-    sprintf(buffer, "%s %d", _("Cost:"), impr_build_shield_cost(pImpr_type));
+    sprintf(buffer, "%s %d", _("Cost:"), impr_build_shield_cost(NULL, pImpr_type));
     pCostLabel = create_iconlabel_from_chars(NULL, pWindow->dst,
                                              buffer, adj_font(12), 0);
     pCostLabel->ID = ID_LABEL;
@@ -794,8 +794,8 @@ void popup_unit_info(Unit_type_id type_id)
     char buf[2048];
 
     fc_snprintf(buf, sizeof(buf), "%s %d %s",
-                _("Cost:"), utype_build_shield_cost(pUnitType),
-                PL_("shield", "shields", utype_build_shield_cost(pUnitType)));
+                _("Cost:"), utype_build_shield_cost_base(pUnitType),
+                PL_("shield", "shields", utype_build_shield_cost_base(pUnitType)));
 
     if (pUnitType->pop_cost) {
       cat_snprintf(buf, sizeof(buf), " %d %s",

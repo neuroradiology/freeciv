@@ -89,7 +89,6 @@ tab_unit::tab_unit(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   unit_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Unit")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
@@ -116,7 +115,7 @@ void tab_unit::refresh()
   unit_list->clear();
 
   unit_type_iterate(ptype) {
-    if (!ptype->disabled) {
+    if (!ptype->ruledit_disabled) {
       QListWidgetItem *item = new QListWidgetItem(utype_rule_name(ptype));
 
       unit_list->insertItem(utype_index(ptype), item);
@@ -171,7 +170,7 @@ void tab_unit::name_given()
 {
   if (selected != nullptr) {
     unit_type_iterate(ptype) {
-      if (ptype != selected && !ptype->disabled) {
+      if (ptype != selected && !ptype->ruledit_disabled) {
         if (!strcmp(utype_rule_name(ptype), rname->text().toUtf8().data())) {
           ui->display_msg(R__("A unit type with that rule name already "
                               "exists!"));
@@ -204,7 +203,7 @@ void tab_unit::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
 
     refresh();
     update_utype_info(nullptr);
@@ -245,9 +244,9 @@ void tab_unit::add_now()
 
   // Try to reuse freed utype slot
   unit_type_iterate(ptype) {
-    if (ptype->disabled) {
+    if (ptype->ruledit_disabled) {
       if (initialize_new_utype(ptype)) {
-        ptype->disabled = false;
+        ptype->ruledit_disabled = false;
         update_utype_info(ptype);
         refresh();
       }

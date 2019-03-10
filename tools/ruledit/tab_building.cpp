@@ -88,7 +88,6 @@ tab_building::tab_building(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   bldg_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Building")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now2()));
@@ -115,7 +114,7 @@ void tab_building::refresh()
   bldg_list->clear();
 
   improvement_iterate(pimpr) {
-    if (!pimpr->disabled) {
+    if (!pimpr->ruledit_disabled) {
       QListWidgetItem *item = new QListWidgetItem(improvement_rule_name(pimpr));
 
       bldg_list->insertItem(improvement_index(pimpr), item);
@@ -170,7 +169,7 @@ void tab_building::name_given()
 {
   if (selected != nullptr) {
     improvement_iterate(pimpr) {
-      if (pimpr != selected && !pimpr->disabled) {
+      if (pimpr != selected && !pimpr->ruledit_disabled) {
         if (!strcmp(improvement_rule_name(pimpr), rname->text().toUtf8().data())) {
           ui->display_msg(R__("A building with that rule name already "
                               "exists!"));
@@ -203,7 +202,7 @@ void tab_building::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
 
     refresh();
     update_bldg_info(nullptr);
@@ -232,9 +231,9 @@ void tab_building::add_now2()
 
   // Try to reuse freed building slot
   improvement_iterate(pimpr) {
-    if (pimpr->disabled) {
+    if (pimpr->ruledit_disabled) {
       if (initialize_new_bldg(pimpr)) {
-        pimpr->disabled = false;
+        pimpr->ruledit_disabled = false;
         update_bldg_info(pimpr);
         refresh();
       }

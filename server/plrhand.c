@@ -81,7 +81,9 @@
 struct rgbcolor;
 
 static void package_player_common(struct player *plr,
-                                  struct packet_player_info *packet);
+                                  struct packet_player_info *packet,
+                                  struct packet_web_player_info_addition *
+                                  web_packet);
 
 static void package_player_diplstate(struct player *plr1,
                                      struct player *plr2,
@@ -90,6 +92,8 @@ static void package_player_diplstate(struct player *plr1,
                                      enum plr_info_level min_info_level);
 static void package_player_info(struct player *plr,
                                 struct packet_player_info *packet,
+                                struct packet_web_player_info_addition *
+                                web_packet,
                                 struct player *receiver,
                                 enum plr_info_level min_info_level);
 static enum plr_info_level player_info_level(struct player *plr,
@@ -138,9 +142,21 @@ void kill_player(struct player *pplayer)
 
   /* Show entire map for players who are *not* in a team if revealmap is set
    * to REVEAL_MAP_DEAD. */
-  if (game.server.revealmap & REVEAL_MAP_DEAD
-      && player_list_size(team_members(pplayer->team)) == 1) {
-    map_know_and_see_all(pplayer);
+  if (game.server.revealmap & REVEAL_MAP_DEAD) {
+    bool someone_alive = FALSE;
+
+    player_list_iterate(team_members(pplayer->team), pteam_member) {
+      if (pteam_member->is_alive) {
+        someone_alive = TRUE;
+        break;
+      }
+    } player_list_iterate_end;
+
+    if (!someone_alive) {
+      player_list_iterate(team_members(pplayer->team), pteam_member) {
+        map_know_and_see_all(pteam_member);
+      } player_list_iterate_end;
+    }
   }
 
   if (!is_barbarian(pplayer)) {
@@ -160,11 +176,8 @@ void kill_player(struct player *pplayer)
          and raze buildings according to raze chance (also removes palace) */
       if (transfer_city(pcity->original, pcity, 3, TRUE, TRUE, TRUE,
                         TRUE)) {
-        script_server_signal_emit("city_transferred", 4,
-                                  API_TYPE_CITY, pcity,
-                                  API_TYPE_PLAYER, pplayer,
-                                  API_TYPE_PLAYER, pcity->original,
-                                  API_TYPE_STRING, "death-back_to_original");
+        script_server_signal_emit("city_transferred", pcity, pplayer,
+                                  pcity->original, "death-back_to_original");
       }
     }
   } city_list_iterate_safe_end;
@@ -206,11 +219,8 @@ void kill_player(struct player *pplayer)
     city_list_iterate_safe(pplayer->cities, pcity) {
       if (transfer_city(barbarians, pcity, -1, FALSE, FALSE, FALSE,
                         FALSE)) {
-        script_server_signal_emit("city_transferred", 4,
-                                  API_TYPE_CITY, pcity,
-                                  API_TYPE_PLAYER, pplayer,
-                                  API_TYPE_PLAYER, barbarians,
-                                  API_TYPE_STRING, "death-barbarians_get");
+        script_server_signal_emit("city_transferred", pcity, pplayer,
+                                  barbarians, "death-barbarians_get");
       }
     } city_list_iterate_safe_end;
 
@@ -952,6 +962,7 @@ static void send_player_info_c_real(struct player *src,
                                     struct conn_list *dest)
 {
   struct packet_player_info info;
+  struct packet_web_player_info_addition web_info;
 
   fc_assert_ret(src != NULL);
 
@@ -959,19 +970,21 @@ static void send_player_info_c_real(struct player *src,
     dest = game.est_connections;
   }
 
-  package_player_common(src, &info);
+  package_player_common(src, &info, &web_info);
 
   conn_list_iterate(dest, pconn) {
     if (NULL == pconn->playing && pconn->observer) {
       /* Global observer. */
-      package_player_info(src, &info, pconn->playing, INFO_FULL);
+      package_player_info(src, &info, &web_info, pconn->playing, INFO_FULL);
     } else if (NULL != pconn->playing) {
       /* Players (including regular observers) */
-      package_player_info(src, &info, pconn->playing, INFO_MINIMUM);
+      package_player_info(src, &info, &web_info,
+                          pconn->playing, INFO_MINIMUM);
     } else {
-      package_player_info(src, &info, NULL, INFO_MINIMUM);
+      package_player_info(src, &info, &web_info, NULL, INFO_MINIMUM);
     }
     send_packet_player_info(pconn, &info);
+    web_send_packet(player_info_addition, pconn, &web_info);
   } conn_list_iterate_end;
 }
 
@@ -1034,7 +1047,9 @@ static void send_player_diplstate_c_real(struct player *plr1,
   Package player information that is always sent.
 **************************************************************************/
 static void package_player_common(struct player *plr,
-                                  struct packet_player_info *packet)
+                                  struct packet_player_info *packet,
+                                  struct packet_web_player_info_addition *
+                                  web_packet)
 {
   int i;
   struct music_style *music;
@@ -1081,6 +1096,10 @@ static void package_player_common(struct player *plr,
     packet->wonders[i] = plr->wonders[i];
   }
   packet->science_cost = plr->ai_common.science_cost;
+
+#ifdef FREECIV_WEB
+  web_packet->playerno = player_number(plr);
+#endif /* FREECIV_WEB */
 }
 
 /**********************************************************************//**
@@ -1094,6 +1113,8 @@ static void package_player_common(struct player *plr,
 **************************************************************************/
 static void package_player_info(struct player *plr,
                                 struct packet_player_info *packet,
+                                struct packet_web_player_info_addition *
+                                web_packet,
                                 struct player *receiver,
                                 enum plr_info_level min_info_level)
 {
@@ -1239,6 +1260,14 @@ static void package_player_info(struct player *plr,
   } else {
     packet->culture         = 0;
   }
+
+#ifdef FREECIV_WEB
+  if (info_level >= INFO_FULL) {
+    web_packet->expected_income = player_get_expected_income(plr);
+  } else {
+    web_packet->expected_income = 0;
+  }
+#endif /* FREECIV_WEB */
 }
 
 /**********************************************************************//**
@@ -2547,6 +2576,8 @@ static struct player *split_player(struct player *pplayer)
   advance_index_iterate(A_NONE, i) {
     if (TECH_KNOWN == research_invention_state(old_research, i)) {
       research_invention_set(new_research, i, TECH_KNOWN);
+      new_research->inventions[i].bulbs_researched_saved
+        = old_research->inventions[i].bulbs_researched_saved;
     }
   } advance_index_iterate_end;
   cplayer->phase_done = TRUE; /* Have other things to think
@@ -2823,11 +2854,8 @@ struct player *civil_war(struct player *pplayer)
                       _("%s declares allegiance to the %s."),
                       city_link(pcity),
                       nation_plural_for_player(cplayer));
-        script_server_signal_emit("city_transferred", 4,
-                                API_TYPE_CITY, pcity,
-                                API_TYPE_PLAYER, pplayer,
-                                API_TYPE_PLAYER, cplayer,
-                                API_TYPE_STRING, "civil_war");
+        script_server_signal_emit("city_transferred", pcity, pplayer,
+                                cplayer, "civil_war");
       }
       i--;
     }

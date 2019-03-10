@@ -38,9 +38,6 @@ m4_include(fc_version)
 
 AC_ARG_VAR([FREECIV_LABEL_FORCE], [Forced version label format])
 
-VERSION_WITHOUT_LABEL=${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}${EMERG_PART}
-VERSION=${VERSION_WITHOUT_LABEL}${VERSION_LABEL}x
-
 AC_DEFINE_UNQUOTED([MAJOR_VERSION], [$MAJOR_VERSION], [Major version])
 AC_DEFINE_UNQUOTED([MINOR_VERSION], [$MINOR_VERSION], [Minor version])
 AC_DEFINE_UNQUOTED([PATCH_VERSION], [$PATCH_VERSION], [Patch version])
@@ -48,7 +45,7 @@ if test x$EMERGENCY_VERSION != x ; then
   AC_DEFINE_UNQUOTED([EMERGENCY_VERSION], [$EMERGENCY_VERSION], [Emergency version])
 fi
 AC_DEFINE_UNQUOTED([VERSION_LABEL], ["${VERSION_LABEL}"], [Version label])
-AC_DEFINE_UNQUOTED([VERSION_STRING], ["${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}${EMERG_PART}${VERSION_LABEL}"], [Version string])
+AC_DEFINE_UNQUOTED([VERSION_STRING], ["${VERSION_STRING}"], [Version string])
 AC_DEFINE_UNQUOTED([IS_DEVEL_VERSION], [$IS_DEVEL_VERSION], [Is this a devel version])
 AC_DEFINE_UNQUOTED([IS_FREEZE_VERSION], [$IS_FREEZE_VERSION], [Is this a frozen version])
 AC_DEFINE_UNQUOTED([IS_BETA_VERSION], [$IS_BETA_VERSION], [Is this a beta version])
@@ -56,15 +53,6 @@ AC_DEFINE_UNQUOTED([NEXT_STABLE_VERSION], ["$NEXT_STABLE_VERSION"], [Version num
 AC_DEFINE_UNQUOTED([FREECIV_RELEASE_MONTH], [$RELEASE_MONTH], [Month next version will be released])
 AC_SUBST([MAJOR_VERSION])
 AC_SUBST([MINOR_VERSION])
-
-AC_DEFINE_UNQUOTED([NETWORK_CAPSTRING_MANDATORY],
-		   ["$NETWORK_CAPSTRING_MANDATORY"],
-		   [Network capability string])
-AC_SUBST([NETWORK_CAPSTRING_MANDATORY])
-AC_DEFINE_UNQUOTED([NETWORK_CAPSTRING_OPTIONAL],
-		   ["$NETWORK_CAPSTRING_OPTIONAL"],
-		   [Additional optional network capabilities])
-AC_SUBST([NETWORK_CAPSTRING_OPTIONAL])
 
 AC_DEFINE_UNQUOTED([DATASUBDIR],
                    ["$DATASUBDIR"],
@@ -115,16 +103,18 @@ FC_CHECK_SQLITE3([], [AC_MSG_ERROR([sqlite3 not found])])
 dnl set default values
 fcdb_all=no
 fcdb_mysql=no
+fcdb_odbc=no
 fcdb_postgres=no
 fcdb_sqlite3=no
 
 dnl checks for databases
 dnl all:                  Autodetect as many as possible [default].
 dnl mysql:                use mysql database
+dnl odbc:                 use odbc database
 dnl postgres:             use postgres database
 dnl comma-separated-list: Detect these or abort.
 AC_ARG_ENABLE([fcdb],
-  AS_HELP_STRING([--enable-fcdb[=no/all/mysql/postgres/sqlite3]],
+  AS_HELP_STRING([--enable-fcdb[=no/all/mysql/odbc/postgres/sqlite3]],
                  [database backends [sqlite3](no, or list)]),
 [databases=${enableval}],
 [databases=sqlite3])
@@ -136,6 +126,8 @@ for db in $(echo $databases | $SED 's/,/ /g') ; do
     fcdb_all=no
   elif test "x$db" = "xmysql" ; then
     fcdb_mysql=yes
+  elif test "x$db" = "xodbc" ; then
+    fcdb_odbc=yes
   elif test "x$db" = "xpostgres" ; then
     fcdb_postgres=yes
   elif test "x$db" = "xsqlite3" ; then
@@ -149,6 +141,10 @@ dnl checks for database mysql
 dnl sets FCDB_MYSQL(conditional), FCDB_MYSQL_CFLAGS
 FC_FCDB_MYSQL
 
+dnl checks for database odbc
+dnl sets FCDB_ODBC(conditional), FCDB_ODBC_CFLAGS
+FC_FCDB_ODBC
+
 dnl checks for database postgres
 dnl sets FCDB_POSTGRES(conditional), FCDB_POSTGRES_CFLAGS
 FC_FCDB_POSTGRES
@@ -158,8 +154,8 @@ dnl sets FCDB_SQLITE3(conditional), FCDB_SQLITE3_CFLAGS
 FC_FCDB_SQLITE3
 
 dnl check if a database backend is available
-if test "x$fcdb_mysql" = "xyes" || test "x$fcdb_postgres" = "xyes" \
-   || test "x$fcdb_sqlite3" = "xyes"; then
+if test "x$fcdb_mysql" = "xyes" || test "x$fcdb_odbc" = "xyes" \
+   || test "x$fcdb_postgres" = "xyes" || test "x$fcdb_sqlite3" = "xyes"; then
   enable_fcdb=yes
   AC_DEFINE([HAVE_FCDB], [1], [Database backend available])
 else
@@ -864,7 +860,7 @@ AC_ARG_ENABLE([ai-static],
   AS_HELP_STRING([--enable-ai-static], [statically link listed modules to server]),
 [static_modules="${enableval}"],
 [if test "x$thread_cond" = "xtrue" ; then
-  static_modules="classic,threaded"
+  static_modules="classic,tex"
 else
   static_modules="classic"
 fi])
@@ -1010,19 +1006,14 @@ FC_LD_FLAGS(["-Wl,-rpath=${lib_prefix}"], [], [LDFLAGS])
 AM_CONDITIONAL([CLIENT], [test "x$client" = "xyes"])
 
 AC_ARG_ENABLE([freeciv-manual],
-  AS_HELP_STRING([--enable-freeciv-manual=no/yes/wiki/html], [build freeciv-manual [wiki]]),
+  AS_HELP_STRING([--enable-freeciv-manual], [build freeciv-manual]),
 [case "${enableval}" in
-  yes|wiki) fcmanual=wiki ;;
-  no)       fcmanual=no ;;
-  html)     fcmanual=html ;;
+  yes) fcmanual=yes ;;
+  no)  fcmanual=no ;;
   *) AC_MSG_ERROR([bad value ${enableval} for --enable-freeciv-manual]) ;;
-esac], [fcmanual=wiki])
+esac], [fcmanual=yes])
 
 AM_CONDITIONAL([FCMANUAL], [test "x$fcmanual" != "xno"])
-
-if test x$fcmanual = xhtml ; then
-  AC_DEFINE([MANUAL_USE_HTML], [1], [Build freeciv-manual with html formatting])
-fi
 
 dnl freeciv-modpack checks
 AC_ARG_ENABLE([fcmp],
@@ -1075,7 +1066,7 @@ if test "x$req_fcmp_gtk3" = "xyes" ||
 [
   fcmp_gtk3=yes
   fcmp_list="$fcmp_list gtk3"
-  mp_gtk3_cflags="$GTK3MP_CFLAGS $GHTREAD_GTK3_CFLAGS"
+  mp_gtk3_cflags="$GTK3MP_CFLAGS $GTHREAD_GTK3_CFLAGS"
   mp_gtk3_libs="$GTK3MP_LIBS $GTHREAD_GTK3_LIBS"
   if test "x$MINGW" = "xyes"; then
     dnl Required to compile gtk3 on Windows platform
@@ -1095,15 +1086,15 @@ fi
 
 if test "x$req_fcmp_gtk3x" = "xyes" ||
    test "x$modinst" = "xall" || test "x$modinst" = "xauto" ; then
-  PKG_CHECK_MODULES([GTK3X_MP], [gtk+-4.0 >= 3.90.0],
+  PKG_CHECK_MODULES([GTK3X_MP], [gtk+-4.0 >= 3.94.0],
 [
-  GTK3X_MP_CFLAGS="$GTK3X_MP_CFLAGS -DGDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_90"
+  GTK3X_MP_CFLAGS="$GTK3X_MP_CFLAGS -DGDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_94"
   GTK3X_MP_CFLAGS="$GTK3X_MP_CFLAGS -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_52"
   PKG_CHECK_MODULES([GTHREAD_GTK3X], [gthread-2.0],
 [
   fcmp_gtk3x=yes
   fcmp_list="$fcmp_list gtk3x"
-  mp_gtk3x_cflags="$GTK3X_MP_CFLAGS $GHTREAD_GTK3X_CFLAGS"
+  mp_gtk3x_cflags="$GTK3X_MP_CFLAGS $GTHREAD_GTK3X_CFLAGS"
   mp_gtk3x_libs="$GTK3X_MP_LIBS $GTHREAD_GTK3X_LIBS"
   if test "x$MINGW32" = "xyes"; then
     dnl Required to compile gtk3 on Windows platform
@@ -1250,7 +1241,6 @@ AC_SUBST([ruledit_cxxflags])
 AC_SUBST([ruledit_libs])
 AC_SUBST([SOUND_CFLAGS])
 AC_SUBST([SOUND_LIBS])
-AC_SUBST([VERSION_WITHOUT_LABEL])
 AC_SUBST([VERSION_LABEL])
 AC_SUBST([HOST_PATH_SEPARATOR])
 AC_SUBST([HOST_DIR_SEPARATOR])
@@ -1494,6 +1484,9 @@ if test x$enable_fcdb = xyes ; then
   if test x$fcdb_mysql = xyes ; then
     LUASQL_LIBS="$LUASQL_LIBS \$(top_builddir)/dependencies/luasql/src/libluasql_mysql.la"
   fi
+  if test x$fcdb_odbc = xyes ; then
+    LUASQL_LIBS="$LUASQL_LIBS \$(top_builddir)/dependencies/luasql/src/libluasql_odbc.la"
+  fi
   if test x$fcdb_postgres = xyes ; then
     LUASQL_LIBS="$LUASQL_LIBS \$(top_builddir)/dependencies/luasql/src/libluasql_postgres.la"
   fi
@@ -1616,6 +1609,7 @@ AC_CONFIG_FILES([Makefile
 	  data/classic/Makefile
 	  data/multiplayer/Makefile
 	  data/sandbox/Makefile
+	  data/sandbox/resources/Makefile
           data/alien/Makefile
           data/civ2civ3/Makefile
 	  data/civ1/Makefile
@@ -1713,8 +1707,10 @@ AC_CONFIG_FILES([Makefile
 	  server/Makefile
           server/advisors/Makefile
 	  server/generator/Makefile
+          server/savegame/Makefile
 	  server/scripting/Makefile
           tools/Makefile
+          tools/fcmp/Makefile
           tools/ruledit/Makefile
           tools/ruleutil/Makefile
           tools/shared/Makefile
@@ -1744,23 +1740,26 @@ AC_CONFIG_FILES([Makefile
           client/freeciv-sdl2.desktop:bootstrap/freeciv-sdl2.desktop.in
           client/freeciv-qt.desktop:bootstrap/freeciv-qt.desktop.in
 	  server/freeciv-server.desktop:bootstrap/freeciv-server.desktop.in
-	  tools/freeciv-mp-gtk3.desktop:bootstrap/freeciv-mp-gtk3.desktop.in
-	  tools/freeciv-mp-qt.desktop:bootstrap/freeciv-mp-qt.desktop.in
+	  tools/fcmp/freeciv-mp-gtk3.desktop:bootstrap/freeciv-mp-gtk3.desktop.in
+	  tools/fcmp/freeciv-mp-qt.desktop:bootstrap/freeciv-mp-qt.desktop.in
 	  tools/ruledit/freeciv-ruledit.desktop:bootstrap/freeciv-ruledit.desktop.in
           client/freeciv-gtk3.appdata.xml:bootstrap/freeciv-gtk3.appdata.xml.in
           client/freeciv-gtk3.22.appdata.xml:bootstrap/freeciv-gtk3.22.appdata.xml.in
           client/freeciv-sdl2.appdata.xml:bootstrap/freeciv-sdl2.appdata.xml.in
           client/freeciv-qt.appdata.xml:bootstrap/freeciv-qt.appdata.xml.in
           server/freeciv-server.appdata.xml:bootstrap/freeciv-server.appdata.xml.in
-          tools/freeciv-mp-gtk3.appdata.xml:bootstrap/freeciv-mp-gtk3.appdata.xml.in
-          tools/freeciv-mp-qt.appdata.xml:bootstrap/freeciv-mp-qt.appdata.xml.in
+          tools/fcmp/freeciv-mp-gtk3.appdata.xml:bootstrap/freeciv-mp-gtk3.appdata.xml.in
+          tools/fcmp/freeciv-mp-qt.appdata.xml:bootstrap/freeciv-mp-qt.appdata.xml.in
           tools/ruledit/freeciv-ruledit.appdata.xml:bootstrap/freeciv-ruledit.appdata.xml.in])
 AC_CONFIG_FILES([fcgui:bootstrap/fcgui.in], [chmod +x fcgui])
 AC_CONFIG_FILES([fcser:bootstrap/fcser.in], [chmod +x fcser])
+AC_CONFIG_FILES([fcruleup:bootstrap/fcruleup.in], [chmod +x fcruleup])
 if test "x$ruledit" = "xyes" ; then
   AC_CONFIG_FILES([fcruledit:bootstrap/fcruledit.in], [chmod +x fcruledit])
 fi
 AC_CONFIG_FILES([tests/rulesets_not_broken.sh], [chmod +x tests/rulesets_not_broken.sh])
+AC_CONFIG_FILES([tests/rs_test_res/ruleset_loads.sh],
+                [chmod +x tests/rs_test_res/ruleset_loads.sh])
 
 AC_OUTPUT
 
@@ -1802,6 +1801,7 @@ AC_MSG_NOTICE([
     AI modules support:    $enable_aimodules
     Database support:      $enable_fcdb
       mysql:                 $fcdb_mysql
+      odbc:                  $fcdb_odbc
       postgres:              $fcdb_postgres
       sqlite3:               $fcdb_sqlite3
 

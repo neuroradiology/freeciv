@@ -629,8 +629,8 @@ static int fc_cmp(const void *p1, const void *p2)
   section 5: great wonders
 **************************************************************************/
 void name_and_sort_items(struct universal *targets, int num_targets,
-			 struct item *items,
-			 bool show_cost, struct city *pcity)
+                         struct item *items,
+                         bool show_cost, struct city *pcity)
 {
   int i;
 
@@ -644,13 +644,13 @@ void name_and_sort_items(struct universal *targets, int num_targets,
 
     if (VUT_UTYPE == target.kind) {
       name = utype_values_translation(target.value.utype);
-      cost = utype_build_shield_cost(target.value.utype);
+      cost = utype_build_shield_cost(pcity, target.value.utype);
     } else {
       name = city_improvement_name_translation(pcity, target.value.building);
       if (improvement_has_flag(target.value.building, IF_GOLD)) {
-	cost = -1;
+        cost = -1;
       } else {
-	cost = impr_build_shield_cost(target.value.building);
+        cost = impr_build_shield_cost(pcity, target.value.building);
       }
     }
 
@@ -1136,7 +1136,7 @@ void cityrep_buy(struct city *pcity)
                  city_link(pcity));
     return;
   }
-  value = city_production_buy_gold_cost(pcity);
+  value = pcity->client.buy_cost;
 
   if (city_owner(pcity)->economic.gold >= value) {
     city_buy_production(pcity);
@@ -1260,10 +1260,11 @@ enum unit_bg_color_type unit_color_type(const struct unit_type *punittype)
 static int city_buy_cost_compare(const void *a, const void *b)
 {
   const struct city *ca, *cb;
+
   ca = *((const struct city **) a);
   cb = *((const struct city **) b);
-  return (city_production_buy_gold_cost(ca)
-          - city_production_buy_gold_cost(cb));
+
+  return ca->client.buy_cost - cb->client.buy_cost;
 }
 
 /**********************************************************************//**
@@ -1273,6 +1274,8 @@ static int city_buy_cost_compare(const void *a, const void *b)
 void buy_production_in_selected_cities(void)
 {
   const struct player *pplayer = client_player();
+  struct connection *pconn;
+
   if (!pplayer || !pplayer->cities
       || city_list_size(pplayer->cities) < 1) {
     return;
@@ -1300,11 +1303,11 @@ void buy_production_in_selected_cities(void)
 
   qsort(cities, count, sizeof(*cities), city_buy_cost_compare);
 
-  struct connection *pconn = &client.conn;
+  pconn = &client.conn;
   connection_do_buffer(pconn);
 
   for (i = 0; i < count && gold > 0; i++) {
-    gold -= city_production_buy_gold_cost(cities[i]);
+    gold -= cities[i]->client.buy_cost;
     city_buy_production(cities[i]);
   }
 
@@ -1392,8 +1395,6 @@ bool mapimg_client_define(void)
   for (layer = mapimg_layer_begin(); layer != mapimg_layer_end();
        layer = mapimg_layer_next(layer)) {
     if (gui_options.mapimg_layer[layer]) {
-      cat_snprintf(mi_map, sizeof(mi_map), "%s",
-                   mapimg_layer_name(layer));
       mi_map[map_pos++] = mapimg_layer_name(layer)[0];
     }
   }
@@ -1464,4 +1465,26 @@ struct nation_set *client_current_nation_set(void)
 bool client_nation_is_in_current_set(const struct nation_type *pnation)
 {
   return nation_is_in_set(pnation, client_current_nation_set());
+}
+
+/**********************************************************************//**
+  Returns the current AI skill level on the server, if the same level is
+  currently used for all current AI players and will be for new ones;
+  else return ai_level_invalid() to indicate inconsistency.
+**************************************************************************/
+enum ai_level server_ai_level(void)
+{
+  enum ai_level lvl = game.info.skill_level;
+
+  players_iterate(pplayer) {
+    if (is_ai(pplayer) && pplayer->ai_common.skill_level != lvl) {
+      return ai_level_invalid();
+    }
+  } players_iterate_end;
+
+  if (!is_settable_ai_level(lvl)) {
+    return ai_level_invalid();
+  }
+
+  return lvl;
 }

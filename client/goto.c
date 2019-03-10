@@ -1221,11 +1221,13 @@ bool goto_tile_state(const struct tile *ptile, enum goto_tile_state *state,
       }
     } goto_map_list_iterate_end;
   } else {
+    bool mark_on_map = FALSE;
     /* In other modes, we want to know the turn number to reach the tile. */
     goto_map_list_iterate(goto_maps, goto_map) {
       const struct tile *destination;
       const struct pf_path *path;
       const struct pf_position *pos = NULL; /* Keep compiler happy! */
+      const struct pf_position *last_pos = NULL;
       int map_turns = 0;
       int turns_for_map = -2;
       int i, j;
@@ -1239,9 +1241,18 @@ bool goto_tile_state(const struct tile *ptile, enum goto_tile_state *state,
         if (path == NULL) {
           continue;
         }
-
+        last_pos = path->positions;
         for (j = 0; j < path->length; j++) {
           pos = path->positions + j;
+          /* turn to reach was increased in that step */
+          if (pos->turn != last_pos->turn
+              && pos->tile == ptile) {
+            mark_on_map = TRUE;
+          }
+          if (pos->moves_left == 0 && last_pos->moves_left != 0
+              && pos->tile == ptile) {
+            mark_on_map = TRUE;
+          }
           if (pos->tile == ptile
               /* End turn case. */
               && (pos->moves_left == 0
@@ -1250,6 +1261,7 @@ bool goto_tile_state(const struct tile *ptile, enum goto_tile_state *state,
               && map_turns + pos->turn > turns_for_map) {
             turns_for_map = map_turns + pos->turn;
           }
+          last_pos = pos;
         }
         map_turns += pos->turn;
       }
@@ -1277,6 +1289,7 @@ bool goto_tile_state(const struct tile *ptile, enum goto_tile_state *state,
       if (ptile == destination) {
         fc_assert_ret_val(pos != NULL, FALSE);
         if (map_turns > *turns) {
+          mark_on_map = TRUE;
           *state = (pos->moves_left == 0 ? GTS_EXHAUSTED_MP : GTS_MP_LEFT);
           *turns = map_turns;
         } else if (map_turns == *turns
@@ -1285,12 +1298,13 @@ bool goto_tile_state(const struct tile *ptile, enum goto_tile_state *state,
           *state = GTS_EXHAUSTED_MP;
         }
       } else {
-        if (turns_for_map + 1 > *turns) {
+        if (turns_for_map > *turns) {
           *state = GTS_TURN_STEP;
-          *turns = turns_for_map + 1;
+          *turns = turns_for_map;
         }
       }
     } goto_map_list_iterate_end;
+    return mark_on_map;
   }
 
   return (*turns != -1 || *waypoint);
@@ -1389,14 +1403,14 @@ static void send_path_orders(struct unit *punit, struct pf_path *path,
       p.orders[i] = ORDER_FULL_MP;
       p.dir[i] = DIR8_ORIGIN;
       p.activity[i] = ACTIVITY_LAST;
-      p.target[i] = EXTRA_NONE;
+      p.sub_target[i] = -1;
       p.action[i] = ACTION_NONE;
       log_goto_packet("  packet[%d] = wait: %d,%d", i, TILE_XY(old_tile));
     } else {
       p.orders[i] = orders;
       p.dir[i] = get_direction_for_step(&(wld.map), old_tile, new_tile);
       p.activity[i] = ACTIVITY_LAST;
-      p.target[i] = EXTRA_NONE;
+      p.sub_target[i] = -1;
       p.action[i] = ACTION_NONE;
       log_goto_packet("  packet[%d] = move %s: %d,%d => %d,%d",
                       i, dir_get_name(p.dir[i]),
@@ -1433,7 +1447,7 @@ static void send_path_orders(struct unit *punit, struct pf_path *path,
     p.dir[i] = final_order->dir;
     p.activity[i] = (final_order->order == ORDER_ACTIVITY)
       ? final_order->activity : ACTIVITY_LAST;
-    p.target[i] = final_order->target;
+    p.sub_target[i] = final_order->sub_target;
     p.action[i] = final_order->action;
     p.length++;
   }
@@ -1555,7 +1569,7 @@ static bool order_recursive_roads(struct tile *ptile, struct extra_type *pextra,
   p->orders[p->length] = ORDER_ACTIVITY;
   p->dir[p->length] = DIR8_ORIGIN;
   p->activity[p->length] = ACTIVITY_GEN_ROAD;
-  p->extra[p->length] = extra_index(pextra);
+  p->sub_target[p->length] = extra_index(pextra);
   p->action[p->length] = ACTION_NONE;
   p->length++;
 
@@ -1604,7 +1618,7 @@ void send_connect_route(enum unit_activity activity,
 	  p.orders[p.length] = ORDER_ACTIVITY;
           p.dir[p.length] = DIR8_ORIGIN;
 	  p.activity[p.length] = ACTIVITY_IRRIGATE;
-          p.target[p.length] = extra_index(tgt);
+          p.sub_target[p.length] = extra_index(tgt);
           p.action[p.length] = ACTION_NONE;
 	  p.length++;
 	}
@@ -1626,8 +1640,7 @@ void send_connect_route(enum unit_activity activity,
         p.dir[p.length] = get_direction_for_step(&(wld.map),
                                                  old_tile, new_tile);
         p.activity[p.length] = ACTIVITY_LAST;
-        p.target[p.length] = 0;
-        p.extra[p.length] = EXTRA_NONE;
+        p.sub_target[p.length] = -1;
         p.action[p.length] = ACTION_NONE;
         p.length++;
 
@@ -1648,7 +1661,7 @@ void send_connect_route(enum unit_activity activity,
   This function doesn't care if a direction is required or just possible.
   Use order_demands_direction() for that.
 ****************************************************************************/
-static bool order_wants_direction(enum unit_orders order, int act_id,
+static bool order_wants_direction(enum unit_orders order, action_id act_id,
                                   struct tile *tgt_tile)
 {
   switch (order) {
@@ -1687,7 +1700,7 @@ static bool order_wants_direction(enum unit_orders order, int act_id,
   Returns TRUE if it is certain that the order must be performed from an
   adjacent tile.
 ****************************************************************************/
-static bool order_demands_direction(enum unit_orders order, int act_id)
+static bool order_demands_direction(enum unit_orders order, action_id act_id)
 {
   switch (order) {
   case ORDER_MOVE:
@@ -1789,10 +1802,9 @@ void send_goto_route(void)
       }
 
       order.order = goto_last_order;
-      order.dir = DIR8_ORIGIN;
       order.dir = last_order_dir;
       order.activity = ACTIVITY_LAST;
-      order.target = goto_last_tgt;
+      order.sub_target = goto_last_sub_tgt;
       order.action = goto_last_action;
 
       /* ORDER_ACTIVITY would require real activity */

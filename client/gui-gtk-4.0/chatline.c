@@ -1161,7 +1161,7 @@ static void select_color_callback(GtkToolButton *button, gpointer data)
 
   chooser = gtk_color_chooser_widget_new();
   gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
-                     chooser, FALSE, FALSE);
+                     chooser);
   g_object_set_data(G_OBJECT(dialog), "chooser", chooser);
   if (current_color) {
     gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(chooser), current_color);
@@ -1352,7 +1352,6 @@ void chatline_init(void)
   /* First line: toolbar */
   toolbar = gtk_toolbar_new();
   gtk_container_add(GTK_CONTAINER(vbox), toolbar);
-  gtk_toolbar_set_icon_size(GTK_TOOLBAR(toolbar), GTK_ICON_SIZE_MENU);
   gtk_toolbar_set_show_arrow(GTK_TOOLBAR(toolbar), FALSE);
   gtk_toolbar_set_style(GTK_TOOLBAR(toolbar), GTK_TOOLBAR_BOTH_HORIZ);
   gtk_orientable_set_orientation(GTK_ORIENTABLE(toolbar),
@@ -1502,5 +1501,5 @@ void version_message(const char *vertext)
 
   strncpy(persistent, vertext, len);
 
-  gdk_threads_add_idle(version_message_main_thread, persistent);
+  g_idle_add(version_message_main_thread, persistent);
 }

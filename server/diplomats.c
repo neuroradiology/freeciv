@@ -281,7 +281,7 @@ void spy_send_sabotage_list(struct connection *pc, struct unit *pdiplomat,
 
   packet.diplomat_id = pdiplomat->id;
   packet.city_id = pcity->id;
-  packet.action_id = paction->id;
+  packet.act_id = paction->id;
   packet.disturb_player = disturb_player;
   send_packet_city_sabotage_list(pc, &packet);
 }
@@ -593,7 +593,7 @@ int diplomats_unignored_tech_stealings(struct unit *pdiplomat,
     /* Negative effect value means infinite bonus */
     times = 0;
   } else {
-    times = pcity->server.steal - bonus;
+    times = pcity->steal - bonus;
     if (times < 0) {
       times = 0;
     }
@@ -722,7 +722,8 @@ bool diplomat_get_tech(struct player *pplayer, struct unit *pdiplomat,
     log_debug("steal-tech: difficulty: %d", count);
     /* Determine success or failure. */
     while (count > 0) {
-      if (fc_rand(100) >= game.server.diplchance) {
+      if (diplomat_was_caught(pplayer, pdiplomat, pcity, cplayer,
+                              paction)) {
         break;
       }
       count--;
@@ -740,6 +741,13 @@ bool diplomat_get_tech(struct player *pplayer, struct unit *pdiplomat,
                       "again. Your %s was caught and executed."),
                     city_link(pcity),
                     unit_tile_link(pdiplomat));
+      notify_player(cplayer, city_tile(pcity),
+                    E_ENEMY_DIPLOMAT_FAILED, ftc_server,
+                    _("The %s %s failed to steal technology again from %s. "
+                      "We were prepared for the attempt."),
+                    nation_adjective_for_player(pplayer),
+                    unit_tile_link(pdiplomat),
+                    city_link(pcity));
     } else {
       notify_player(pplayer, city_tile(pcity),
                     E_MY_DIPLOMAT_FAILED, ftc_server,
@@ -747,14 +755,15 @@ bool diplomat_get_tech(struct player *pplayer, struct unit *pdiplomat,
                       " stealing technology from %s."),
                     unit_tile_link(pdiplomat),
                     city_link(pcity));
+      notify_player(cplayer, city_tile(pcity),
+                    E_ENEMY_DIPLOMAT_FAILED, ftc_server,
+                    _("The %s %s failed to steal technology from %s."),
+                    nation_adjective_for_player(pplayer),
+                    unit_tile_link(pdiplomat),
+                    city_link(pcity));
     }
-    notify_player(cplayer, city_tile(pcity),
-                  E_ENEMY_DIPLOMAT_FAILED, ftc_server,
-                  _("The %s %s failed to steal technology from %s."),
-                  nation_adjective_for_player(pplayer),
-                  unit_tile_link(pdiplomat),
-                  city_link(pcity));
-    /* this may cause a diplomatic incident */
+
+    /* This may cause a diplomatic incident */
     action_consequence_caught(paction, pplayer, cplayer,
                               city_tile(pcity), city_link(pcity));
     wipe_unit(pdiplomat, ULR_CAUGHT, cplayer);
@@ -777,7 +786,7 @@ bool diplomat_get_tech(struct player *pplayer, struct unit *pdiplomat,
   send_player_all_c(pplayer, NULL);
 
   /* Record the theft. */
-  (pcity->server.steal)++;
+  (pcity->steal)++;
 
   /* this may cause a diplomatic incident */
   action_consequence_success(paction, pplayer, cplayer,
@@ -912,11 +921,8 @@ bool diplomat_incite(struct player *pplayer, struct unit *pdiplomat,
      are within one square of the city) to the new owner. */
   if (transfer_city(pplayer, pcity, 1, TRUE, TRUE, FALSE,
                     !is_barbarian(pplayer))) {
-    script_server_signal_emit("city_transferred", 4,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_PLAYER, cplayer,
-                              API_TYPE_PLAYER, pplayer,
-                              API_TYPE_STRING, "incited");
+    script_server_signal_emit("city_transferred", pcity, cplayer, pplayer,
+                              "incited");
   }
 
   /* Check if a spy survives her mission.
@@ -1188,7 +1194,10 @@ bool diplomat_sabotage(struct player *pplayer, struct unit *pdiplomat,
               improvement_rule_name(ptarget));
 
     /* Do it. */
-    building_lost(pcity, ptarget);
+    building_lost(pcity, ptarget, "sabotaged", pdiplomat);
+
+    /* FIXME: Lua script might have destroyed the diplomat, the city, or even the player.
+     *        Avoid dangling pointers below in that case. */
   }
 
   /* Update clients. */

@@ -373,9 +373,9 @@ void remove_net_input(void)
 /**********************************************************************//**
   Call real_conn_list_dialog_update callback
 **************************************************************************/
-void real_conn_list_dialog_update(void)
+void real_conn_list_dialog_update(void *unused)
 {
-  funcs.real_conn_list_dialog_update();
+  funcs.real_conn_list_dialog_update(NULL);
 }
 
 /**********************************************************************//**
@@ -448,16 +448,6 @@ void set_unit_icons_more_arrow(bool onoff)
 void gui_update_font(const char *font_name, const char *font_value)
 {
   funcs.gui_update_font(font_name, font_value);
-}
-
-/**********************************************************************//**
-  Call set_city_names_font_sizes callback
-**************************************************************************/
-void set_city_names_font_sizes(int my_city_names_font_size,
-			       int my_city_productions_font_size)
-{
-  funcs.set_city_names_font_sizes(my_city_names_font_size,
-                                  my_city_productions_font_size);
 }
 
 /**********************************************************************//**

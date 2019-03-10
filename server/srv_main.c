@@ -105,7 +105,6 @@
 #include "report.h"
 #include "ruleset.h"
 #include "sanitycheck.h"
-#include "savegame.h"
 #include "score.h"
 #include "sernet.h"
 #include "settings.h"
@@ -123,6 +122,9 @@
 #include "advbuilding.h"
 #include "advspace.h"
 #include "infracache.h"
+
+/* server/savegame */
+#include "savemain.h"
 
 /* server/scripting */
 #include "script_server.h"
@@ -337,6 +339,8 @@ bool game_was_started(void)
   This function will notify players but will not set the server_state(). The
   caller must set the server state to S_S_OVER if the function
   returns TRUE.
+
+  Also send notifications about impending, predictable game end conditions.
 **************************************************************************/
 bool check_for_game_over(void)
 {
@@ -553,55 +557,100 @@ bool check_for_game_over(void)
     notify_conn(game.est_connections, NULL, E_GAME_END, ftc_server,
                 _("Game ended as the turn limit was exceeded."));
     return TRUE;
+  } else if (game.info.turn == game.server.end_turn) {
+    /* Give them a chance to decide to extend the game */
+    notify_conn(game.est_connections, NULL, E_GAME_END, ftc_server,
+                _("Notice: game will end at the end of this turn due "
+                  "to 'endturn' server setting."));
   }
 
-  /* Check for a spacerace win. */
-  while ((victor = check_spaceship_arrival())) {
-    const struct player_list *members;
-    bool win;
+  /* Check for a spacerace win (and notify of imminent arrivals).
+   * Check this after checking turn limit, because we are checking for
+   * the spaceship arriving in the year corresponding to the turn
+   * that's about to start. */
+  {
+    int n, i;
+    struct player *arrivals[MAX_NUM_PLAYER_SLOTS];
 
-    notify_player(NULL, NULL, E_SPACESHIP, ftc_server,
-                  _("The %s spaceship has arrived at Alpha Centauri."),
-                  nation_adjective_for_player(victor));
+    n = rank_spaceship_arrival(arrivals);
 
-    if (!game.server.endspaceship) {
-      /* Games does not end on spaceship arrival. At least print all the
-       * arrival messages. */
-      continue;
-    }
+    for (i = 0; i < n; i++) {
+      struct player *pplayer = arrivals[i];
+      const struct player_list *members;
+      bool win;
 
-    /* This guy has won, now check if anybody else wins with him. */
-    members = team_members(victor->team);
-    win = FALSE;
-    player_list_iterate(members, pplayer) {
-      if (pplayer->is_alive
-          && !player_status_check((pplayer), PSTATUS_SURRENDER)) {
-        /* We need at least one player to be a winner candidate in the
-         * team. */
-        win = TRUE;
+      if (game.info.year < (int)spaceship_arrival(pplayer)) {
+        /* We are into the future arrivals */
         break;
       }
-    } player_list_iterate_end;
 
-    if (!win) {
-      /* Let's try next arrival. */
-      continue;
-    }
+      /* Mark as arrived and notify everyone. */
+      spaceship_arrived(pplayer);
 
-    if (1 < player_list_size(members)) {
-      notify_conn(NULL, NULL, E_GAME_END, ftc_server,
-                  _("Team victory to %s."),
-                  team_name_translation(victor->team));
-      /* All players of the team win, even dead and surrended ones. */
-      player_list_iterate(members, pplayer) {
-        pplayer->is_winner = TRUE;
+      if (!game.server.endspaceship) {
+        /* Games does not end on spaceship arrival. At least print all the
+         * arrival messages. */
+        continue;
+      }
+
+      /* This player has won, now check if anybody else wins with them. */
+      members = team_members(pplayer->team);
+      win = FALSE;
+      player_list_iterate(members, pteammate) {
+        if (pplayer->is_alive
+            && !player_status_check((pteammate), PSTATUS_SURRENDER)) {
+          /* We need at least one player to be a winner candidate in the
+           * team. */
+          win = TRUE;
+          break;
+        }
       } player_list_iterate_end;
-    } else {
-      notify_conn(NULL, NULL, E_GAME_END, ftc_server,
-                  _("Game ended in victory for %s."), player_name(victor));
-      victor->is_winner = TRUE;
+
+      if (!win) {
+        /* Let's try next arrival. */
+        continue;
+      }
+
+      if (1 < player_list_size(members)) {
+        notify_conn(NULL, NULL, E_GAME_END, ftc_server,
+                    _("Team victory to %s."),
+                    team_name_translation(pplayer->team));
+        /* All players of the team win, even dead and surrendered ones. */
+        player_list_iterate(members, pteammate) {
+          pteammate->is_winner = TRUE;
+        } player_list_iterate_end;
+      } else {
+        notify_conn(NULL, NULL, E_GAME_END, ftc_server,
+                    _("Game ended in victory for %s."), player_name(pplayer));
+        pplayer->is_winner = TRUE;
+      }
+      return TRUE;
     }
-    return TRUE;
+
+    /* Print notice(s) of imminent arrival. These are not infallible
+     * (quite apart from risk of enemy action) because arrival is
+     * year-based, and some effect may change the timeline between
+     * now and the end of the next turn.
+     * (Also the order of messages will not always indicate tie-breaks,
+     * if the shuffled order is changed every turn, as it is for
+     * PMT_CONCURRENT games.) */
+    for (; i < n; i++) {
+      const struct player *pplayer = arrivals[i];
+      struct packet_game_info next_info = game.info; /* struct copy */
+
+      /* Advance the calendar in a throwaway copy of game.info. */
+      game_next_year(&next_info);
+
+      if (next_info.year < (int)spaceship_arrival(pplayer)) {
+        /* Even further in the future */
+        break;
+      }
+
+      notify_player(NULL, NULL, E_SPACESHIP, ftc_server,
+                    _("Notice: the %s spaceship will likely arrive at "
+                      "Alpha Centauri next turn."),
+                    nation_adjective_for_player(pplayer));
+    }
   }
 
   return FALSE;
@@ -708,8 +757,9 @@ static void do_border_vision_effect(void)
   Handle environmental upsets, meaning currently pollution or fallout.
 **************************************************************************/
 static void update_environmental_upset(enum environment_upset_type type,
-				       int *current, int *accum, int *level,
-				       void (*upset_action_fn)(int))
+                                       int *current, int *accum, int *level,
+                                       int percent,
+                                       void (*upset_action_fn)(int))
 {
   int count;
 
@@ -724,13 +774,13 @@ static void update_environmental_upset(enum environment_upset_type type,
     }
   } extra_type_iterate_end;
 
-  *current = count;
+  *current = (count * percent) / 100;
   *accum += count;
   if (*accum < *level) {
     *accum = 0;
   } else {
     *accum -= *level;
-    if (fc_rand((map_num_tiles() + 19) / 20) <= *accum) {
+    if (fc_rand((map_num_tiles() + 19) / 20) < *accum) {
       upset_action_fn((wld.map.xsize / 10) + (wld.map.ysize / 10) + ((*accum) * 5));
       *accum = 0;
       *level += (map_num_tiles() + 999) / 1000;
@@ -739,6 +789,45 @@ static void update_environmental_upset(enum environment_upset_type type,
 
   log_debug("environmental_upset: type=%-4d current=%-2d "
             "level=%-2d accum=%-2d", type, *current, *level, *accum);
+}
+
+/**********************************************************************//**
+  Notify about units at risk of disband due to armistice.
+**************************************************************************/
+static void notify_illegal_armistice_units(struct player *phost,
+                                           struct player *pguest,
+                                           int turns_left)
+{
+  int nunits = 0;
+  struct unit *a_unit = NULL;
+
+  unit_list_iterate(pguest->units, punit) {
+    if (tile_owner(unit_tile(punit)) == phost && is_military_unit(punit)) {
+      nunits++;
+      a_unit = punit;
+    }
+  } unit_list_iterate_end;
+  if (nunits > 0) {
+    struct astring unitstr = ASTRING_INIT;
+
+    astr_set(&unitstr,
+             /* TRANS: "... 2 military units in Norwegian territory." */
+             PL_("Warning: you still have %d military unit in %s territory.",
+                 "Warning: you still have %d military units in %s territory.",
+                 nunits),
+             nunits, nation_adjective_for_player(phost));
+    /* If there's one lousy unit left, we may as well include a link for it */
+    notify_player(pguest, nunits == 1 ? unit_tile(a_unit) : NULL,
+                  E_DIPLOMACY, ftc_server,
+                  /* TRANS: %s is another, separately translated sentence,
+                   * ending in a full stop. */
+                  PL_("%s Any such units will be disbanded in %d turn, "
+                      "in accordance with peace treaty.",
+                      "%s Any such units will be disbanded in %d turns, "
+                      "in accordance with peace treaty.", turns_left),
+                  astr_str(&unitstr), turns_left);
+    astr_free(&unitstr);
+  }
 }
 
 /**********************************************************************//**
@@ -803,6 +892,8 @@ static void update_diplomatics(void)
             state->turns_left = 0;
             state2->turns_left = 0;
             remove_illegal_armistice_units(plr1, plr2);
+          } else {
+            notify_illegal_armistice_units(plr1, plr2, state->turns_left);
           }
         }
 
@@ -1011,12 +1102,10 @@ static void begin_turn(bool is_new_turn)
   send_game_info(NULL);
 
   if (is_new_turn) {
-    script_server_signal_emit("turn_begin", 2,
-                              API_TYPE_INT, game.info.turn,
-                              API_TYPE_INT, game.info.year);
-    script_server_signal_emit("turn_started", 2,
-                              API_TYPE_INT, game.info.turn > 0 ? game.info.turn - 1: game.info.turn,
-                              API_TYPE_INT, game.info.year);
+    script_server_signal_emit("turn_begin", game.info.turn, game.info.year);
+    script_server_signal_emit("turn_started",
+                              game.info.turn > 0 ? game.info.turn - 1
+                              : game.info.turn, game.info.year);
 
     /* We build scores at the beginning of every turn.  We have to
      * build them at the beginning so that the AI can use the data,
@@ -1210,8 +1299,27 @@ static void end_phase(void)
    * change into account. */
   phase_players_iterate(pplayer) {
     multipliers_iterate(pmul) {
-      pplayer->multipliers[multiplier_index(pmul)] =
-        pplayer->multipliers_target[multiplier_index(pmul)];
+      int idx = multiplier_index(pmul);
+
+      if (!multiplier_can_be_changed(pmul, pplayer)) {
+        if (pplayer->multipliers[idx] != pmul->def) {
+          notify_player(pplayer, NULL, E_MULTIPLIER, ftc_server,
+                        _("%s restored to the default value %d"),
+                        multiplier_name_translation(pmul),
+                        pmul->def);
+          pplayer->multipliers[idx] = pmul->def;
+        }
+      } else {
+        if (pplayer->multipliers[idx] != pplayer->multipliers_target[idx]) {
+          notify_player(pplayer, NULL, E_MULTIPLIER, ftc_server,
+                        _("%s now at value %d"),
+                        multiplier_name_translation(pmul),
+                        pplayer->multipliers_target[idx]);
+
+          pplayer->multipliers[idx] =
+            pplayer->multipliers_target[idx];
+        }
+      }
     } multipliers_iterate_end;
   } phase_players_iterate_end;
 
@@ -1252,6 +1360,7 @@ static void end_phase(void)
   /* Refresh cities */
   phase_players_iterate(pplayer) {
     research_get(pplayer)->got_tech = FALSE;
+    research_get(pplayer)->got_tech_multi = FALSE;
   } phase_players_iterate_end;
 
   phase_players_iterate(pplayer) {
@@ -1385,10 +1494,7 @@ static void end_turn(void)
 
       lsend_packet_achievement_info(first->connections, &pack);
 
-      script_server_signal_emit("achievement_gained", 3,
-                                API_TYPE_ACHIEVEMENT, ach,
-                                API_TYPE_PLAYER, first,
-                                API_TYPE_BOOL, TRUE);
+      script_server_signal_emit("achievement_gained", ach, first, TRUE);
 
     }
 
@@ -1403,10 +1509,8 @@ static void end_turn(void)
 
           lsend_packet_achievement_info(pplayer->connections, &pack);
 
-          script_server_signal_emit("achievement_gained", 3,
-                                    API_TYPE_ACHIEVEMENT, ach,
-                                    API_TYPE_PLAYER, pplayer,
-                                    API_TYPE_BOOL, FALSE);
+          script_server_signal_emit("achievement_gained", ach, pplayer,
+                                    FALSE);
         }
       } player_list_iterate_end;
     }
@@ -1417,13 +1521,17 @@ static void end_turn(void)
   if (game.info.global_warming) {
     update_environmental_upset(EUT_GLOBAL_WARMING, &game.info.heating,
                                &game.info.globalwarming,
-                               &game.info.warminglevel, global_warming);
+                               &game.info.warminglevel,
+                               game.server.global_warming_percent,
+                               global_warming);
   }
 
   if (game.info.nuclear_winter) {
     update_environmental_upset(EUT_NUCLEAR_WINTER, &game.info.cooling,
                                &game.info.nuclearwinter,
-                               &game.info.coolinglevel, nuclear_winter);
+                               &game.info.coolinglevel,
+                               game.server.nuclear_winter_percent,
+                               nuclear_winter);
   }
 
   /* Handle disappearing extras before appearing extras ->
@@ -2722,8 +2830,7 @@ static void srv_running(void)
 	/* game ended for victory conditions - rank users based on survival */
 	rank_users(FALSE);
       }
-    } else if ((check_for_game_over() && game.info.turn > game.server.end_turn)
-	       || S_S_OVER == server_state()) {
+    } else if (S_S_OVER == server_state()) {
       /* game terminated by /endgame command - calculate team scores */
       rank_users(TRUE);
     }
@@ -3024,7 +3131,7 @@ static void srv_ready(void)
     }
 
     if (wld.map.server.generator != MAPGEN_SCENARIO) {
-      script_server_signal_emit("map_generated", 0);
+      script_server_signal_emit("map_generated");
     }
 
     game_map_init();
@@ -3059,6 +3166,8 @@ static void srv_ready(void)
   (void) send_server_info_to_metaserver(META_INFO);
 
   if (game.info.is_new_game) {
+    shuffle_players();
+
     /* If we're starting a new game, reset the max_players to be at
      * least the number of players currently in the game. */
     game.server.max_players = MAX(normal_player_count(), game.server.max_players);
@@ -3275,6 +3384,7 @@ void srv_main(void)
 
     /* Reset server */
     server_game_free();
+    fc_rand_uninit();
     server_game_init(FALSE);
     mapimg_reset();
     load_rulesets(NULL, FALSE, NULL, TRUE, FALSE);

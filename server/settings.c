@@ -215,6 +215,18 @@ static bool set_enum_value(struct setting *pset, int val);
     }
 
 /************************************************************************//**
+  Caravan bonus style setting names accessor.
+****************************************************************************/
+static const struct sset_val_name *caravanbonusstyle_name(int caravanbonus)
+{
+  switch (caravanbonus) {
+  NAME_CASE(CBS_CLASSIC, "CLASSIC", N_("Classic Freeciv"));
+  NAME_CASE(CBS_LOGARITHMIC, "LOGARITHMIC", N_("Log^2 N style"));
+  }
+  return NULL;
+}
+
+/************************************************************************//**
   Map size definition setting names accessor. This setting has an
   hard-coded depedence in "server/meta.c".
 ****************************************************************************/
@@ -238,6 +250,18 @@ static const struct sset_val_name *topology_name(int topology_bit)
   NAME_CASE(TF_WRAPY, "WRAPY", N_("Wrap North-South"));
   NAME_CASE(TF_ISO, "ISO", N_("Isometric"));
   NAME_CASE(TF_HEX, "HEX", N_("Hexagonal"));
+  }
+  return NULL;
+}
+
+/************************************************************************//**
+  Trade revenue style setting names accessor.
+****************************************************************************/
+static const struct sset_val_name *traderevenuestyle_name(int revenue_style)
+{
+  switch (revenue_style) {
+  NAME_CASE(TRS_CLASSIC, "CLASSIC", N_("Classic Freeciv"));
+  NAME_CASE(TRS_SIMPLE, "SIMPLE", N_("Proportional to tile trade"));
   }
   return NULL;
 }
@@ -1632,6 +1656,15 @@ static struct setting settings[] = {
               "affect pollution."), NULL, NULL,
            GAME_DEFAULT_GLOBAL_WARMING)
 
+  GEN_INT("globalwarming_percent", game.server.global_warming_percent,
+           SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+           N_("Global warming percent"),
+           N_("This is a multiplier for the rate of accumulation of global "
+              "warming."), NULL, NULL, NULL,
+           GAME_MIN_GLOBAL_WARMING_PERCENT,
+           GAME_MAX_GLOBAL_WARMING_PERCENT,
+           GAME_DEFAULT_GLOBAL_WARMING_PERCENT)
+
   GEN_BOOL("nuclearwinter", game.info.nuclear_winter,
            SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
            N_("Nuclear winter"),
@@ -1639,8 +1672,22 @@ static struct setting settings[] = {
               "as a result of nuclear war."), NULL, NULL,
            GAME_DEFAULT_NUCLEAR_WINTER)
 
+  GEN_INT("nuclearwinter_percent", game.server.nuclear_winter_percent,
+           SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+           N_("Nuclear winter percent"),
+           N_("This is a multiplier for the rate of accumulation of nuclear "
+              "winter."), NULL, NULL, NULL,
+           GAME_MIN_NUCLEAR_WINTER_PERCENT,
+           GAME_MAX_NUCLEAR_WINTER_PERCENT,
+           GAME_DEFAULT_NUCLEAR_WINTER_PERCENT)
+
   GEN_INT("mapseed", wld.map.server.seed_setting,
-          SSET_MAP_GEN, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+          SSET_MAP_GEN, SSET_INTERNAL, SSET_RARE,
+#ifdef FREECIV_WEB
+          ALLOW_NONE, ALLOW_BASIC,
+#else /* FREECIV_WEB */
+          ALLOW_HACK, ALLOW_HACK,
+#endif /* FREECIV_WEB */
           N_("Map generation random seed"),
           N_("The same seed will always produce the same map; "
              "for zero (the default) a seed will be chosen based on "
@@ -1654,7 +1701,12 @@ static struct setting settings[] = {
    * fixed after the game has started.
    */
   GEN_INT("gameseed", game.server.seed_setting,
-          SSET_MAP_ADD, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+          SSET_MAP_ADD, SSET_INTERNAL, SSET_RARE,
+#ifdef FREECIV_WEB
+          ALLOW_NONE, ALLOW_BASIC,
+#else /* FREECIV_WEB */
+          ALLOW_HACK, ALLOW_HACK,
+#endif /* FREECIV_WEB */
           N_("Game random seed"),
           N_("For zero (the default) a seed will be chosen based "
              "on the current time."),
@@ -1852,6 +1904,15 @@ static struct setting settings[] = {
           NULL, NULL, NULL, GAME_MIN_SCIENCEBOX, GAME_MAX_SCIENCEBOX,
           GAME_DEFAULT_SCIENCEBOX)
 
+  GEN_BOOL("multiresearch", game.server.multiresearch,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Allow researching multiple technologies"),
+          N_("Allows switching to any technology without wasting old "
+             "research. Bulbs are never transfered to new technology. "
+             "Techpenalty options are inefective after enabling that "
+             "option."), NULL, NULL,
+          GAME_DEFAULT_MULTIRESEARCH)
+
   GEN_INT("techpenalty", game.server.techpenalty,
           SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Percentage penalty when changing tech"),
@@ -1878,6 +1939,13 @@ static struct setting settings[] = {
              "from you."),
           NULL, NULL, NULL, GAME_MIN_TECHLOST_DONOR, GAME_MAX_TECHLOST_DONOR,
           GAME_DEFAULT_TECHLOST_DONOR)
+
+  GEN_INT("techleak", game.info.tech_leak_pct,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Tech leakage percent"),
+          N_("The rate of the tech leakage."),
+          NULL, NULL, NULL, GAME_MIN_TECHLEAK, GAME_MAX_TECHLEAK,
+          GAME_DEFAULT_TECHLEAK)
 
   GEN_BOOL("team_pooled_research", game.info.team_pooled_research,
            SSET_RULES, SSET_SCIENCE, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
@@ -1931,7 +1999,7 @@ static struct setting settings[] = {
           NULL, NULL, NULL,
           GAME_MIN_FREECOST, GAME_MAX_FREECOST, GAME_DEFAULT_FREECOST)
 
-  GEN_INT("techlossforgiveness", game.server.techloss_forgiveness,
+  GEN_INT("techlossforgiveness", game.info.techloss_forgiveness,
           SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Research point debt threshold for losing tech"),
           N_("When you have negative research points, and your shortfall is "
@@ -2069,7 +2137,29 @@ static struct setting settings[] = {
               "is not allowed."), NULL, NULL,
            GAME_DEFAULT_TRADING_CITY)
 
-  GEN_INT("trademindist", game.info.trademindist,
+  GEN_ENUM("caravan_bonus_style", game.info.caravan_bonus_style,
+           SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+           N_("Caravan bonus style"),
+           N_("The formula for the bonus when a caravan enters a city. "
+              "CLASSIC bonuses are proportional to distance and trade "
+              "of source and destination with multipliers for overseas and "
+              "international destinations. LOGARITHMIC bonuses are "
+              "proportional to log^2(distance + trade)."),
+           NULL, NULL, NULL, caravanbonusstyle_name,
+           GAME_DEFAULT_CARAVAN_BONUS_STYLE)
+
+  GEN_ENUM("trade_revenue_style", game.info.trade_revenue_style,
+          SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Trade revenue style"),
+          N_("The formula for the trade a city receives from a traderoute. "
+             "CLASSIC revenues depend on distance and trade with "
+             "multipliers for overseas and international routes. "
+             "SIMPLE revenues are proportional to the average trade of the "
+             "two cities."),
+	  NULL, NULL, NULL, traderevenuestyle_name,
+          GAME_DEFAULT_TRADE_REVENUE_STYLE)
+
+    GEN_INT("trademindist", game.info.trademindist,
           SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Minimum distance for trade routes"),
           N_("In order for two cities in the same civilization to establish "
@@ -2375,6 +2465,15 @@ static struct setting settings[] = {
            N_("If this option is turned on, the game will end with the "
               "arrival of a spaceship at Alpha Centauri."),
            NULL, NULL, GAME_DEFAULT_END_SPACESHIP)
+
+  GEN_INT("spaceship_travel_time", game.server.spaceship_travel_time,
+           SSET_RULES_FLEXIBLE, SSET_SCIENCE, SSET_VITAL, ALLOW_NONE,
+           ALLOW_BASIC,
+           N_("Percentage to multiply spaceship travel time by"),
+           N_("This percentage is multiplied onto the time it will take for "
+              "a spaceship to arrive at Alpha Centauri."), NULL, NULL, NULL,
+          GAME_MIN_SPACESHIP_TRAVEL_TIME, GAME_MAX_SPACESHIP_TRAVEL_TIME,
+          GAME_DEFAULT_SPACESHIP_TRAVEL_TIME)
 
   GEN_INT("civilwarsize", game.server.civilwarsize,
           SSET_RULES_FLEXIBLE, SSET_SOCIOLOGY, SSET_RARE,

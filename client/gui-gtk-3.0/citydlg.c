@@ -111,7 +111,7 @@ enum { OVERVIEW_PAGE, MAP_PAGE, BUILDINGS_PAGE, WORKLIST_PAGE,
 };
 
 #define NUM_CITIZENS_SHOWN 30
-#define NUM_INFO_FIELDS 13      /* number of fields in city_info */
+#define NUM_INFO_FIELDS 14      /* number of fields in city_info */
 #define NUM_PAGES 6             /* the number of pages in city dialog notebook 
                                  * (+1) if you change this, you must add an
                                  * entry to misc_whichtab_label[] */
@@ -242,7 +242,7 @@ static struct city_dialog *create_city_dialog(struct city *pcity);
 static void city_dialog_update_title(struct city_dialog *pdialog);
 static void city_dialog_update_citizens(struct city_dialog *pdialog);
 static void city_dialog_update_information(GtkWidget **info_ebox,
-					   GtkWidget **info_label,
+                                           GtkWidget **info_label,
                                            struct city_dialog *pdialog);
 static void city_dialog_update_map(struct city_dialog *pdialog);
 static void city_dialog_update_building(struct city_dialog *pdialog);
@@ -490,7 +490,7 @@ void real_city_dialog_refresh(struct city *pcity)
   city_dialog_update_title(pdialog);
   city_dialog_update_citizens(pdialog);
   city_dialog_update_information(pdialog->overview.info_ebox,
-				 pdialog->overview.info_label, pdialog);
+                                 pdialog->overview.info_label, pdialog);
   city_dialog_update_map(pdialog);
   city_dialog_update_building(pdialog);
   city_dialog_update_improvement_list(pdialog);
@@ -648,7 +648,7 @@ enum { FIELD_FOOD, FIELD_SHIELD, FIELD_TRADE, FIELD_GOLD, FIELD_LUXURY,
   Popup info dialog
 **************************************************************************/
 static gboolean show_info_popup(GtkWidget *w, GdkEventButton *ev,
-    				gpointer data)
+                                gpointer data)
 {
   struct city_dialog *pdialog = g_object_get_data(G_OBJECT(w), "pdialog");
 
@@ -725,7 +725,7 @@ static gboolean show_info_popup(GtkWidget *w, GdkEventButton *ev,
   **info_label points to the info_label in the respective struct
 **************************************************************************/
 static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
-    					 GtkWidget **info_ebox,
+                                         GtkWidget **info_ebox,
                                          GtkWidget **info_label)
 {
   int i;
@@ -743,7 +743,8 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
     N_("Waste:"),
     N_("Culture:"),
     N_("Pollution:"),
-    N_("Plague Risk:")
+    N_("Plague Risk:"),
+    N_("Tech Stolen:")
   };
   static bool output_label_done;
 
@@ -1312,7 +1313,7 @@ static void create_and_append_happiness_page(struct city_dialog *pdialog)
                                  GTK_ORIENTATION_VERTICAL);
   gtk_container_add(GTK_CONTAINER(right), pdialog->happiness.widget);
   gtk_container_add(GTK_CONTAINER(pdialog->happiness.widget),
-                    get_top_happiness_display(pdialog->pcity, low_citydlg));
+                    get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
 
   /* show page */
   gtk_widget_show_all(page);
@@ -1763,7 +1764,7 @@ static void city_dialog_update_information(GtkWidget **info_ebox,
 
   enum { FOOD, SHIELD, TRADE, GOLD, LUXURY, SCIENCE,
          GRANARY, GROWTH, CORRUPTION, WASTE, CULTURE,
-         POLLUTION, ILLNESS
+         POLLUTION, ILLNESS, STEAL
   };
 
   /* fill the buffers with the necessary info */
@@ -1814,6 +1815,11 @@ static void city_dialog_update_information(GtkWidget **info_ebox,
     /* illness is in tenth of percent */
     fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), "%4.1f",
                 (float)illness / 10.0);
+  }
+  if (pcity->steal) {
+    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("%d times"), pcity->steal);
+  } else {
+    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("Not stolen"));
   }
 
   /* stick 'em in the labels */
@@ -2819,10 +2825,13 @@ static void set_city_workertask(GtkWidget *w, gpointer data)
     task.want = 0;
   } else {
     enum extra_cause cause = activity_to_extra_cause(act);
+    enum extra_rmcause rmcause = activity_to_extra_rmcause(act);
     struct extra_type *tgt;
 
     if (cause != EC_NONE) {
       tgt = next_extra_for_tile(ptile, cause, city_owner(pcity), NULL);
+    } else if (rmcause != ERM_NONE) {
+      tgt = prev_extra_in_tile(ptile, rmcause, city_owner(pcity), NULL);
     } else {
       tgt = NULL;
     }
@@ -2892,7 +2901,7 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
     }
 
     if ((pterr->mining_result == pterr
-         && effect_cumulative_max(EFT_MINING_POSSIBLE, &for_terr) > 0)
+         && univs_have_action_enabler(ACTION_MINE, NULL, &for_terr))
         || (pterr->mining_result != pterr && pterr->mining_result != NULL
             && univs_have_action_enabler(ACTION_MINE_TF, NULL, &for_terr))) {
       choice_dialog_add(shl, _("Mine"),
@@ -2900,7 +2909,7 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
                         GINT_TO_POINTER(ACTIVITY_MINE), FALSE, NULL);
     }
     if ((pterr->irrigation_result == pterr
-         && effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_terr) > 0)
+         && univs_have_action_enabler(ACTION_IRRIGATE, NULL, &for_terr))
         || (pterr->irrigation_result != pterr && pterr->irrigation_result != NULL
             && univs_have_action_enabler(ACTION_IRRIGATE_TF, NULL, &for_terr))) {
       choice_dialog_add(shl, _("Irrigate"),
@@ -2917,6 +2926,18 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
       choice_dialog_add(shl, _("Transform"),
                         G_CALLBACK(set_city_workertask),
                         GINT_TO_POINTER(ACTIVITY_TRANSFORM), FALSE, NULL);
+    }
+    if (prev_extra_in_tile(ptile, ERM_CLEANPOLLUTION,
+                           city_owner(pcity), NULL) != NULL) {
+      choice_dialog_add(shl, _("Clean Pollution"),
+                        G_CALLBACK(set_city_workertask),
+                        GINT_TO_POINTER(ACTIVITY_POLLUTION), FALSE, NULL);
+    }
+    if (prev_extra_in_tile(ptile, ERM_CLEANFALLOUT,
+                           city_owner(pcity), NULL) != NULL) {
+      choice_dialog_add(shl, _("Clean Fallout"),
+                        G_CALLBACK(set_city_workertask),
+                        GINT_TO_POINTER(ACTIVITY_FALLOUT), FALSE, NULL);
     }
 
     choice_dialog_add(shl, GTK_STOCK_CANCEL, 0, 0, FALSE, NULL);
@@ -2993,7 +3014,7 @@ static void buy_callback(GtkWidget *w, gpointer data)
   GtkWidget *shell;
   struct city_dialog *pdialog = data;
   const char *name = city_production_name_translation(pdialog->pcity);
-  int value = city_production_buy_gold_cost(pdialog->pcity);
+  int value = pdialog->pcity->client.buy_cost;
   char buf[1024];
 
   if (!can_client_issue_orders()) {
@@ -3398,7 +3419,7 @@ static void switch_city_callback(GtkWidget *w, gpointer data)
                       citizens_dialog_display(pdialog->pcity));
   }
   gtk_container_add(GTK_CONTAINER(pdialog->happiness.widget),
-                    get_top_happiness_display(pdialog->pcity, low_citydlg));
+                    get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
   if (!client_is_observer()) {
     fc_assert(pdialog->cma_editor != NULL);
     pdialog->cma_editor->pcity = new_pcity;

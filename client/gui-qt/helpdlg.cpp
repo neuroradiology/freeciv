@@ -17,6 +17,7 @@
 
 // Qt
 #include <QApplication>
+#include <QDesktopWidget>
 #include <QGraphicsDropShadowEffect>
 #include <QGroupBox>
 #include <QProgressBar>
@@ -118,15 +119,12 @@ void update_help_fonts()
 help_dialog::help_dialog(QWidget *parent) : qfc_dialog(parent)
 {
   QHBoxLayout *hbox;
-  QList<int> sizes;
   QPushButton *but;
-  QSplitter *splitter;
   QTreeWidgetItem *first;
   QVBoxLayout *layout;
   QWidget *buttons;
 
   setWindowTitle(_("Freeciv Help Browser"));
-  resize(750, 450);
   history_pos = -1;
   update_history = true;
   layout = new QVBoxLayout(this);
@@ -147,9 +145,6 @@ help_dialog::help_dialog(QWidget *parent) : qfc_dialog(parent)
   );
   help_wdg->layout()->setContentsMargins(0, 0, 0, 0);
   splitter->addWidget(help_wdg);
-
-  sizes << 150 << 600;
-  splitter->setSizes(sizes);
 
   buttons = new QWidget;
   hbox = new QHBoxLayout;
@@ -189,6 +184,44 @@ void help_dialog::update_fonts()
 {
   help_wdg->update_fonts();
 }
+
+/****************************************************************************
+  Hide event
+****************************************************************************/
+void help_dialog::hideEvent(QHideEvent *event)
+{
+  gui()->qt_settings.help_geometry = saveGeometry();
+  gui()->qt_settings.help_splitter1 = splitter->saveState();
+}
+
+/****************************************************************************
+  Show event
+****************************************************************************/
+void help_dialog::showEvent(QShowEvent *event)
+{
+  QList<int> sizes;
+
+  if (gui()->qt_settings.help_geometry.isNull() == false) {
+    restoreGeometry(gui()->qt_settings.help_geometry);
+    splitter->restoreState(gui()->qt_settings.help_splitter1);
+  } else {
+    QRect rect = QApplication::desktop()->screenGeometry();
+    resize((rect.width() * 3) / 5, (rect.height() * 3) / 6);
+    sizes << rect.width() / 10 << rect.width() / 3;
+    splitter->setSizes(sizes);
+  }
+}
+
+/****************************************************************************
+  Close event
+****************************************************************************/
+void help_dialog::closeEvent(QCloseEvent *event)
+{
+  gui()->qt_settings.help_geometry = saveGeometry();
+  gui()->qt_settings.help_splitter1 = splitter->saveState();
+}
+
+
 
 /**********************************************************************//**
   Create the help tree.
@@ -859,8 +892,8 @@ void help_widget::set_topic_unit(const help_item *topic,
     add_info_separator();
 
     add_info_progress(_("Hitpoints:"), utype->hp, 0, max_utype->hp);
-    add_info_progress(_("Cost:"), utype_build_shield_cost(utype),
-                      0, utype_build_shield_cost(max_utype));
+    add_info_progress(_("Cost:"), utype_build_shield_cost_base(utype),
+                      0, utype_build_shield_cost_base(max_utype));
     add_info_progress(_("Firepower:"), utype->firepower, 0,
                       max_utype->firepower);
 
@@ -944,6 +977,7 @@ void help_widget::set_topic_building(const help_item *topic,
                                      const char *title)
 {
   char buffer[MAX_HELP_TEXT_SIZE];
+  int type, value;
   struct sprite *spr;
   struct impr_type *itype = improvement_by_translated_name(title);
   char req_buf[512];
@@ -961,7 +995,7 @@ void help_widget::set_topic_building(const help_item *topic,
     }
     str = _("Cost:");
     str = "<b>" + str + "</b>" + " "
-          + QString::number(impr_build_shield_cost(itype));
+          + QString::number(impr_build_shield_cost(NULL, itype));
     add_info_label(str);
     if (!is_great_wonder(itype)) {
       str = _("Upkeep:");
@@ -974,8 +1008,17 @@ void help_widget::set_topic_building(const help_item *topic,
       if (!preq->present) {
         continue;
       }
-      s1 = link_me(universal_name_translation(&preq->source, req_buf,
+      universal_extraction(&preq->source, &type, &value);
+      if (type == VUT_ADVANCE) {
+        s1 = link_me(universal_name_translation(&preq->source, req_buf,
                                        sizeof(req_buf)), HELP_TECH);
+      } else if (type == VUT_GOVERNMENT) {
+        s1 = link_me(universal_name_translation(&preq->source, req_buf,
+                                       sizeof(req_buf)), HELP_GOVERNMENT);
+      } else if (type == VUT_TERRAIN) {
+        s1 = link_me(universal_name_translation(&preq->source, req_buf,
+                                       sizeof(req_buf)), HELP_TERRAIN);
+      }
       break;
     } requirement_vector_iterate_end;
 
@@ -1339,12 +1382,12 @@ void help_widget::set_topic_terrain(const help_item *topic,
 
     if (pterrain->irrigation_result == pterrain
         && pterrain->irrigation_time != 0
-        && effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_terr) > 0) {
+        && univs_have_action_enabler(ACTION_IRRIGATE, NULL, &for_terr)) {
       add_extras_of_act_for_terrain(pterrain, ACTIVITY_IRRIGATE, _("Build as irrigation"));
     }
     if (pterrain->mining_result == pterrain
         && pterrain->mining_time != 0
-        && effect_cumulative_max(EFT_MINING_POSSIBLE, &for_terr) > 0) {
+        && univs_have_action_enabler(ACTION_MINE, NULL, &for_terr)) {
       add_extras_of_act_for_terrain(pterrain, ACTIVITY_MINE, _("Build as mine"));
     }
     if (pterrain->road_time != 0) {

@@ -56,15 +56,15 @@ class qdef_act
 private:
   explicit qdef_act();
   static qdef_act* m_instance;
-  int vs_city;
-  int vs_unit;
+  action_id vs_city;
+  action_id vs_unit;
 public:
   static qdef_act* action();
   static void drop();
   void vs_city_set(int i);
   void vs_unit_set(int i);
-  int vs_city_get();
-  int vs_unit_get();
+  action_id vs_city_get();
+  action_id vs_unit_get();
 };
 
 /***************************************************************************
@@ -197,8 +197,6 @@ private:
 
 /***************************************************************************
  Transparent widget for selecting units
- TODO Add some simple scrollbars (just paint it during paint event,
- if 'more' is true->scroll visible and would depend on show_line
 ***************************************************************************/
 class units_select: public fcwidget
 {
@@ -284,6 +282,7 @@ public:
   Choice_dialog_button *get_identified_button(const int id);
   int unit_id;
   int target_id[ATK_COUNT];
+  int target_extra_id;
   struct unit* targeted_unit;
   void update_dialog(const struct act_prob *act_probs);
 public slots:

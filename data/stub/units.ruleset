@@ -31,7 +31,7 @@ format_version=20
 veteran_names = _("green")
 
 ; The percentage chance of increasing level through combat
-veteran_raise_chance = 0
+veteran_base_raise_chance = 0
 
 ; Power factors are as a percentage.
 ; +50% is represented by 150
@@ -163,7 +163,8 @@ flags         = ""
 ; vision_radius_sq = base vision of unit: unit can see tile up to the square
 ;                 root of this value away
 ; convert_to    = can be converted to another type of unit by name
-; convert_time  = time it takes to convert to another unit type
+; convert_time  = number of movement points it takes to convert to
+;                 another unit type
 ; class         = One of the classes listed above
 ; transport_cap = Number of units (ground, or air/missiles, depending on flags)
 ; fuel          = Number of turns unit can spend outside refuel points.
@@ -264,7 +265,7 @@ flags         = ""
 ;		  therefore will not revolt along with its city of origin should
 ;		  it be incited
 ; "NoVeteran"   = this unit cannot gain veteran levels through experience
-;                 (as if both raise_chance and work_raise_chance were zero);
+;                 (as if both base_raise_chance and work_raise_chance were zero);
 ;                 it can still gain veterancy through Veteran_Build, etc
 ; "CityBuster"  = this unit has double firepower against cities
 ; "NoBuild"     = this unit cannot be built
@@ -294,7 +295,7 @@ flags         = ""
 ;                 setting is enabled.
 ;
 ; Following actions require extra fields:
-;  "Attack"
+;  "Attack" and "Suicide Attack"
 ;   attack = base attack strength
 ;  "Bombard"
 ;   attack       = base attack strength

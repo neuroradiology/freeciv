@@ -30,6 +30,7 @@
 #include "climap.h"
 #include "control.h"
 #include "mapctrl.h"
+#include "themes_common.h"
 #include "tile.h"
 #include "unit.h"
 
@@ -221,22 +222,21 @@ void map_view::shortcut_pressed(int key)
   }
 
   /* Trade Generator - skip */
-  if (bt == Qt::LeftButton
+  sc = fc_shortcuts::sc()->get_shortcut(SC_SELECT_BUTTON);
+  if (bt == sc->mouse && md == sc->mod
       && gui()->trade_gen.hover_city == true) {
     ptile = canvas_pos_to_tile(pos.x(), pos.y());
-    gui()->trade_gen.hover_city = false;
     gui()->trade_gen.add_tile(ptile);
     gui()->mapview_wdg->repaint();
     return;
   }
 
   /* Rally point - select city - skip */
-  if (bt == Qt::LeftButton
+  if (bt == sc->mouse && md == sc->mod
       && gui()->rallies.hover_city == true) {
     char text[1024];
     ptile = canvas_pos_to_tile(pos.x(), pos.y());
     if (tile_city(ptile)) {
-      gui()->rallies.hover_city = false;
       gui()->rallies.hover_tile = true;
       gui()->rallies.rally_city = tile_city(ptile);
 
@@ -276,8 +276,7 @@ void map_view::shortcut_pressed(int key)
   if (bt == Qt::LeftButton && gui()->menu_bar->delayed_order == true) {
     ptile = canvas_pos_to_tile(pos.x(), pos.y());
     gui()->menu_bar->set_tile_for_order(ptile);
-    set_hover_state(NULL, HOVER_NONE, ACTIVITY_LAST, NULL,
-                    EXTRA_NONE, ACTION_NONE, ORDER_LAST);
+    clear_hover_state();
     exit_goto_state();
     gui()->menu_bar->delayed_order = false;
     return;
@@ -336,13 +335,13 @@ void map_view::shortcut_pressed(int key)
 
     sc = fc_shortcuts::sc()->get_shortcut(SC_RELOAD_THEME);
     if (((key && key == sc->key) || bt == sc->mouse) && md == sc->mod) {
-      qtg_gui_load_theme(QString().toLocal8Bit().data(),
-                         gui_options.gui_qt_default_theme_name);
+      load_theme(gui_options.gui_qt_default_theme_name);
       return;
     }
 
     sc = fc_shortcuts::sc()->get_shortcut(SC_RELOAD_TILESET);
     if (((key && key == sc->key) || bt == sc->mouse) && md == sc->mod) {
+      QPixmapCache::clear();
       tilespec_reread(tileset_basename(tileset), true, gui()->map_scale);
       return;
     }
@@ -447,6 +446,12 @@ void map_view::shortcut_released(Qt::MouseButton bt)
 
   sc = fc_shortcuts::sc()->get_shortcut(SC_SELECT_BUTTON);
   if (bt == sc->mouse && md == sc->mod) {
+    if (gui()->trade_gen.hover_city == true
+        || gui()->rallies.hover_city == true) {
+      gui()->trade_gen.hover_city = false;
+      gui()->rallies.hover_city = false;
+      return;
+    }
     if (menu_click == true) {
       menu_click = false;
       return;

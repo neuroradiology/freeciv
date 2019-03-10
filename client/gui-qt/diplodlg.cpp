@@ -270,7 +270,9 @@ void diplo_wdg::dbl_click(QTableWidgetItem *item)
 ****************************************************************************/
 void diplo_wdg::closeEvent(QCloseEvent *event)
 {
-  response_cancel();
+  if (C_S_RUNNING == client_state()) {
+    response_cancel();
+  }
   event->accept();
 }
 
@@ -1054,4 +1056,5 @@ void close_all_diplomacy_dialogs(void)
   w = gui()->game_tab_widget->widget(i);
   dd = qobject_cast<diplo_dlg *>(w);
   dd->close();
+  delete dd;
 }

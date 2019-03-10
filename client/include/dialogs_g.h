@@ -42,7 +42,7 @@ GUI_FUNC_PROTO(void, popdown_races_dialog, void)
 
 GUI_FUNC_PROTO(void, unit_select_dialog_popup, struct tile *ptile)
 void unit_select_dialog_update(void); /* Defined in update_queue.c. */
-GUI_FUNC_PROTO(void, unit_select_dialog_update_real, void)
+GUI_FUNC_PROTO(void, unit_select_dialog_update_real, void *unused)
 
 GUI_FUNC_PROTO(void, races_toggles_set_sensitive, void)
 GUI_FUNC_PROTO(void, races_update_pickable, bool nationset_change)
@@ -50,17 +50,21 @@ GUI_FUNC_PROTO(void, races_update_pickable, bool nationset_change)
 GUI_FUNC_PROTO(void, popup_combat_info, int attacker_unit_id,
                int defender_unit_id, int attacker_hp, int defender_hp,
                bool make_att_veteran, bool make_def_veteran)
+GUI_FUNC_PROTO(void, show_img_play_snd, const char *img_path,
+               const char *snd_path, const char *desc, bool fullsize)
 GUI_FUNC_PROTO(void, popup_action_selection, struct unit *actor_unit,
                struct city *target_city, struct unit *target_unit,
-               struct tile *target_tile,
+               struct tile *target_tile, struct extra_type *target_extra,
                const struct act_prob *act_probs)
 GUI_FUNC_PROTO(int, action_selection_actor_unit, void)
 GUI_FUNC_PROTO(int, action_selection_target_city, void)
 GUI_FUNC_PROTO(int, action_selection_target_unit, void)
+GUI_FUNC_PROTO(int, action_selection_target_tile, void)
+GUI_FUNC_PROTO(int, action_selection_target_extra, void)
 GUI_FUNC_PROTO(void, action_selection_close, void)
 GUI_FUNC_PROTO(void, action_selection_refresh, struct unit *actor_unit,
                struct city *target_city, struct unit *target_unit,
-               struct tile *target_tile,
+               struct tile *target_tile, struct extra_type *target_extra,
                const struct act_prob *act_probs)
 GUI_FUNC_PROTO(void, action_selection_no_longer_in_progress_gui_specific,
                int actor_unit_id)

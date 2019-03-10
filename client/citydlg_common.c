@@ -69,8 +69,8 @@ void generate_citydlg_dimensions(void)
   city_map_iterate_without_index(max_rad, city_x, city_y) {
     float canvas_x, canvas_y;
 
-    map_to_gui_vector(tileset, 1.0, &canvas_x, &canvas_y, CITY_ABS2REL(city_x),
-                      CITY_ABS2REL(city_y));
+    map_to_gui_vector(get_tileset(), 1.0, &canvas_x, &canvas_y,
+                      CITY_ABS2REL(city_x), CITY_ABS2REL(city_y));
 
     min_x = MIN(canvas_x, min_x);
     max_x = MAX(canvas_x, max_x);
@@ -78,8 +78,8 @@ void generate_citydlg_dimensions(void)
     max_y = MAX(canvas_y, max_y);
   } city_map_iterate_without_index_end;
 
-  citydlg_map_width = max_x - min_x + tileset_tile_width(tileset);
-  citydlg_map_height = max_y - min_y + tileset_tile_height(tileset);
+  citydlg_map_width = max_x - min_x + tileset_tile_width(get_tileset());
+  citydlg_map_height = max_y - min_y + tileset_tile_height(get_tileset());
 }
 
 /**********************************************************************//**
@@ -118,11 +118,12 @@ bool canvas_to_city_pos(int *city_x, int *city_y, int city_radius_sq,
   const int height = get_citydlg_canvas_height();
 
   /* The citymap is centered over the center of the citydlg canvas. */
-  canvas_x -= (width - tileset_tile_width(tileset)) / 2;
-  canvas_y -= (height - tileset_tile_height(tileset)) / 2;
+  canvas_x -= (width - tileset_tile_width(get_tileset())) / 2;
+  canvas_y -= (height - tileset_tile_height(get_tileset())) / 2;
 
-  if (tileset_is_isometric(tileset)) {
-    const int W = tileset_tile_width(tileset), H = tileset_tile_height(tileset);
+  if (tileset_is_isometric(get_tileset())) {
+    const int W = tileset_tile_width(get_tileset()),
+              H = tileset_tile_height(get_tileset());
 
     /* Shift the tile left so the top corner of the origin tile is at
        canvas position (0,0). */
@@ -133,8 +134,8 @@ bool canvas_to_city_pos(int *city_x, int *city_y, int city_radius_sq,
     *city_x = DIVIDE(canvas_x * H + canvas_y * W, W * H);
     *city_y = DIVIDE(canvas_y * W - canvas_x * H, W * H);
   } else {
-    *city_x = DIVIDE(canvas_x, tileset_tile_width(tileset));
-    *city_y = DIVIDE(canvas_y, tileset_tile_height(tileset));
+    *city_x = DIVIDE(canvas_x, tileset_tile_width(get_tileset()));
+    *city_y = DIVIDE(canvas_y, tileset_tile_height(get_tileset()));
   }
 
   /* Add on the offset of the top-left corner to get the final
@@ -182,6 +183,14 @@ bool canvas_to_city_pos(int *city_x, int *city_y, int city_radius_sq,
 void city_dialog_redraw_map(struct city *pcity,
 			    struct canvas *pcanvas)
 {
+  struct tileset *tmp;
+
+  tmp = NULL;
+  if (unscaled_tileset) {
+    tmp = tileset;
+    tileset = unscaled_tileset;
+  }
+
   /* First make it all black. */
   canvas_put_rectangle(pcanvas, get_color(tileset, COLOR_MAPVIEW_UNKNOWN),
 		       0, 0,
@@ -198,6 +207,10 @@ void city_dialog_redraw_map(struct city *pcity,
                       punit, pcity_draw, canvas_x, canvas_y, pcity, NULL);
     } citydlg_iterate_end;
   } mapview_layer_iterate_end;
+
+  if (tmp != NULL) {
+    tileset = tmp;
+  }
 }
 
 /**********************************************************************//**
@@ -309,7 +322,7 @@ void get_city_dialog_production_full(char *buffer, size_t buffer_len,
                                      struct city *pcity)
 {
   int turns = city_turns_to_build(pcity, target, TRUE);
-  int cost = universal_build_shield_cost(target);
+  int cost = universal_build_shield_cost(pcity, target);
 
   switch (target->kind) {
   case VUT_IMPROVEMENT:
@@ -356,7 +369,7 @@ void get_city_dialog_production_row(char *buf[], size_t column_size,
     struct unit_type *ptype = target->value.utype;
 
     fc_strlcpy(buf[1], utype_values_string(ptype), column_size);
-    fc_snprintf(buf[2], column_size, "(%d)", utype_build_shield_cost(ptype));
+    fc_snprintf(buf[2], column_size, "(%d)", utype_build_shield_cost(pcity, ptype));
     break;
   }
   case VUT_IMPROVEMENT:
@@ -404,7 +417,7 @@ void get_city_dialog_production_row(char *buf[], size_t column_size,
       }
 
       fc_snprintf(buf[2], column_size, "%d",
-                  impr_build_shield_cost(pimprove));
+                  impr_build_shield_cost(pcity, pimprove));
     }
     break;
   }
@@ -1104,7 +1117,7 @@ bool city_can_buy(const struct city *pcity)
               || !improvement_has_flag(pcity->production.value.building, IF_GOLD))
           && !(VUT_UTYPE == pcity->production.kind
                && pcity->anarchy != 0)
-          && city_production_buy_gold_cost(pcity) > 0);
+          && pcity->client.buy_cost > 0);
 }
 
 /**********************************************************************//**
@@ -1155,11 +1168,11 @@ int city_toggle_worker(struct city *pcity, int city_x, int city_y)
   }
 
   if (NULL != tile_worked(ptile) && tile_worked(ptile) == pcity) {
-    return dsend_packet_city_make_specialist(&client.conn, pcity->id, city_x,
-                                             city_y);
+    return dsend_packet_city_make_specialist(&client.conn,
+                                             pcity->id, ptile->index);
   } else if (city_can_work_tile(pcity, ptile)) {
-    return dsend_packet_city_make_worker(&client.conn, pcity->id, city_x,
-                                         city_y);
+    return dsend_packet_city_make_worker(&client.conn,
+                                         pcity->id, ptile->index);
   } else {
     return 0;
   }

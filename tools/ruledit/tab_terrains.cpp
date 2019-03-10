@@ -84,7 +84,6 @@ tab_terrains::tab_terrains(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   terrains_layout->addWidget(effects_button, 2, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Terrain")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
@@ -111,7 +110,7 @@ void tab_terrains::refresh()
   terrain_list->clear();
 
   terrain_type_iterate(pterr) {
-    if (!pterr->disabled) {
+    if (!pterr->ruledit_disabled) {
       QListWidgetItem *item =
         new QListWidgetItem(QString::fromUtf8(terrain_rule_name(pterr)));
 
@@ -167,7 +166,7 @@ void tab_terrains::name_given()
 {
   if (selected != nullptr) {
     terrain_type_iterate(pterr) {
-      if (pterr != selected && !pterr->disabled) {
+      if (pterr != selected && !pterr->ruledit_disabled) {
         if (!strcmp(terrain_rule_name(pterr), rname->text().toUtf8().data())) {
           ui->display_msg(R__("A terrain with that rule name already exists!"));
           return;
@@ -199,7 +198,7 @@ void tab_terrains::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
 
     refresh();
     update_terrain_info(nullptr);
@@ -229,9 +228,9 @@ void tab_terrains::add_now()
 
   // Try to reuse freed terrain slot
   terrain_type_iterate(pterr) {
-    if (pterr->disabled) {
+    if (pterr->ruledit_disabled) {
       if (initialize_new_terrain(pterr)) {
-        pterr->disabled = false;
+        pterr->ruledit_disabled = false;
         update_terrain_info(pterr);
         refresh();
       }

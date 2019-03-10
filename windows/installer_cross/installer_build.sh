@@ -39,6 +39,13 @@ add_gtk3_env() {
   cp ./helpers/installer-helper-gtk3.cmd $2/bin/installer-helper.cmd
 }
 
+add_gtk4_env() {
+  mkdir -p $2/etc &&
+  cp -R $1/etc/gtk-4.0 $2/etc/ &&
+  cp $1/bin/libgtk-4-0.dll $2/ &&
+  cp $1/bin/libgraphene-1.0-0.dll $2/
+}
+
 add_sdl2_mixer_env() {
   cp $1/bin/SDL2.dll $2/ &&
   cp $1/bin/SDL2_mixer.dll $2/ &&
@@ -70,9 +77,13 @@ add_common_env() {
   cp $1/bin/libintl-8.dll $2/ &&
   cp $1/bin/libsqlite3-0.dll $2/ &&
   cp $1/bin/libiconv-2.dll $2/ &&
-  cp $1/bin/libz.dll.1.2.11 $2/ &&
-  cp $1/lib/icuuc61.dll $2/ &&
-  cp $1/lib/icudt61.dll $2/ &&
+  cp $1/bin/libz.dll.1.2.11 $2 &&
+  ( test "x$SETUP" != "xwin32" ||
+    ( cp $1/lib/icuuc58.dll $2/ &&
+      cp $1/lib/icudt58.dll $2/ )) &&
+  ( test "x$SETUP" = "xwin32" ||
+    ( cp $1/lib/icuuc62.dll $2/ &&
+      cp $1/lib/icudt62.dll $2/ )) &&
   cp $1/bin/libpng16-16.dll $2/
 }
 
@@ -94,6 +105,9 @@ case $GUI in
   sdl2)
     GUINAME="SDL2"
     FCMP="gtk3" ;;
+  gtk3x)
+    GUINAME="GTK3x"
+    FCMP="gtk3" ;;
   ruledit) ;;
   *)
     echo "Unknown gui type \"$GUI\"" >&2
@@ -111,10 +125,12 @@ fi
 
 SETUP=$(grep "Setup=" $DLLSPATH/crosser.txt | sed -e 's/Setup="//' -e 's/"//')
 
-if test -d ../../.git || test -f ../../.git ; then
-  VERREV="$(../../fc_version)-$(cd ../.. && git rev-parse --short HEAD)"
-else
-  VERREV="$(../../fc_version)"
+VERREV="$(../../fc_version)"
+
+if test "x$INST_CROSS_MODE" != "xrelease" ; then
+  if test -d ../../.git || test -f ../../.git ; then
+    VERREV="$VERREV-$(cd ../.. && git rev-parse --short HEAD)"
+  fi
 fi
 
 INSTDIR="freeciv-$SETUP-${VERREV}-${GUI}"
@@ -179,6 +195,11 @@ else
     qt)
       if ! add_qt_env $DLLSPATH $INSTDIR ; then
         echo "Copying Qt environment failed!" >&2
+        exit 1
+      fi ;;
+    gtk3x)
+      if ! add_gtk4_env $DLLSPATH $INSTDIR ; then
+        echo "Copying gtk4 environment failed!" >&2
         exit 1
       fi ;;
   esac

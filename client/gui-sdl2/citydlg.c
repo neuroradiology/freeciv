@@ -1137,7 +1137,7 @@ void popup_hurry_production_dialog(struct city *pCity, SDL_Surface *pDest)
   int window_x = 0, window_y = 0;
   SDL_Rect area;
   const char *name = city_production_name_translation(pCity);
-  int value = city_production_buy_gold_cost(pCity);
+  int value = pCity->client.buy_cost;
 
   if (pHurry_Prod_Dlg) {
     return;
@@ -3176,7 +3176,8 @@ static void redraw_city_dialog(struct city *pCity)
   /* draw productions shields progress */
   if (VUT_UTYPE == pCity->production.kind) {
     struct unit_type *pUnitType = pCity->production.value.utype;
-    cost = utype_build_shield_cost(pUnitType);
+
+    cost = utype_build_shield_cost(pCity, pUnitType);
     count = cost / 10;
 
     copy_chars_to_utf8_str(pstr, utype_name_translation(pUnitType));
@@ -3217,7 +3218,7 @@ static void redraw_city_dialog(struct city *pCity)
         widget_redraw(pCityDlg->pBuy_Button);
       }
 
-      cost = impr_build_shield_cost(pImprove);
+      cost = impr_build_shield_cost(pCity, pImprove);
       count = cost / 10;
     }
 

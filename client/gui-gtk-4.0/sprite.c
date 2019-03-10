@@ -22,6 +22,7 @@
 
 /* client/gui-gtk-4.0 */
 #include "colors.h"
+#include "mapview.h"
 
 #include "sprite.h"
 
@@ -470,4 +471,75 @@ GdkPixbuf *surface_get_pixbuf(cairo_surface_t *surf, int width, int height)
   cairo_surface_destroy(tmpsurf);
 
   return pb;
+}
+
+/************************************************************************//**
+  Create a pixbuf containing a representative image for the given extra
+  type, to be used as an icon in the GUI.
+
+  May return NULL on error.
+
+  NB: You must call g_object_unref on the non-NULL return value when you
+  no longer need it.
+****************************************************************************/
+GdkPixbuf *create_extra_pixbuf(const struct extra_type *pextra)
+{
+  struct drawn_sprite sprs[80];
+  int count, w, h, canvas_x, canvas_y;
+  GdkPixbuf *pixbuf;
+  struct canvas canvas = FC_STATIC_CANVAS_INIT;
+  cairo_t *cr;
+
+  w = tileset_tile_width(tileset);
+  h = tileset_tile_height(tileset);
+
+  canvas.surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+  canvas_x = 0;
+  canvas_y = 0;
+
+  cr = cairo_create(canvas.surface);
+  cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+
+  count = fill_basic_extra_sprite_array(tileset, sprs, pextra);
+  put_drawn_sprites(&canvas, 1.0, canvas_x, canvas_y, count, sprs, FALSE);
+
+  pixbuf = surface_get_pixbuf(canvas.surface, w, h);
+  cairo_surface_destroy(canvas.surface);
+
+  return pixbuf;
+}
+
+/************************************************************************//**
+  Create a GtkImage from cairo surface.
+****************************************************************************/
+GtkWidget *image_new_from_surface(cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+  GtkWidget *image;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  image = gtk_image_new_from_pixbuf(pb);
+  g_object_unref(pb);
+
+  return image;
+}
+
+/************************************************************************//**
+  Set a GtkImage from cairo surface.
+****************************************************************************/
+void image_set_from_surface(GtkImage *image, cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  gtk_image_set_from_pixbuf(image, pb);
+  g_object_unref(pb);
 }

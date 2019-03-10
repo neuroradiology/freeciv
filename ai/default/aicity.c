@@ -408,7 +408,7 @@ static void dai_upgrade_units(struct city *pcity, int limit, bool military)
                    cost,
                    military ? "military" : "civilian");
           unit_do_action(city_owner(pcity), punit->id,
-                         pcity->id, EXTRA_NONE, 0, "",
+                         pcity->id, 0, "",
                          ACTION_UPGRADE_UNIT);
         } else {
           increase_maxbuycost(pplayer, cost);
@@ -442,7 +442,7 @@ static void unit_do_disband_trad(struct player *owner, struct unit *punit,
     if (tgt_city
         && is_action_enabled_unit_on_city(ACTION_HELP_WONDER,
                                           punit, tgt_city)) {
-      if (unit_perform_action(owner, punit->id, tgt_city->id, EXTRA_NONE,
+      if (unit_perform_action(owner, punit->id, tgt_city->id,
                               0, NULL, ACTION_HELP_WONDER, requester)) {
         /* No shields wasted. The unit did Help Wonder. */
         return;
@@ -466,7 +466,7 @@ static void unit_do_disband_trad(struct player *owner, struct unit *punit,
     if (tgt_city
         && is_action_enabled_unit_on_city(ACTION_RECYCLE_UNIT,
                                           punit, tgt_city)) {
-      if (unit_perform_action(owner, punit->id, tgt_city->id, EXTRA_NONE,
+      if (unit_perform_action(owner, punit->id, tgt_city->id,
                               0, NULL, ACTION_RECYCLE_UNIT, requester)) {
         /* The unit did Recycle Unit. 50% of the shields wasted. */
         return;
@@ -482,7 +482,7 @@ static void unit_do_disband_trad(struct player *owner, struct unit *punit,
   /* Try to disband even if all shields will be wasted. */
   if (unit_can_do_action(punit, ACTION_DISBAND_UNIT)) {
     if (is_action_enabled_unit_on_self(ACTION_DISBAND_UNIT, punit)) {
-      if (unit_perform_action(owner, punit->id, punit->id, EXTRA_NONE,
+      if (unit_perform_action(owner, punit->id, punit->id,
                               0, NULL, ACTION_DISBAND_UNIT, requester)) {
         /* All shields wasted. The unit did Disband Unit. */
         return;
@@ -611,8 +611,8 @@ static void dai_spend_gold(struct ai_type *ait, struct player *pplayer)
                 || (pplayer->economic.gold - buycost < limit);
 
     if (bestchoice.type == CT_ATTACKER
-	&& buycost 
-           > utype_build_shield_cost(bestchoice.value.utype) * 2
+	&& buycost
+           > utype_build_shield_cost(pcity, bestchoice.value.utype) * 2
         && !war_footing) {
        /* Too expensive for an offensive unit */
        continue;
@@ -968,13 +968,14 @@ static void dai_city_sell_noncritical(struct city *pcity,
         && (!redundant_only || is_improvement_redundant(pcity, pimprove))) {
       int gain = impr_sell_gold(pimprove);
 
-      do_sell_building(pplayer, pcity, pimprove);
       notify_player(pplayer, pcity->tile, E_IMP_SOLD, ftc_server,
                     PL_("%s is selling %s for %d.",
                         "%s is selling %s for %d.", gain),
                     city_link(pcity),
                     improvement_name_translation(pimprove),
                     gain);
+      do_sell_building(pplayer, pcity, pimprove, "sold");
+
       return; /* max 1 building each turn */
     }
   } city_built_iterate_end;
@@ -1173,10 +1174,10 @@ void dai_city_load(struct ai_type *ait, const char *aitstr,
    * action_target_neg_util(Add to population) = -50
    * action_target_neg_util(Subtract from population) = 50
 **************************************************************************/
-static int action_target_neg_util(int action_id,
+static int action_target_neg_util(action_id act_id,
                                   const struct city *pcity)
 {
-  switch ((enum gen_action)action_id) {
+  switch ((enum gen_action)act_id) {
   case ACTION_SPY_INCITE_CITY:
   case ACTION_SPY_INCITE_CITY_ESC:
     /* Copied from the evaluation of the No_Incite effect */
@@ -1248,6 +1249,7 @@ static int action_target_neg_util(int action_id,
   case ACTION_NUKE:
   case ACTION_PARADROP:
   case ACTION_ATTACK:
+  case ACTION_SUICIDE_ATTACK:
   case ACTION_HEAL_UNIT:
   case ACTION_TRANSFORM_TERRAIN:
   case ACTION_IRRIGATE_TF:
@@ -1256,13 +1258,16 @@ static int action_target_neg_util(int action_id,
   case ACTION_FORTIFY:
   case ACTION_ROAD:
   case ACTION_CONVERT:
+  case ACTION_BASE:
+  case ACTION_MINE:
+  case ACTION_IRRIGATE:
   case ACTION_COUNT:
-    fc_assert_msg(action_id_get_target_kind(action_id) == ATK_CITY,
+    fc_assert_msg(action_id_get_target_kind(act_id) == ATK_CITY,
                   "Action not aimed at cities");
   }
 
-  fc_assert_msg(action_id_exists(action_id),
-                "Action %d don't exist.", action_id);
+  fc_assert_msg(action_id_exists(act_id),
+                "Action %d don't exist.", act_id);
 
   /* Wrong action. Ignore it. */
   return 0;
@@ -1554,7 +1559,7 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
   if (!is_coinage) {
     /* Adjust by building cost */
     /* FIXME: ought to reduce by upkeep cost and amortise by building cost */
-    v -= (impr_build_shield_cost(pimprove)
+    v -= (impr_build_shield_cost(pcity, pimprove)
          / (pcity->surplus[O_SHIELD] * 10 + 1));
   }
 
@@ -1669,14 +1674,14 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
   } effect_list_iterate_end;
 
   /* Can the city be the target of an action? */
-  action_iterate (action_id) {
+  action_iterate (act_id) {
     bool is_possible;
     bool will_be_possible = FALSE;
     enum req_range max_range;
     int act_neg_util;
 
     /* Is the action relevant? */
-    if (action_id_get_target_kind(action_id) != ATK_CITY) {
+    if (action_id_get_target_kind(act_id) != ATK_CITY) {
       continue;
     }
 
@@ -1686,11 +1691,11 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     /* Is is possible to do the action to the city right now?
      *
      * (DiplRel requirements are ignored since actor_player is NULL) */
-    is_possible = is_action_possible_on_city(action_id, NULL, pcity);
+    is_possible = is_action_possible_on_city(act_id, NULL, pcity);
 
     /* Will it be possible to do the action to the city if the building is
      * built? */
-    action_enabler_list_iterate(action_enablers_for_action(action_id),
+    action_enabler_list_iterate(action_enablers_for_action(act_id),
                                 enabler) {
       bool active = TRUE;
       enum req_range range = REQ_RANGE_LOCAL;
@@ -1738,7 +1743,7 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     }
 
     /* How undersireable is it that the city may be a target? */
-    act_neg_util = action_target_neg_util(action_id, pcity);
+    act_neg_util = action_target_neg_util(act_id, pcity);
 
     /* Multiply the desire by number of cities in range.
      * Note: This is a simplification. If the action can be done or not

@@ -46,6 +46,7 @@
 #include "editgui_g.h"
 #include "options.h"
 #include "sprite.h"
+#include "themes_common.h"
 #include "tilespec.h"
 
 // gui-qt
@@ -57,7 +58,7 @@
 #include "qtg_cxxside.h"
 
 extern "C" {
-  void real_science_report_dialog_update();
+  void real_science_report_dialog_update(void*);
 }
 extern void restart_notify_dialogs();
 extern void city_font_update();
@@ -82,15 +83,6 @@ static void apply_titlebar(struct option *poption);
 class fc_client *gui()
 {
   return freeciv_qt;
-}
-
-/**********************************************************************//**
-  Called by the tileset code to set the font size that should be used to
-  draw the city names and productions.
-**************************************************************************/
-void qtg_set_city_names_font_sizes(int my_city_names_font_size,
-                                   int my_city_productions_font_size)
-{
 }
 
 /**********************************************************************//**
@@ -178,10 +170,7 @@ void qtg_ui_main(int argc, char *argv[])
     if (!gui_options.gui_qt_migrated_from_2_5) {
       migrate_options_from_2_5();
     }
-    qtg_gui_load_theme(fileinfoname(get_data_dirs(), QString(
-                      QString("themes") + DIR_SEPARATOR
-                      + "gui-qt" ).toLocal8Bit().data()),
-                       gui_options.gui_qt_default_theme_name);
+    load_theme(gui_options.gui_qt_default_theme_name);
     freeciv_qt = new fc_client();
     freeciv_qt->fc_main(qapp);
   }
@@ -248,7 +237,7 @@ void qtg_ui_exit()
 /**********************************************************************//**
   Update the connected users list at pregame state.
 **************************************************************************/
-void qtg_real_conn_list_dialog_update()
+void qtg_real_conn_list_dialog_update(void *unused)
 {
   if (qtg_get_current_client_page() == PAGE_NETWORK) {
     qtg_real_set_client_page(PAGE_START);
@@ -399,7 +388,7 @@ static void apply_font(struct option *poption)
     update_city_descriptions();
     gui()->infotab->chtwdg->update_font();
     QApplication::setFont(*fc_font::instance()->get_font(fonts::default_font));
-    real_science_report_dialog_update();
+    real_science_report_dialog_update(nullptr);
     fc_font::instance()->get_mapfont_size();
   }
 }

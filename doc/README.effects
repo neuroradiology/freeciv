@@ -40,52 +40,60 @@ A requirement may have a 'present' field, and if this is 'FALSE',
 the requirement is negated (the condition must not be true for the req to be
 met).
 
+A requirement may have a 'quiet' field, and if this is 'TRUE', the help
+system does not try to autogenerate text about that requirement. This
+can be used if the help system's text is unclear or misleading, or if
+you want to describe the requirement in your own words. The 'quiet'
+field has no effect on the game rules.
+
 
 Requirement types and supported ranges
 ======================================
 
-Tech:          World, Alliance, Team, Player
-TechFlag:      World, Alliance, Team, Player
-MinTechs:      World, Player
-Achievement:   World, Alliance, Team, Player
-Gov:           Player
-Building:      World, Alliance, Team, Player, Continent, Traderoute, City, Local
-BuildingGenus: Local
-Extra:         Local, Adjacent, CAdjacent, Traderoute, City
-BaseFlag:      Local, Adjacent, CAdjacent, Traderoute, City
-RoadFlag:      Local, Adjacent, CAdjacent, Traderoute, City
-ExtraFlag:     Local, Adjacent, CAdjacent, Traderoute, City
-Terrain:       Local, Adjacent, CAdjacent, Traderoute, City
-Good:                                                  City
-UnitType:      Local
-UnitFlag:      Local
-UnitClass:     Local
-UnitClassFlag: Local
-Nation:        World, Alliance, Team, Player
-NationGroup:   World, Alliance, Team, Player
-Nationality:   Traderoute, City
-DiplRel:       World, Alliance, Team, Player, Local
-Action:        Local
-OutputType:    Local
-Specialist:    Local
-MinYear:       World
-MinCalFrag:    World
-Topology:      World
-ServerSetting: World
-Age:           Local, City
-MinSize:       Traderoute, City
-MinCulture:    World, Alliance, Team, Player, Traderoute, City
-AI:            Player
-MaxUnitsOnTile:Local, Adjacent, CAdjacent
-TerrainClass:  Local, Adjacent, CAdjacent, Traderoute, City
-TerrainFlag:   Local, Adjacent, CAdjacent, Traderoute, City
-TerrainAlter:  Local
-CityTile:      Local, Adjacent, CAdjacent
-Style:         Player
-UnitState:     Local
-MinMoveFrags:  Local
-MinVeteran:    Local
-MinHitPoints:  Local
+Tech:            World, Alliance, Team, Player
+TechFlag:        World, Alliance, Team, Player
+MinTechs:        World, Player
+Achievement:     World, Alliance, Team, Player
+Gov:             Player
+Building:        World, Alliance, Team, Player, Continent, Traderoute, City, Local
+BuildingGenus:   Local
+Extra:           Local, Adjacent, CAdjacent, Traderoute, City
+BaseFlag:        Local, Adjacent, CAdjacent, Traderoute, City
+RoadFlag:        Local, Adjacent, CAdjacent, Traderoute, City
+ExtraFlag:       Local, Adjacent, CAdjacent, Traderoute, City
+Terrain:         Local, Adjacent, CAdjacent, Traderoute, City
+Good:            City
+UnitType:        Local
+UnitFlag:        Local
+UnitClass:       Local
+UnitClassFlag:   Local
+Nation:          World, Alliance, Team, Player
+NationGroup:     World, Alliance, Team, Player
+Nationality:     Traderoute, City
+DiplRel:         World, Alliance, Team, Player, Local
+Action:          Local
+OutputType:      Local
+Specialist:      Local
+MinYear:         World
+MinCalFrag:      World
+Topology:        World
+ServerSetting:   World
+Age (of unit):   Local
+Age (of city):   City
+Age (of player): Player
+MinSize:         Traderoute, City
+MinCulture:      World, Alliance, Team, Player, Traderoute, City
+AI:              Player
+MaxUnitsOnTile:  Local, Adjacent, CAdjacent
+TerrainClass:    Local, Adjacent, CAdjacent, Traderoute, City
+TerrainFlag:     Local, Adjacent, CAdjacent, Traderoute, City
+TerrainAlter:    Local
+CityTile:        Local, Adjacent, CAdjacent
+Style:           Player
+UnitState:       Local
+MinMoveFrags:    Local
+MinVeteran:      Local
+MinHitPoints:    Local
 
 
 MinSize is the minimum size of a city required.
@@ -264,15 +272,15 @@ Casus_Belli_Caught
     Checked when a player is caught trying to do an action. Will cause an
 incident with the intended victim player if the value is 1 or higher. The
 incident gives the intended victim a casus belli against the actor player.
-If the value is 1000 or higher every other player gets a casus belli
-against the actor.
+A value of 1000 or higher is international outrage. International outrage
+gives every other player a casus belli against the actor.
 
 Casus_Belli_Success
     Checked when a player does an action to another player. Will cause an
 incident with the intended victim player if the value is 1 or higher. The
 incident gives the intended victim a casus belli against the actor player.
-If the value is 1000 or higher every other player gets a casus belli
-against the actor.
+A value of 1000 or higher is international outrage. International outrage
+gives every other player a casus belli against the actor.
 
 Action_Odds_Pct
     Modifies the odds of an action being successful. Some actions have a
@@ -282,7 +290,9 @@ Action_Odds_Pct
     actions "Incite City", "Incite City Escape", "Steal Gold",
     "Steal Gold Escape", "Steal Maps", "Steal Maps Escape", "Suitcase Nuke",
     "Suitcase Nuke Escape", "Sabotage City", "Sabotage City Escape",
-    "Targeted Sabotage City" and "Targeted Sabotage City Escape".
+    "Targeted Sabotage City", "Targeted Sabotage City Escape",
+    "Steal Tech", "Steal Tech Escape Expected", "Targeted Steal Tech" and
+    "Targeted Steal Tech Escape Expected".
 
 Size_Adj
     Increase maximum size of a city by amount.
@@ -509,6 +519,18 @@ Visible_Wall
 Tech_Cost_Factor
     Factor for research costs.
 
+Building_Build_Cost_Pct
+    Percentage added to building building cost.
+
+Building_Buy_Cost_Pct
+    Percentage added to building buy cost.
+
+Unit_Build_Cost_Pct
+    Percentage added to unit building cost.
+
+Unit_Buy_Cost_Pct
+    Percentage added to unit buy cost.
+
 Shield2Gold_Factor
     Factor in percent for the conversion of unit shield upkeep to gold upkeep.
     A value of 200 would transfer 1 shield upkeep to 2 gold upkeep. The range
@@ -517,15 +539,6 @@ Shield2Gold_Factor
 
 Tile_Workable
     If value > 0, city can work target tile.
-
-Irrig_Possible
-    If value > 0, unit can build irrigation to target tile. In addition to
-    requirements given to this effect, unit must also have Settlers flag.
-
-Mining_Possible
-    If value > 0, unit can build mine to target tile. In addition to
-    requirements given to this effect, terrain type must be one to which mine
-    can be built.
 
 Migration_Pct
     Increase the calculated migration score for the a city by amount in

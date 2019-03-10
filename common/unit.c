@@ -259,9 +259,9 @@ bool is_military_unit(const struct unit *punit)
   defined) action enabler controlled action.
 **************************************************************************/
 bool unit_can_do_action(const struct unit *punit,
-                        const int action_id)
+                        const action_id act_id)
 {
-  return utype_can_do_action(unit_type_get(punit), action_id);
+  return utype_can_do_action(unit_type_get(punit), act_id);
 }
 
 /**********************************************************************//**
@@ -879,26 +879,17 @@ bool can_unit_do_activity_targeted_at(const struct unit *punit,
         return FALSE;
       }
 
+      /* The call below doesn't support actor tile speculation. */
+      fc_assert_msg(unit_tile(punit) == ptile,
+                    "Please use action_speculate_unit_on_tile()");
       return is_action_enabled_unit_on_tile(ACTION_MINE_TF,
                                             punit, ptile, NULL);
-    }
-
-    if (target == NULL) {
-      return FALSE;
-    }
-
-    if (pterrain->mining_time == 0) {
-      return FALSE;
-    }
-
-    if (!is_extra_caused_by(target, EC_MINE)) {
-      return FALSE;
-    }
-
-    if (unit_has_type_flag(punit, UTYF_SETTLERS)
-        && can_build_extra(target, punit, ptile)
-        && get_tile_bonus(ptile, punit, EFT_MINING_POSSIBLE) > 0) {
-      return TRUE;
+    } else if (pterrain->mining_result == pterrain) {
+      /* The call below doesn't support actor tile speculation. */
+      fc_assert_msg(unit_tile(punit) == ptile,
+                    "Please use action_speculate_unit_on_tile()");
+      return is_action_enabled_unit_on_tile(ACTION_MINE, punit,
+                                            ptile, target);
     } else {
       return FALSE;
     }
@@ -910,48 +901,42 @@ bool can_unit_do_activity_targeted_at(const struct unit *punit,
         return FALSE;
       }
 
+      /* The call below doesn't support actor tile speculation. */
+      fc_assert_msg(unit_tile(punit) == ptile,
+                    "Please use action_speculate_unit_on_tile()");
       return is_action_enabled_unit_on_tile(ACTION_IRRIGATE_TF,
                                             punit, ptile, NULL);
-    }
-
-    if (pterrain->irrigation_result != pterrain) {
-      return FALSE;
-    }
-
-    if (target == NULL) {
-      return FALSE;
-    }
-
-    if (pterrain->irrigation_time == 0) {
-      return FALSE;
-    }
-
-    if (!is_extra_caused_by(target, EC_IRRIGATION)) {
-      return FALSE;
-    }
-
-    if (unit_has_type_flag(punit, UTYF_SETTLERS)
-        && can_build_extra(target, punit, ptile)
-        && can_be_irrigated(ptile, punit)) {
-      return TRUE;
+    } else if (pterrain->irrigation_result == pterrain) {
+      /* The call below doesn't support actor tile speculation. */
+      fc_assert_msg(unit_tile(punit) == ptile,
+                    "Please use action_speculate_unit_on_tile()");
+      return is_action_enabled_unit_on_tile(ACTION_IRRIGATE, punit,
+                                            ptile, target);
     } else {
       return FALSE;
     }
 
   case ACTIVITY_FORTIFYING:
-    return is_action_enabled_unit_on_tile(ACTION_FORTIFY,
-                                          punit, ptile, NULL);
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_self()");
+    return is_action_enabled_unit_on_self(ACTION_FORTIFY,
+                                          punit);
 
   case ACTIVITY_FORTIFIED:
     return FALSE;
 
   case ACTIVITY_BASE:
-    if (target == NULL) {
-      return FALSE;
-    }
-    return can_build_base(punit, extra_base_get(target), ptile);
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_tile()");
+    return is_action_enabled_unit_on_tile(ACTION_BASE,
+                                          punit, ptile, target);
 
   case ACTIVITY_GEN_ROAD:
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_tile()");
     return is_action_enabled_unit_on_tile(ACTION_ROAD,
                                           punit, ptile, target);
 
@@ -964,6 +949,9 @@ bool can_unit_do_activity_targeted_at(const struct unit *punit,
     return TRUE;
 
   case ACTIVITY_PILLAGE:
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_tile()");
     return is_action_enabled_unit_on_tile(ACTION_PILLAGE,
                                           punit, ptile, target);
 
@@ -971,10 +959,16 @@ bool can_unit_do_activity_targeted_at(const struct unit *punit,
     return (!unit_type_get(punit)->fuel && !is_losing_hp(punit));
 
   case ACTIVITY_TRANSFORM:
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_tile()");
     return is_action_enabled_unit_on_tile(ACTION_TRANSFORM_TERRAIN,
                                           punit, ptile, NULL);
 
   case ACTIVITY_CONVERT:
+    /* The call below doesn't support actor tile speculation. */
+    fc_assert_msg(unit_tile(punit) == ptile,
+                  "Please use action_speculate_unit_on_self()");
     return is_action_enabled_unit_on_self(ACTION_CONVERT, punit);
 
   case ACTIVITY_OLD_ROAD:
@@ -2068,7 +2062,7 @@ int unit_bribe_cost(struct unit *punit, struct player *briber)
   cost /= dist + 2;
 
   /* Consider the build cost. */
-  cost *= unit_build_shield_cost(punit) / 10;
+  cost *= unit_build_shield_cost_base(punit) / 10;
 
   /* Rule set specific cost modification */
   cost += (cost
@@ -2097,7 +2091,7 @@ int unit_bribe_cost(struct unit *punit, struct player *briber)
   /* Cost now contains the basic bribe cost.  We now reduce it by:
    *    bribecost = cost/2 + cost/2 * damage/hp
    *              = cost/2 * (1 + damage/hp) */
-  return ((float)cost / 2 * (1.0 + punit->hp / default_hp));
+  return ((float)cost / 2 * (1.0 + (float)punit->hp / default_hp));
 }
 
 /**********************************************************************//**

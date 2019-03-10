@@ -387,8 +387,8 @@ static bool save_buildings_ruleset(const char *filename, const char *name)
   comment_buildings(sfile);
 
   sect_idx = 0;
-  improvement_active_iterate(pb) {
-    if (!pb->disabled) {
+  improvement_re_active_iterate(pb) {
+    if (!pb->ruledit_disabled) {
       char path[512];
       const char *flag_names[IF_COUNT];
       int set_count;
@@ -435,7 +435,7 @@ static bool save_buildings_ruleset(const char *filename, const char *name)
 
       save_strvec(sfile, pb->helptext, path, "helptext");
     }
-  } improvement_active_iterate_end;
+  } improvement_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }
@@ -456,13 +456,13 @@ static bool save_styles_ruleset(const char *filename, const char *name)
   comment_styles(sfile);
 
   sect_idx = 0;
-  styles_active_iterate(pstyle) {
+  styles_re_active_iterate(pstyle) {
     char path[512];
 
     fc_snprintf(path, sizeof(path), "style_%d", sect_idx++);
 
     save_name_translation(sfile, &(pstyle->name), path);
-  } styles_active_iterate_end;
+  } styles_re_active_iterate_end;
 
   comment_citystyles(sfile);
 
@@ -1062,107 +1062,10 @@ static bool save_game_ruleset(const char *filename, const char *name)
                      "actions.bombard_max_range", NULL);
   }
 
-  save_action_ui_name(sfile, ACTION_SPY_POISON, "ui_name_poison_city");
-  save_action_ui_name(sfile, ACTION_SPY_POISON_ESC,
-                      "ui_name_poison_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_UNIT,
-                      "ui_name_sabotage_unit");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_UNIT_ESC,
-                      "ui_name_sabotage_unit_escape");
-  save_action_ui_name(sfile, ACTION_SPY_BRIBE_UNIT,
-                      "ui_name_bribe_unit");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_CITY,
-                      "ui_name_sabotage_city");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_CITY_ESC,
-                      "ui_name_sabotage_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_SABOTAGE_CITY,
-                      "ui_name_targeted_sabotage_city");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_SABOTAGE_CITY_ESC,
-                      "ui_name_targeted_sabotage_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_INCITE_CITY,
-                      "ui_name_incite_city");
-  save_action_ui_name(sfile, ACTION_SPY_INCITE_CITY_ESC,
-                      "ui_name_incite_city_escape");
-  save_action_ui_name(sfile, ACTION_ESTABLISH_EMBASSY,
-                      "ui_name_establish_embassy");
-  save_action_ui_name(sfile, ACTION_ESTABLISH_EMBASSY_STAY,
-                      "ui_name_establish_embassy_stay");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_TECH,
-                      "ui_name_steal_tech");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_TECH_ESC,
-                      "ui_name_steal_tech_escape");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_STEAL_TECH,
-                      "ui_name_targeted_steal_tech");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_STEAL_TECH_ESC,
-                      "ui_name_targeted_steal_tech_escape");
-  save_action_ui_name(sfile, ACTION_SPY_INVESTIGATE_CITY,
-                      "ui_name_investigate_city");
-  save_action_ui_name(sfile, ACTION_INV_CITY_SPEND,
-                      "ui_name_investigate_city_spend_unit");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_GOLD,
-                      "ui_name_steal_gold");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_GOLD_ESC,
-                      "ui_name_steal_gold_escape");
-  save_action_ui_name(sfile, ACTION_STEAL_MAPS,
-                      "ui_name_steal_maps");
-  save_action_ui_name(sfile, ACTION_STEAL_MAPS_ESC,
-                      "ui_name_steal_maps_escape");
-  save_action_ui_name(sfile, ACTION_TRADE_ROUTE,
-                      "ui_name_establish_trade_route");
-  save_action_ui_name(sfile, ACTION_MARKETPLACE,
-                      "ui_name_enter_marketplace");
-  save_action_ui_name(sfile, ACTION_HELP_WONDER,
-                      "ui_name_help_wonder");
-  save_action_ui_name(sfile, ACTION_CAPTURE_UNITS,
-                      "ui_name_capture_units");
-  save_action_ui_name(sfile, ACTION_EXPEL_UNIT,
-                      "ui_name_expel_unit");
-  save_action_ui_name(sfile, ACTION_FOUND_CITY,
-                      "ui_name_found_city");
-  save_action_ui_name(sfile, ACTION_JOIN_CITY,
-                      "ui_name_join_city");
-  save_action_ui_name(sfile, ACTION_BOMBARD,
-                      "ui_name_bombard");
-  save_action_ui_name(sfile, ACTION_SPY_NUKE,
-                      "ui_name_suitcase_nuke");
-  save_action_ui_name(sfile, ACTION_SPY_NUKE_ESC,
-                      "ui_name_suitcase_nuke_escape");
-  save_action_ui_name(sfile, ACTION_NUKE,
-                      "ui_name_explode_nuclear");
-  save_action_ui_name(sfile, ACTION_DESTROY_CITY,
-                      "ui_name_destroy_city");
-  save_action_ui_name(sfile, ACTION_RECYCLE_UNIT,
-                      "ui_name_recycle_unit");
-  save_action_ui_name(sfile, ACTION_DISBAND_UNIT,
-                      "ui_name_disband_unit");
-  save_action_ui_name(sfile, ACTION_HOME_CITY,
-                      "ui_name_home_city");
-  save_action_ui_name(sfile, ACTION_UPGRADE_UNIT,
-                      "ui_name_upgrade_unit");
-  save_action_ui_name(sfile, ACTION_PARADROP,
-                      "ui_name_paradrop_unit");
-  save_action_ui_name(sfile, ACTION_AIRLIFT,
-                      "ui_name_airlift_unit");
-  save_action_ui_name(sfile, ACTION_ATTACK,
-                      "ui_name_attack");
-  save_action_ui_name(sfile, ACTION_CONQUER_CITY,
-                      "ui_name_conquer_city");
-  save_action_ui_name(sfile, ACTION_HEAL_UNIT,
-                      "ui_name_heal_unit");
-  save_action_ui_name(sfile, ACTION_TRANSFORM_TERRAIN,
-                      "ui_name_transform_terrain");
-  save_action_ui_name(sfile, ACTION_IRRIGATE_TF,
-                      "ui_name_irrigate_tf");
-  save_action_ui_name(sfile, ACTION_MINE_TF,
-                      "ui_name_mine_tf");
-  save_action_ui_name(sfile, ACTION_PILLAGE,
-                      "ui_name_pillage");
-  save_action_ui_name(sfile, ACTION_FORTIFY,
-                      "ui_name_fortify");
-  save_action_ui_name(sfile, ACTION_ROAD,
-                      "ui_name_road");
-  save_action_ui_name(sfile, ACTION_CONVERT,
-                      "ui_name_convert_unit");
+  action_iterate(act_id) {
+    save_action_ui_name(sfile,
+                        act_id, action_ui_name_ruleset_var_name(act_id));
+  } action_iterate_end;
 
   i = 0;
   action_iterate(act) {
@@ -1186,7 +1089,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
 
     fc_snprintf(path, sizeof(path), "actionenabler_%d", sect_idx++);
 
-    secfile_insert_str(sfile, gen_action_name(pae->action),
+    secfile_insert_str(sfile, action_id_rule_name(pae->action),
                        "%s.action", path);
 
     save_reqs_vector(sfile, &(pae->actor_reqs), path, "actor_reqs");
@@ -1196,6 +1099,15 @@ static bool save_game_ruleset(const char *filename, const char *name)
   save_default_bool(sfile, game.info.tired_attack,
                     RS_DEFAULT_TIRED_ATTACK,
                     "combat_rules.tired_attack", NULL);
+  save_default_bool(sfile, game.info.only_killing_makes_veteran,
+                    RS_DEFAULT_ONLY_KILLING_VETERAN,
+                    "combat_rules.only_killing_makes_veteran", NULL);
+  save_default_int(sfile, game.server.nuke_pop_loss_pct,
+                    RS_DEFAULT_NUKE_POP_LOSS_PCT,
+                    "combat_rules.nuke_pop_loss_pct", NULL);
+  save_default_int(sfile, game.server.nuke_defender_survival_chance_pct,
+                    RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT,
+                    "combat_rules.nuke_defender_survival_chance_pct", NULL);
   save_default_int(sfile, game.info.border_city_radius_sq,
                    RS_DEFAULT_BORDER_RADIUS_SQ_CITY,
                    "borders.radius_sq_city", NULL);
@@ -1362,7 +1274,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
   comment_goods(sfile);
 
   sect_idx = 0;
-  goods_active_type_iterate(pgood) {
+  goods_type_re_active_iterate(pgood) {
     char path[512];
     const char *flag_names[GF_COUNT];
     int flagi;
@@ -1390,7 +1302,24 @@ static bool save_game_ruleset(const char *filename, const char *name)
     }
 
     save_strvec(sfile, pgood->helptext, path, "helptext");
-  } goods_active_type_iterate_end;
+  } goods_type_re_active_iterate_end;
+
+  /* Clauses */
+  comment_clauses(sfile);
+
+  sect_idx = 0;
+  for (i = 0; i < CLAUSE_COUNT; i++) {
+    struct clause_info *info = clause_info_get(i);
+
+    if (info->enabled) {
+      char path[512];
+
+      fc_snprintf(path, sizeof(path), "clause_%d", sect_idx++);
+
+      secfile_insert_str(sfile, clause_type_name(info->type),
+                         "%s.type", path);
+    }
+  }
 
   locks = FALSE;
   settings_iterate(SSET_ALL, pset) {
@@ -1465,7 +1394,7 @@ static bool save_governments_ruleset(const char *filename, const char *name)
   comment_govs(sfile);
 
   sect_idx = 0;
-  governments_active_iterate(pg) {
+  governments_re_active_iterate(pg) {
     char path[512];
     struct ruler_title *prtitle;
 
@@ -1503,13 +1432,13 @@ static bool save_governments_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, pg->helptext, path, "helptext");
 
-  } governments_active_iterate_end;
+  } governments_re_active_iterate_end;
 
   comment_policies(sfile);
 
   sect_idx = 0;
   multipliers_iterate(pmul) {
-    if (!pmul->disabled) {
+    if (!pmul->ruledit_disabled) {
       char path[512];
 
       fc_snprintf(path, sizeof(path), "multiplier_%d", sect_idx++);
@@ -1925,7 +1854,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
   comment_techs(sfile);
 
   sect_idx = 0;
-  advance_active_iterate(pa) {
+  advance_re_active_iterate(pa) {
     if (pa->require[AR_ONE] != A_NEVER) {
       char path[512];
       const char *flag_names[TF_COUNT];
@@ -1945,7 +1874,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
 
       save_tech_ref(sfile, pa->require[AR_ONE], path, "req1");
       save_tech_ref(sfile, pa->require[AR_TWO], path, "req2");
-      if (pa->require[AR_ROOT] != a_none) {
+      if (pa->require[AR_ROOT] != a_none && !pa->inherited_root_req) {
         save_tech_ref(sfile, pa->require[AR_ROOT], path, "root_req");
       }
 
@@ -1978,7 +1907,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
       save_strvec(sfile, pa->helptext, path, "helptext");
     }
 
-  } advance_active_iterate_end;
+  } advance_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }
@@ -2219,7 +2148,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_RESOURCE, pres) {
-    if (!pres->disabled) {
+    if (!pres->ruledit_disabled) {
       char path[512];
       char identifier[2];
 
@@ -2249,7 +2178,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
   comment_extras(sfile);
 
   sect_idx = 0;
-  extra_active_type_iterate(pextra) {
+  extra_type_re_active_iterate(pextra) {
     char path[512];
     const char *flag_names[EF_COUNT];
     const char *cause_names[EC_COUNT];
@@ -2319,6 +2248,9 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
     if (!pextra->buildable) {
       secfile_insert_bool(sfile, pextra->buildable, "%s.buildable", path);
+    }
+    if (!pextra->generated) {
+      secfile_insert_bool(sfile, pextra->generated, "%s.generated", path);
     }
     secfile_insert_int(sfile, pextra->build_time, "%s.build_time", path);
     secfile_insert_int(sfile, pextra->removal_time, "%s.removal_time", path);
@@ -2407,13 +2339,13 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, pextra->helptext, path, "helptext");
 
-  } extra_active_type_iterate_end;
+  } extra_type_re_active_iterate_end;
 
   comment_bases(sfile);
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_BASE, pextra) {
-    if (!pextra->disabled) {
+    if (!pextra->ruledit_disabled) {
       char path[512];
       struct base_type *pbase = extra_base_get(pextra);
       const char *flag_names[BF_COUNT];
@@ -2459,7 +2391,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_ROAD, pextra) {
-    if (!pextra->disabled) {
+    if (!pextra->ruledit_disabled) {
       struct road_type *proad = extra_road_get(pextra);
       char path[512];
       const char *flag_names[RF_COUNT];
@@ -2541,7 +2473,7 @@ static bool save_veteran_system(struct section_file *sfile, const char *path,
   for (i = 0; i < vsystem->levels; i++) {
     vlist_name[i] = rule_name_get(&(vsystem->definitions[i].name));
     vlist_power[i] = vsystem->definitions[i].power_fact;
-    vlist_raise[i] = vsystem->definitions[i].raise_chance;
+    vlist_raise[i] = vsystem->definitions[i].base_raise_chance;
     vlist_wraise[i] = vsystem->definitions[i].work_raise_chance;
     vlist_move[i] = vsystem->definitions[i].move_bonus;
   }
@@ -2551,7 +2483,7 @@ static bool save_veteran_system(struct section_file *sfile, const char *path,
   secfile_insert_int_vec(sfile, vlist_power, vsystem->levels,
                          "%s.veteran_power_fact", path);
   secfile_insert_int_vec(sfile, vlist_raise, vsystem->levels,
-                         "%s.veteran_raise_chance", path);
+                         "%s.veteran_base_raise_chance", path);
   secfile_insert_int_vec(sfile, vlist_wraise, vsystem->levels,
                          "%s.veteran_work_raise_chance", path);
   secfile_insert_int_vec(sfile, vlist_move, vsystem->levels,
@@ -2644,7 +2576,7 @@ static bool save_units_ruleset(const char *filename, const char *name)
   comment_uclasses(sfile);
 
   sect_idx = 0;
-  unit_active_class_iterate(puc) {
+  unit_class_re_active_iterate(puc) {
     char path[512];
     char *hut_str = NULL;
     const char *flag_names[UCF_COUNT];
@@ -2692,13 +2624,13 @@ static bool save_units_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, puc->helptext, path, "helptext");
 
-  } unit_active_class_iterate_end;
+  } unit_class_re_active_iterate_end;
 
   comment_utypes(sfile);
 
   sect_idx = 0;
-  unit_active_type_iterate(put) {
-    if (!put->disabled) {
+  unit_type_re_active_iterate(put) {
+    if (!put->ruledit_disabled) {
       char path[512];
       const char *flag_names[UTYF_LAST_USER_FLAG + 1];
       int flagi;
@@ -2836,7 +2768,7 @@ static bool save_units_ruleset(const char *filename, const char *name)
 
       save_strvec(sfile, put->helptext, path, "helptext");
     }
-  } unit_active_type_iterate_end;
+  } unit_type_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }

@@ -74,6 +74,9 @@ void researches_init(void)
     research_array[i].researching_saved = A_UNKNOWN;
     research_array[i].future_tech = 0;
     research_array[i].inventions[A_NONE].state = TECH_KNOWN;
+    advance_index_iterate(A_FIRST, j) {
+      research_array[i].inventions[j].bulbs_researched_saved = 0;
+    } advance_index_iterate_end;
   }
 
   game.info.global_advances[A_NONE] = TRUE;
@@ -458,53 +461,29 @@ static bool research_get_reachable(const struct research *presearch,
 {
   if (valid_advance_by_number(tech) == NULL) {
     return FALSE;
-  } else if (advance_required(tech, AR_ROOT) != A_NONE) {
-    /* 'tech' has at least one root requirement. We need to check them
-     * all. */
-    bv_techs done;
-    Tech_type_id techs[game.control.num_tech_types];
-    enum tech_req req;
-    int techs_num;
-    int i;
-
-    techs[0] = tech;
-    BV_CLR_ALL(done);
-    BV_SET(done, A_NONE);
-    BV_SET(done, tech);
-    techs_num = 1;
-
-    for (i = 0; i < techs_num; i++) {
-      if (advance_required(techs[i], AR_ROOT) == techs[i]) {
+  } else {
+    advance_root_req_iterate(advance_by_number(tech), proot) {
+      if (advance_requires(proot, AR_ROOT) == proot) {
         /* This tech requires itself; it can only be reached by special
          * means (init_techs, lua script, ...).
          * If you already know it, you can "reach" it; if not, not. (This
          * case is needed for descendants of this tech.) */
-        if (presearch->inventions[techs[i]].state != TECH_KNOWN) {
+        if (presearch->inventions[advance_number(proot)].state != TECH_KNOWN) {
           return FALSE;
         }
       } else {
-        /* Check if requirements are reachable. */
-        Tech_type_id req_tech;
+        enum tech_req req;
 
         for (req = 0; req < AR_SIZE; req++) {
-          req_tech = advance_required(techs[i], req);
-          if (valid_advance_by_number(req_tech) == NULL) {
+          if (valid_advance(advance_requires(proot, req)) == NULL) {
             return FALSE;
-          } else if (!BV_ISSET(done, req_tech)) {
-            if (advance_required(req_tech, AR_ROOT) != A_NONE) {
-              fc_assert(techs_num < ARRAY_SIZE(techs));
-              techs[techs_num] = req_tech;
-              techs_num++;
-            }
-
-            BV_SET(done, req_tech);
           }
         }
       }
-    }
+    } advance_root_req_iterate_end;
   }
 
-  /* Check reseach reqs reachability. */
+  /* Check research reqs reachability. */
   if (!research_get_reachable_rreqs(presearch, tech)) {
     return FALSE;
   }
@@ -514,51 +493,19 @@ static bool research_get_reachable(const struct research *presearch,
 
 /************************************************************************//**
   Returns TRUE iff the players sharing 'presearch' already have got the
-  knowledge of all root requirement technologies.
+  knowledge of all root requirement technologies for 'tech' (without which
+  it's impossible to gain 'tech').
 
   Helper for research_update().
 ****************************************************************************/
 static bool research_get_root_reqs_known(const struct research *presearch,
                                          Tech_type_id tech)
 {
-  if (advance_required(tech, AR_ROOT) != A_NONE) {
-    /* 'padvance' has got at least one root requirement. We need to check
-     * if all of them are known. */
-    bv_techs done;
-    Tech_type_id techs[game.control.num_tech_types];
-    Tech_type_id root;
-    int techs_num;
-    int i;
-
-    techs[0] = tech;
-    BV_CLR_ALL(done);
-    BV_SET(done, A_NONE);
-    BV_SET(done, tech);
-    techs_num = 1;
-
-    for (i = 0; i < techs_num; i++) {
-      root = advance_required(techs[i], AR_ROOT);
-      if (presearch->inventions[root].state != TECH_KNOWN) {
-        return FALSE;
-      } else {
-        /* Check if requirement roots are also known. */
-        enum tech_req req;
-        Tech_type_id req_tech;
-
-        for (req = 0; req <= AR_TWO; req++) {
-          req_tech = advance_required(techs[i], req);
-          if (!BV_ISSET(done, req_tech)) {
-            if (advance_required(req_tech, AR_ROOT) != A_NONE) {
-              fc_assert(techs_num < ARRAY_SIZE(techs));
-              techs[techs_num] = req_tech;
-              techs_num++;
-            }
-            BV_SET(done, req_tech);
-          }
-        }
-      }
+  advance_root_req_iterate(advance_by_number(tech), proot) {
+    if (presearch->inventions[advance_number(proot)].state != TECH_KNOWN) {
+      return FALSE;
     }
-  }
+  } advance_root_req_iterate_end;
 
   return TRUE;
 }
@@ -926,6 +873,7 @@ int research_total_bulbs_required(const struct research *presearch,
   enum tech_cost_style tech_cost_style = game.info.tech_cost_style;
   int members;
   double base_cost, total_cost;
+  double leak = 0.0;
 
   if (!loss_value
       && NULL != presearch
@@ -1013,8 +961,8 @@ int research_total_bulbs_required(const struct research *presearch,
 
       fc_assert_ret_val(0 < players, base_cost);
       fc_assert(players >= players_with_tech_and_embassy);
-      base_cost *= (double) (players - players_with_tech_and_embassy);
-      base_cost /= (double) players;
+      leak = base_cost * players_with_tech_and_embassy
+             * game.info.tech_leak_pct / players / 100;
     }
     break;
 
@@ -1034,8 +982,8 @@ int research_total_bulbs_required(const struct research *presearch,
 
       fc_assert_ret_val(0 < players, base_cost);
       fc_assert(players >= players_with_tech);
-      base_cost *= (double) (players - players_with_tech);
-      base_cost /= (double) players;
+      leak = base_cost * players_with_tech * game.info.tech_leak_pct
+             / players / 100;
     }
     break;
 
@@ -1058,10 +1006,16 @@ int research_total_bulbs_required(const struct research *presearch,
 
       fc_assert_ret_val(0 < players, base_cost);
       fc_assert(players >= players_with_tech);
-      base_cost *= (double) (players - players_with_tech);
-      base_cost /= (double) players;
+      leak = base_cost * players_with_tech * game.info.tech_leak_pct
+             / players / 100;
     }
     break;
+  }
+
+  if (leak > base_cost) {
+    base_cost = 0.0;
+  } else {
+    base_cost -= leak;
   }
 
   /* Assign a science penalty to the AI at easier skill levels. This code

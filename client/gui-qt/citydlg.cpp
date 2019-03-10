@@ -118,7 +118,7 @@ void progress_bar::set_pixmap(struct universal *target)
   QRect crop;
 
   if (VUT_UTYPE == target->kind) {
-    sprite = get_unittype_sprite(tileset, target->value.utype,
+    sprite = get_unittype_sprite(get_tileset(), target->value.utype,
                                  direction8_invalid());
   } else {
     sprite = get_building_sprite(tileset, target->value.building);
@@ -146,7 +146,11 @@ void progress_bar::set_pixmap(int n)
 {
   struct sprite *sprite;
 
-  sprite = get_tech_sprite(tileset, n);
+  if (valid_advance_by_number(n)) {
+    sprite = get_tech_sprite(tileset, n);
+  } else {
+    sprite = nullptr;
+  }
   if (pix != nullptr) {
     delete pix;
   }
@@ -159,6 +163,9 @@ void progress_bar::set_pixmap(int n)
   pix->fill(Qt::transparent);
   pixmap_copy(pix, sprite->pm, 0 , 0, 0, 0,
               sprite->pm->width(), sprite->pm->height());
+  if (isVisible()) {
+    update();
+  }
 }
 
 /************************************************************************//**
@@ -370,7 +377,7 @@ impr_item::impr_item(QWidget *parent, impr_type *building,
 
   setFixedWidth(impr_pixmap->map_pixmap.width() + 4);
   setFixedHeight(impr_pixmap->map_pixmap.height());
-  setToolTip(get_tooltip_improvement(building, city).trimmed());
+  setToolTip(get_tooltip_improvement(building, city, true).trimmed());
 }
 
 /************************************************************************//**
@@ -631,17 +638,29 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
   QRect crop;
   qunit = punit;
   struct canvas *unit_pixmap;
+  struct tileset *tmp;
+  float isosize;
 
   setParent(parent);
   supported = supp;
 
+  tmp = nullptr;
+  if (unscaled_tileset) {
+    tmp = tileset;
+    tileset = unscaled_tileset;
+  }
+  isosize = 0.6;
+  if (tileset_hex_height(tileset) > 0 || tileset_hex_width(tileset) > 0) {
+    isosize = 0.45;
+  }
+
   if (punit) {
     if (supported) {
-      unit_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
-                                      tileset_unit_with_upkeep_height(tileset));
+      unit_pixmap = qtg_canvas_create(tileset_unit_width(get_tileset()),
+                             tileset_unit_with_upkeep_height(get_tileset()));
     } else {
-      unit_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
-                                      tileset_unit_height(tileset));
+      unit_pixmap = qtg_canvas_create(tileset_unit_width(get_tileset()),
+                                      tileset_unit_height(get_tileset()));
     }
 
     unit_pixmap->map_pixmap.fill(Qt::transparent);
@@ -649,7 +668,7 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
 
     if (supported) {
       put_unit_city_overlays(punit, unit_pixmap, 0,
-                             tileset_unit_layout_offset_y(tileset),
+                             tileset_unit_layout_offset_y(get_tileset()),
                              punit->upkeep, happy_cost);
     }
   } else {
@@ -661,13 +680,17 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
   crop = zealous_crop_rect(img);
   cropped_img = img.copy(crop);
   if (tileset_is_isometric(tileset) == true) {
-    unit_img = cropped_img.scaledToHeight(tileset_unit_width(tileset)
-                                          * 0.6, Qt::SmoothTransformation);
+    unit_img = cropped_img.scaledToHeight(tileset_unit_width(get_tileset())
+                                          * isosize, Qt::SmoothTransformation);
   } else {
-    unit_img = cropped_img.scaledToHeight(tileset_unit_width(tileset),
+    unit_img = cropped_img.scaledToHeight(tileset_unit_width(get_tileset()),
                                           Qt::SmoothTransformation);
   }
   canvas_free(unit_pixmap);
+  if (tmp != nullptr) {
+    tileset = tmp;
+  }
+
   create_actions();
   setFixedWidth(unit_img.width() + 4);
   setFixedHeight(unit_img.height());
@@ -1049,6 +1072,7 @@ void unit_info::update_units()
   int i = unit_list.count();
   int j;
   int h;
+  float hexfix;
   unit_item *ui;
 
   setUpdatesEnabled(false);
@@ -1059,10 +1083,15 @@ void unit_info::update_units()
     layout->addWidget(ui, 0, Qt::AlignVCenter);
   }
 
+  hexfix = 1.0;
+  if (tileset_hex_height(tileset) > 0 || tileset_hex_width(tileset) > 0) {
+    hexfix = 0.75;
+  }
+
   if (tileset_is_isometric(tileset)) {
-    h = tileset_unit_width(tileset) * 0.7 + 6;
+    h = tileset_unit_width(get_tileset()) * 0.7 * hexfix + 6;
   } else {
-    h = tileset_unit_width(tileset) + 6;
+    h = tileset_unit_width(get_tileset()) + 6;
   }
   if (unit_list.count() > 0) {
     parentWidget()->parentWidget()->setFixedHeight(city_dlg->scroll_height
@@ -1283,6 +1312,8 @@ void city_map::context_menu(QPoint point)
   QAction con_mine(_("Mine"), this);
   QAction con_road(_("Road"), this);
   QAction con_trfrm(_("Transform"), this);
+  QAction con_pollution(_("Clean Pollution"), this);
+  QAction con_fallout(_("Clean Fallout"), this);
   QMenu con_menu(this);
   QWidgetAction *wid_act;
   struct packet_worker_task task;
@@ -1319,7 +1350,7 @@ void city_map::context_menu(QPoint point)
       && univs_have_action_enabler(ACTION_MINE_TF, NULL, &for_terr)) {
     con_menu.addAction(&con_mine_tf);
   } else if (pterr->mining_result == pterr
-             && effect_cumulative_max(EFT_MINING_POSSIBLE, &for_terr) > 0) {
+             && univs_have_action_enabler(ACTION_MINE, NULL, &for_terr)) {
     con_menu.addAction(&con_mine);
   }
 
@@ -1327,7 +1358,7 @@ void city_map::context_menu(QPoint point)
       && univs_have_action_enabler(ACTION_IRRIGATE_TF, NULL, &for_terr)) {
     con_menu.addAction(&con_irrig_tf);
   } else if (pterr->irrigation_result == pterr
-             && effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_terr) > 0) {
+             && univs_have_action_enabler(ACTION_IRRIGATE, NULL, &for_terr)) {
     con_menu.addAction(&con_irrig);
   }
 
@@ -1338,6 +1369,16 @@ void city_map::context_menu(QPoint point)
 
   if (next_extra_for_tile(ptile, EC_ROAD, city_owner(mcity), NULL) != NULL) {
     con_menu.addAction(&con_road);
+  }
+
+  if (prev_extra_in_tile(ptile, ERM_CLEANPOLLUTION,
+                         city_owner(mcity), NULL) != NULL) {
+    con_menu.addAction(&con_pollution);
+  }
+
+  if (prev_extra_in_tile(ptile, ERM_CLEANFALLOUT,
+                         city_owner(mcity), NULL) != NULL) {
+    con_menu.addAction(&con_fallout);
   }
 
   if (ptask != NULL) {
@@ -1364,15 +1405,28 @@ void city_map::context_menu(QPoint point)
       task.activity = ACTIVITY_IRRIGATE;
     } else if (act == &con_trfrm) {
       task.activity = ACTIVITY_TRANSFORM;
+    } else if (act == &con_pollution) {
+      task.activity = ACTIVITY_POLLUTION;
+      target = TRUE;
+    } else if (act == &con_fallout) {
+      task.activity = ACTIVITY_FALLOUT;
+      target = TRUE;
     }
 
     task.want = 100;
 
     if (target) {
       enum extra_cause cause = activity_to_extra_cause(task.activity);
+      enum extra_rmcause rmcause = activity_to_extra_rmcause(task.activity);
       struct extra_type *tgt;
 
-      tgt = next_extra_for_tile(ptile, cause, city_owner(mcity), NULL);
+      if (cause != EC_NONE) {
+        tgt = next_extra_for_tile(ptile, cause, city_owner(mcity), NULL);
+      } else if (rmcause != ERM_NONE) {
+        tgt = prev_extra_in_tile(ptile, rmcause, city_owner(mcity), NULL);
+      } else {
+        tgt = NULL;
+      }
 
       if (tgt != NULL) {
         task.tgt = extra_index(tgt);
@@ -1451,7 +1505,8 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   info_list << _("Food:") << _("Prod:") << _("Trade:") << _("Gold:")
             << _("Luxury:") << _("Science:") << _("Granary:")
             << _("Change in:") << _("Corruption:") << _("Waste:")
-            << _("Culture:") << _("Pollution:") << _("Plague Risk:");
+            << _("Culture:") << _("Pollution:") << _("Plague Risk:")
+            << _("Tech Stolen:");
   info_nr = info_list.count();
   info_wdg->setFont(*small_font);
   info_grid_layout->setSpacing(0);
@@ -1513,20 +1568,20 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   supp_units = new QLabel();
   curr_units = new QLabel();
   curr_impr = new QLabel();
-  curr_units->setAlignment(Qt::AlignCenter);
-  curr_impr->setAlignment(Qt::AlignCenter);
-  supp_units->setAlignment(Qt::AlignCenter);
+  curr_units->setAlignment(Qt::AlignLeft);
+  curr_impr->setAlignment(Qt::AlignLeft);
+  supp_units->setAlignment(Qt::AlignLeft);
   supported_units = new unit_info(true);
   scroll = new QScrollArea;
   scroll->setWidgetResizable(true);
-  scroll->setMaximumHeight(tileset_unit_with_upkeep_height(tileset) + 6
+  scroll->setMaximumHeight(tileset_unit_with_upkeep_height(get_tileset()) + 6
                            + scroll->horizontalScrollBar()->height());
   scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scroll->setWidget(supported_units);
   current_units = new unit_info(false);
   scroll2 = new QScrollArea;
   scroll2->setWidgetResizable(true);
-  scroll2->setMaximumHeight(tileset_unit_height(tileset) + 6
+  scroll2->setMaximumHeight(tileset_unit_height(get_tileset()) + 6
                             + scroll2->horizontalScrollBar()->height());
   scroll2->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scroll2->setWidget(current_units);
@@ -1633,8 +1688,9 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
 
   /* Layout with city view and buttons */
   lefttop_layout->addWidget(citizens_label, Qt::AlignHCenter);
+  lefttop_layout->addStretch(0);
   lefttop_layout->addLayout(hbox_layout);
-  lefttop_layout->addStretch(1);
+  lefttop_layout->addStretch(50);
 
   /* Layout for units/buildings */
   curr_unit_wdg = new QWidget();
@@ -1717,6 +1773,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   vbox_layout->addWidget(production_combo_p);
   vbox_layout->addLayout(work_but_layout);
   vbox_layout->addWidget(p_table_p);
+  qgbprod->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
   qgbprod->setLayout(vbox_layout);
 
   but_menu_worklist->setText(_("Worklist menu"));
@@ -1821,9 +1878,11 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   str_list << _("Food") << _("Shield") << _("Trade") << _("Gold")
            << _("Luxury") << _("Science") << _("Celebrate");
   some_label = new QLabel(_("Minimal Surplus"));
-  some_label->setAlignment(Qt::AlignCenter);
-  slider_grid->addWidget(some_label, 0, 1, 1, 2);
+  some_label->setFont(*fc_font::instance()->get_font(fonts::city_label));
+  some_label->setAlignment(Qt::AlignRight);
+  slider_grid->addWidget(some_label, 0, 0, 1, 3);
   some_label = new QLabel(_("Priority"));
+  some_label->setFont(*fc_font::instance()->get_font(fonts::city_label));
   some_label->setAlignment(Qt::AlignCenter);
   slider_grid->addWidget(some_label, 0, 3, 1, 2);
 
@@ -1867,7 +1926,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   cma_enable_but = new QPushButton();
   cma_enable_but->setFocusPolicy(Qt::TabFocus);
   connect(cma_enable_but, &QAbstractButton::pressed, this, &city_dialog::cma_enable);
-  slider_grid->addWidget(cma_enable_but, O_LAST + 4, 1, 1, 2);
+  slider_grid->addWidget(cma_enable_but, O_LAST + 4, 0, 1, 3);
   slider_grid->addWidget(qpush2, O_LAST + 4, 3, 1, 2);
 
   qsliderbox->setLayout(slider_grid);
@@ -1888,14 +1947,14 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   split_widget2->setLayout(units_layout);
   prod_unit_splitter->addWidget(split_widget1);
   prod_unit_splitter->addWidget(split_widget2);
-  prod_unit_splitter->setStretchFactor(0, 40);
-  prod_unit_splitter->setStretchFactor(1, 60);
+  prod_unit_splitter->setStretchFactor(0, 3);
+  prod_unit_splitter->setStretchFactor(1, 97);
   prod_unit_splitter->setOrientation(Qt::Horizontal);
   leftbot_layout->addWidget(prod_unit_splitter);
   top_widget = new QWidget;
   top_widget->setLayout(lefttop_layout);
-  top_widget->setSizePolicy(QSizePolicy::MinimumExpanding,
-                            QSizePolicy::Fixed);
+  top_widget->setSizePolicy(QSizePolicy::Minimum,
+                            QSizePolicy::Minimum);
   scroll_info = new QScrollArea();
   scroll_info->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
   scroll_unit = new QScrollArea();
@@ -1909,7 +1968,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   scroll_unit->setWidgetResizable(true);
   central_left_splitter->addWidget(scroll_info);
   central_left_splitter->addWidget(scroll_unit);
-  central_left_splitter->setStretchFactor(0, 60);
+  central_left_splitter->setStretchFactor(0, 40);
   central_left_splitter->setStretchFactor(1, 60);
   central_left_splitter->setOrientation(Qt::Vertical);
   left_layout->addWidget(central_left_splitter);
@@ -1920,8 +1979,8 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   split_widget2->setLayout(right_layout);
   central_splitter->addWidget(split_widget1);
   central_splitter->addWidget(split_widget2);
-  central_splitter->setStretchFactor(0, 80);
-  central_splitter->setStretchFactor(1, 20);
+  central_splitter->setStretchFactor(0, 99);
+  central_splitter->setStretchFactor(1, 1);
   central_splitter->setOrientation(Qt::Horizontal);
   single_page_layout->addWidget(central_splitter);
   setSizeGripEnabled(true);
@@ -2187,6 +2246,10 @@ void city_dialog::city_rename()
 {
   hud_input_box ask(gui()->central_wdg);
 
+  if (!can_client_issue_orders()) {
+    return;
+  }
+
   ask.set_text_title_definput(_("What should we rename the city to?"),
                               _("Rename City"), city_name_get(pcity));
   if (ask.exec() == QDialog::Accepted) {
@@ -2292,6 +2355,9 @@ void city_dialog::cma_double_clicked(int row, int column)
 {
   const struct cm_parameter *param;
 
+  if (!can_client_issue_orders()) {
+    return;
+  }
   param = cmafec_preset_get_parameter(row);
   if (cma_is_city_under_agent(pcity, NULL)) {
     cma_release_city(pcity);
@@ -2664,7 +2730,7 @@ void city_dialog::update_buy_button()
   buy_button->setDisabled(true);
 
   if (!client_is_observer() && client.conn.playing != NULL) {
-    value = city_production_buy_gold_cost(pcity);
+    value = pcity->client.buy_cost;
     str = QString(PL_("Buy (%1 gold)", "Buy (%1 gold)",
                       value)).arg(QString::number(value));
 
@@ -2883,7 +2949,7 @@ void city_dialog::update_info_label()
 
   enum { FOOD = 0, SHIELD = 2, TRADE = 4, GOLD = 6, LUXURY = 8, SCIENCE = 10,
          GRANARY = 12, GROWTH = 14, CORRUPTION = 16, WASTE = 18,
-         CULTURE = 20, POLLUTION = 22, ILLNESS = 24
+         CULTURE = 20, POLLUTION = 22, ILLNESS = 24, STEAL = 26
        };
 
   /* fill the buffers with the necessary info */
@@ -2955,6 +3021,11 @@ void city_dialog::update_info_label()
     /* illness is in tenth of percent */
     fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), "%4.1f",
                 (float) illness / 10.0);
+  }
+  if (pcity->steal) {
+    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("%d times"), pcity->steal);
+  } else {
+    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("Not stolen"));
   }
 
   get_city_dialog_output_text(pcity, O_FOOD, buffer, sizeof(buffer));
@@ -3187,7 +3258,7 @@ void city_dialog::buy()
   char buf[1024], buf2[1024];
   int ret;
   const char *name = city_production_name_translation(pcity);
-  int value = city_production_buy_gold_cost(pcity);
+  int value = pcity->client.buy_cost;
   hud_message_box ask(city_dlg);
 
   if (!can_client_issue_orders()) {
@@ -3264,23 +3335,25 @@ void city_dialog::update_improvements()
 
   for (int i = 0; i < worklist_length(&queue); i++) {
     struct universal target = queue.entries[i];
+
     tooltip = "";
 
     if (VUT_UTYPE == target.kind) {
       str = utype_values_translation(target.value.utype);
-      cost = utype_build_shield_cost(target.value.utype);
-      tooltip = get_tooltip_unit(target.value.utype).trimmed();
-      sprite = get_unittype_sprite(tileset, target.value.utype,
+      cost = utype_build_shield_cost(pcity, target.value.utype);
+      tooltip = get_tooltip_unit(target.value.utype, true).trimmed();
+      sprite = get_unittype_sprite(get_tileset(), target.value.utype,
                                    direction8_invalid());
     } else {
       str = city_improvement_name_translation(pcity, target.value.building);
       sprite = get_building_sprite(tileset, target.value.building);
-      tooltip = get_tooltip_improvement(target.value.building).trimmed();
+      tooltip = get_tooltip_improvement(target.value.building,
+                                        nullptr, true).trimmed();
 
       if (improvement_has_flag(target.value.building, IF_GOLD)) {
         cost = -1;
       } else {
-        cost = impr_build_shield_cost(target.value.building);
+        cost = impr_build_shield_cost(pcity, target.value.building);
       }
     }
 
@@ -3680,8 +3753,10 @@ QString bold(QString text)
 
 /************************************************************************//**
   Returns improvement properties to append in tooltip
+  ext is used to get extra info from help
 ****************************************************************************/
-QString get_tooltip_improvement(impr_type *building, struct city *pcity)
+QString get_tooltip_improvement(impr_type *building, struct city *pcity,
+                                bool ext)
 {
   QString def_str;
   QString upkeep;
@@ -3706,22 +3781,34 @@ QString get_tooltip_improvement(impr_type *building, struct city *pcity)
             + QString(improvement_name_translation(building))
             + "</b>\n";
   def_str += QString(_("Cost: %1, Upkeep: %2\n"))
-             .arg(impr_build_shield_cost(building))
+             .arg(impr_build_shield_cost(pcity,building))
              .arg(upkeep);
   if (s1.compare(s2) != 0) {
     def_str = def_str + str + "\n";
   }
   def_str = def_str + "\n";
+  if (ext) {
+    char buffer[8192];
+
+    str = helptext_building(buffer, sizeof(buffer), client.conn.playing,
+                            NULL, building);
+    str = cut_helptext(str);
+    str = split_text(str, true);
+    str = str.trimmed();
+    def_str = def_str + str;
+  }
   return def_str;
 }
 
 /************************************************************************//**
   Returns unit properties to append in tooltip
+  ext is used to get extra info from help
 ****************************************************************************/
-QString get_tooltip_unit(struct unit_type *unit)
+QString get_tooltip_unit(struct unit_type *unit, bool ext)
 {
   QString def_str;
   QString obsolete_str;
+  QString str;
   struct unit_type *obsolete;
   struct advance *tech;
 
@@ -3748,7 +3835,7 @@ QString get_tooltip_unit(struct unit_type *unit)
              + QString(move_points_text(unit->move_rate, TRUE))
              + QString("</td></tr><tr><td>")
              + bold(QString(_("Cost:"))) + " "
-             + QString::number(utype_build_shield_cost(unit))
+             + QString::number(utype_build_shield_cost_base(unit))
              + QString("</td><td colspan=\"2\">")
              + bold(QString(_("Basic Upkeep:")))
              + " " + QString(helptext_unit_upkeep_str(unit))
@@ -3761,6 +3848,18 @@ QString get_tooltip_unit(struct unit_type *unit)
              + QString::number((int) sqrt((double) unit->vision_radius_sq))
              + obsolete_str
              + QString("</td></tr></table><p style='white-space:pre'>");
+  if (ext) {
+    char buffer[8192];
+    char buf2[1];
+
+    buf2[0] = '\0';
+    str = helptext_unit(buffer, sizeof(buffer), client.conn.playing,
+                        buf2, unit);
+    str = cut_helptext(str);
+    str = split_text(str, true);
+    str = str.trimmed();
+    def_str = def_str + str;
+  }
   return def_str;
 };
 
@@ -3773,9 +3872,9 @@ QString get_tooltip(QVariant qvar)
   QStringList sl;
   char buffer[8192];
   char buf2[1];
+  struct universal *target;
 
   buf2[0] = '\0';
-  struct universal *target;
   target = reinterpret_cast<universal *>(qvar.value<void *>());
 
   if (target == NULL) {
@@ -3848,7 +3947,7 @@ void city_production_delegate::paint(QPainter *painter,
 
   qvar = index.data();
 
-  if (qvar.isNull()) {
+  if (qvar.isValid() == false) {
     return;
   }
 
@@ -3873,17 +3972,22 @@ void city_production_delegate::paint(QPainter *painter,
 
     if ((utype_fuel(target->value.utype)
          && !uclass_has_flag(pclass, UCF_TERRAIN_DEFENSE)
-        && !uclass_has_flag(pclass, UCF_CAN_PILLAGE)
-        && !uclass_has_flag(pclass, UCF_CAN_FORTIFY)
-        && !uclass_has_flag(pclass, UCF_ZOC))
-        || uclass_has_flag(pclass, UCF_MISSILE)) {
+         && !uclass_has_flag(pclass, UCF_CAN_PILLAGE)
+         && !uclass_has_flag(pclass, UCF_CAN_FORTIFY)
+         && !uclass_has_flag(pclass, UCF_ZOC))
+        /* FIXME: Assumed to be flying since only missiles can do suicide
+         * attacks in classic-like rulesets. This isn't true for all
+         * rulesets. Not a high priority to fix since all is_flying and
+         * is_sea is used for is to set a color. */
+        || utype_can_do_action(target->value.utype,
+                               ACTION_SUICIDE_ATTACK)) {
       if (is_sea == true) {
         is_sea = false;
       }
       is_flying = true;
     }
 
-    sprite = get_unittype_sprite(tileset, target->value.utype,
+    sprite = get_unittype_sprite(get_tileset(), target->value.utype,
                                  direction8_invalid());
   } else {
     is_unit = false;
@@ -4279,7 +4383,7 @@ void production_widget::prod_selected(const QItemSelection &sl,
   }
   index = indexes.at(0);
   qvar = index.data(Qt::UserRole);
-  if (qvar.isNull()) {
+  if (qvar.isValid() == false) {
     return;
   }
   target = reinterpret_cast<universal *>(qvar.value<void *>());

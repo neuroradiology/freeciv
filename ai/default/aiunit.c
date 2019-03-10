@@ -206,7 +206,7 @@ static void dai_airlift(struct ai_type *ait, struct player *pplayer)
     UNIT_LOG(LOG_DEBUG, transported, "airlifted to defend %s",
              city_name_get(most_needed));
     unit_do_action(pplayer, transported->id, most_needed->id,
-                   EXTRA_NONE, 0, "", ACTION_AIRLIFT);
+                   0, "", ACTION_AIRLIFT);
   } while (TRUE);
 }
 
@@ -246,7 +246,7 @@ static bool has_defense(struct city *pcity)
 **************************************************************************/
 int build_cost_balanced(const struct unit_type *punittype)
 {
-  return 2 * utype_build_shield_cost(punittype) * punittype->attack_strength /
+  return 2 * utype_build_shield_cost_base(punittype) * punittype->attack_strength /
       (punittype->attack_strength + punittype->defense_strength);
 }
 
@@ -381,7 +381,7 @@ static void reinforcements_cost_and_value(struct unit *punit,
 
         if (val != 0) {
           *value += val;
-          *cost += unit_build_shield_cost(aunit);
+          *cost += unit_build_shield_cost_base(aunit);
         }
       }
     } unit_list_iterate_end;
@@ -455,7 +455,7 @@ static int dai_rampage_want(struct unit *punit, struct tile *ptile)
     /* See description of kill_desire() about these variables. */
     int attack = unit_att_rating_now(punit);
     int benefit = stack_cost(punit, pdef);
-    int loss = unit_build_shield_cost(punit);
+    int loss = unit_build_shield_cost_base(punit);
 
     attack *= attack;
 
@@ -494,7 +494,8 @@ static int dai_rampage_want(struct unit *punit, struct tile *ptile)
     }
 
     /* ...or tiny pleasant hut here! */
-    if (tile_has_cause_extra(ptile, EC_HUT) && !is_barbarian(pplayer)
+    /* FIXME: unhardcode and variate the desire to enter a hut. */
+    if (hut_on_tile(ptile) && !is_barbarian(pplayer)
         && is_native_tile(unit_type_get(punit), ptile)
         && unit_class_get(punit)->hut_behavior == HUT_NORMAL) {
       return -RAMPAGE_HUT_OR_BETTER;
@@ -1205,7 +1206,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
           struct ai_city *city_data = def_ai_city_data(pcity, ait);
 
           city_data->attack += adv_unit_att_rating(aunit);
-          city_data->bcost += unit_build_shield_cost(aunit);
+          city_data->bcost += unit_build_shield_cost_base(aunit);
         } 
       }
       invasion_funct(ait, aunit, FALSE, unit_move_rate(aunit) / SINGLE_MOVE,
@@ -1237,7 +1238,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
     unhap = dai_assess_military_unhappiness(pcity);
   }
 
-  bcost = unit_build_shield_cost(punit);
+  bcost = unit_build_shield_cost_base(punit);
   bcost_bal = build_cost_balanced(punit_type);
 
   pft_fill_unit_attack_param(&parameter, punit);
@@ -1344,7 +1345,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
       if (can_unit_attack_tile(punit, city_tile(acity))
           && (pdefender = get_defender(punit, city_tile(acity)))) {
         vulnerability = unit_def_rating_squared(punit, pdefender);
-        benefit = unit_build_shield_cost(pdefender);
+        benefit = unit_build_shield_cost_base(pdefender);
       } else {
         pdefender = NULL;
         vulnerability = 0;
@@ -1362,7 +1363,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
           if (v > vulnerability) {
             /* They can build a better defender! */
             vulnerability = v;
-            benefit = utype_build_shield_cost(def_type);
+            benefit = utype_build_shield_cost(acity, def_type);
           }
         }
       }
@@ -1408,7 +1409,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
                            : SHIELD_WEIGHTING);
       /* Build_cost of ferry. */
       needferry = (go_by_boat && NULL == ferryboat
-                   ? utype_build_shield_cost(boattype) : 0);
+                   ? utype_build_shield_cost(acity, boattype) : 0);
       /* FIXME: add time to build the ferry? */
       want = military_amortize(pplayer, game_city_by_number(punit->homecity),
                                want, MAX(1, move_time),
@@ -1516,7 +1517,7 @@ int find_something_to_kill(struct ai_type *ait, struct player *pplayer,
       }
 
       vulnerability = unit_def_rating_squared(punit, aunit);
-      benefit = unit_build_shield_cost(aunit);
+      benefit = unit_build_shield_cost_base(aunit);
 
       move_time = pos.turn;
       if (10 < move_time) {
@@ -1949,7 +1950,7 @@ static void dai_caravan_goto(struct ai_type *ait, struct player *pplayer,
                TILE_XY(unit_tile(punit)),
                city_name_get(dest_city));
       unit_do_action(pplayer, punit->id, dest_city->id,
-                     EXTRA_NONE, 0, "", ACTION_HELP_WONDER);
+                     0, "", ACTION_HELP_WONDER);
     } else if (is_action_enabled_unit_on_city(ACTION_TRADE_ROUTE,
                                               punit, dest_city)) {
       log_base(LOG_CARAVAN, "%s %s[%d](%d,%d) creates trade route in %s",
@@ -1959,7 +1960,7 @@ static void dai_caravan_goto(struct ai_type *ait, struct player *pplayer,
                TILE_XY(unit_tile(punit)),
                city_name_get(dest_city));
       unit_do_action(pplayer, punit->id, dest_city->id,
-                     EXTRA_NONE, 0, "", ACTION_TRADE_ROUTE);
+                     0, "", ACTION_TRADE_ROUTE);
     } else if (is_action_enabled_unit_on_city(ACTION_MARKETPLACE,
                                               punit, dest_city)) {
       /* Get the one time bonus. */
@@ -1970,7 +1971,7 @@ static void dai_caravan_goto(struct ai_type *ait, struct player *pplayer,
                TILE_XY(unit_tile(punit)),
                city_name_get(dest_city));
       unit_do_action(pplayer, punit->id, dest_city->id,
-                     EXTRA_NONE, 0, "", ACTION_MARKETPLACE);
+                     0, "", ACTION_MARKETPLACE);
     } else {
       enum log_level level = LOG_NORMAL;
 
@@ -3006,7 +3007,7 @@ static void update_simple_ai_types(void)
 
     if (A_NEVER != punittype->require_advance
         && !utype_has_flag(punittype, UTYF_CIVILIAN)
-        && !uclass_has_flag(pclass, UCF_MISSILE)
+        && !utype_can_do_action(punittype, ACTION_SUICIDE_ATTACK)
         && !(pclass->adv.land_move == MOVE_NONE
              && !can_attack_non_native(punittype))
         && !utype_fuel(punittype)
@@ -3061,21 +3062,20 @@ void dai_units_ruleset_init(struct ai_type *ait)
     if (punittype->transport_capacity > 0) {
       struct unit_type_ai *utai = utype_ai_data(punittype, ait);
 
-      unit_class_iterate(pcargo) {
+      unit_type_iterate(pctype) {
+        struct unit_class *pcargo = utype_class(pctype);
+
         if (can_unit_type_transport(punittype, pcargo)) {
-          if (uclass_has_flag(pcargo, UCF_MISSILE)) {
+          if (utype_can_do_action(pctype, ACTION_SUICIDE_ATTACK)) {
             utai->missile_platform = TRUE;
           } else if (pclass->adv.sea_move != MOVE_NONE
               && pcargo->adv.land_move != MOVE_NONE) {
             if (pcargo->adv.sea_move != MOVE_FULL) {
               utai->ferry = TRUE;
             } else {
-              unit_type_iterate(pctype) {
-                if (utype_class(pctype) == pcargo
-                    && 0 != utype_fuel(pctype)) {
-                  utai->ferry = TRUE;
-                }
-              } unit_type_iterate_end;
+              if (0 != utype_fuel(pctype)) {
+                utai->ferry = TRUE;
+              }
             }
           }
 
@@ -3083,7 +3083,7 @@ void dai_units_ruleset_init(struct ai_type *ait)
             utai->carries_occupiers = TRUE;
           }
         }
-      } unit_class_iterate_end;
+      } unit_type_iterate_end;
     }
 
     /* Consider potential charges */

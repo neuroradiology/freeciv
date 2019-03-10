@@ -87,10 +87,6 @@ tilelabel_offset_y = 10
 ; space below.
 unit_upkeep_small_offset_y = 20
 
-; Font size (points) to use to draw city names and productions:
-city_names_font_size = 10
-city_productions_font_size = 10
-
 ; For tilesets with oriented units, the directional sprite to use to
 ; represent a unit type rather than a specific unit from the map
 ; (e.g., in worklists, editor, and online help). Does not have to be a
@@ -332,6 +328,7 @@ styles =
       "tx.farmland",   "Cardinals"
       "tx.mine",       "Single1"
       "tx.oil_mine",   "Single1"
+      "tx.oil_rig",    "Single1"
       "tx.pollution",  "Single2"
       "tx.fallout",    "Single2"
       "tx.village",    "Single1"
@@ -339,6 +336,7 @@ styles =
       "base.fortress", "3Layer"
       "base.airstrip", "3Layer"
       "base.airbase",  "3Layer"
+      "base.buoy",     "3Layer"
       "extra.ruins",   "3Layer"
       "ts.gold",       "Single1"
       "ts.iron",       "Single1"

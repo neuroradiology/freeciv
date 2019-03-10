@@ -350,7 +350,7 @@ static int get_units_score(const struct player *pplayer)
 int get_civ_score(const struct player *pplayer)
 {
   /* We used to count pplayer->score.happy here too, but this is too easily
-   * manipulated by players at the endrturn. */
+   * manipulated by players at the endturn. */
   return (total_player_citizens(pplayer)
           + pplayer->score.techs * 2
           + pplayer->score.wonders * 5
@@ -367,8 +367,8 @@ static int get_spaceship_score(const struct player *pplayer)
   if (pplayer->score.spaceship == SSHIP_ARRIVED) {
     /* How much should a spaceship be worth?
      * This gives 100 points per 10,000 citizens. */
-    return (int)(100 * pplayer->spaceship.habitation
-		 * pplayer->spaceship.success_rate);
+    return (int)((pplayer->spaceship.population
+		  * pplayer->spaceship.success_rate) / 100.0);
   } else {
     return 0;
   }

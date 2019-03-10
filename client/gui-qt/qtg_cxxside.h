@@ -98,7 +98,7 @@ void qtg_options_extra_init();
 void qtg_server_connect();
 void qtg_add_net_input(int sock);
 void qtg_remove_net_input();
-void qtg_real_conn_list_dialog_update();
+void qtg_real_conn_list_dialog_update(void *unused);
 void qtg_close_connection_dialog();
 void qtg_add_idle_callback(void (callback)(void *), void *data);
 void qtg_sound_bell();
@@ -113,8 +113,6 @@ void qtg_set_unit_icon(int idx, struct unit *punit);
 void qtg_set_unit_icons_more_arrow(bool onoff);
 void qtg_real_focus_units_changed(void);
 void qtg_gui_update_font(const char *font_name, const char *font_value);
-void qtg_set_city_names_font_sizes(int my_city_names_font_size,
-                                   int my_city_productions_font_size);
 
 void qtg_editgui_refresh();
 void qtg_editgui_notify_object_created(int tag, int id);

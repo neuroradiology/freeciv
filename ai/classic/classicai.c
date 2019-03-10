@@ -683,6 +683,8 @@ bool fc_ai_classic_setup(struct ai_type *ai)
   /* ai->funcs.refresh = NULL; */
 
   /* ai->funcs.tile_info = NULL; */
+  /* ai->funcs.city_info = NULL; */
+  /* ai->funcs.unit_info = NULL; */
 
   return TRUE;
 }

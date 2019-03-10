@@ -282,6 +282,17 @@ bool city_base_to_city_map(int *city_map_x, int *city_map_y,
 }
 
 /**********************************************************************//**
+  Returns TRUE iff pcity's city map includes the specified tile.
+**************************************************************************/
+bool city_map_includes_tile(const struct city *const pcity,
+                            const struct tile *map_tile)
+{
+  int tmp_x, tmp_y;
+
+  return city_base_to_city_map(&tmp_x, &tmp_y, pcity, map_tile);
+}
+
+/**********************************************************************//**
   Finds the map position for a given city map coordinate of a certain
   city. Returns true if the map position found is real.
 **************************************************************************/
@@ -706,7 +717,7 @@ bool city_production_has_flag(const struct city *pcity,
 **************************************************************************/
 int city_production_build_shield_cost(const struct city *pcity)
 {
-  return universal_build_shield_cost(&pcity->production);
+  return universal_build_shield_cost(pcity, &pcity->production);
 }
 
 /**********************************************************************//**
@@ -743,7 +754,7 @@ bool city_production_build_units(const struct city *pcity,
     shields_left += pcity->prod[O_SHIELD];
   }
 
-  unit_shield_cost = utype_build_shield_cost(utype);
+  unit_shield_cost = utype_build_shield_cost(pcity, utype);
 
   for (i = 0; i < build_slots; i++) {
     if (shields_left < unit_shield_cost) {
@@ -766,26 +777,6 @@ bool city_production_build_units(const struct city *pcity,
   }
 
   return TRUE;
-}
-
-/**********************************************************************//**
-  Return the cost (gold) to buy the current city production.
-**************************************************************************/
-int city_production_buy_gold_cost(const struct city *pcity)
-{
-  int build = pcity->shield_stock;
-
-  switch (pcity->production.kind) {
-  case VUT_IMPROVEMENT:
-    return impr_buy_gold_cost(pcity->production.value.building,
-			      build);
-  case VUT_UTYPE:
-    return utype_buy_gold_cost(pcity->production.value.utype,
-			       build);
-  default:
-    break;
-  };
-  return FC_INFINITY;
 }
 
 /**********************************************************************//**
@@ -1869,8 +1860,8 @@ int city_change_production_penalty(const struct city *pcity,
 }
 
 /**********************************************************************//**
- Calculates the turns which are needed to build the requested
- improvement in the city. GUI Independent.
+  Calculates the turns which are needed to build the requested
+  improvement in the city. GUI Independent.
 **************************************************************************/
 int city_turns_to_build(const struct city *pcity,
                         const struct universal *target,
@@ -1879,7 +1870,7 @@ int city_turns_to_build(const struct city *pcity,
   int city_shield_surplus = pcity->surplus[O_SHIELD];
   int city_shield_stock = include_shield_stock ?
       city_change_production_penalty(pcity, target) : 0;
-  int cost = universal_build_shield_cost(target);
+  int cost = universal_build_shield_cost(pcity, target);
 
   if (target->kind == VUT_IMPROVEMENT
       && is_great_wonder(target->value.building)
@@ -1897,11 +1888,11 @@ int city_turns_to_build(const struct city *pcity,
 }
 
 /**********************************************************************//**
- Calculates the turns which are needed for the city to grow.  A value
- of FC_INFINITY means the city will never grow.  A value of 0 means
- city growth is blocked.  A negative value of -x means the city will
- shrink in x turns.  A positive value of x means the city will grow in
- x turns.
+  Calculates the turns which are needed for the city to grow.  A value
+  of FC_INFINITY means the city will never grow.  A value of 0 means
+  city growth is blocked.  A negative value of -x means the city will
+  shrink in x turns.  A positive value of x means the city will grow in
+  x turns.
 **************************************************************************/
 int city_turns_to_grow(const struct city *pcity)
 {

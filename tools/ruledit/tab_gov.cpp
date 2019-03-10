@@ -88,7 +88,6 @@ tab_gov::tab_gov(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   gov_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Government")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
@@ -115,7 +114,7 @@ void tab_gov::refresh()
   gov_list->clear();
 
   governments_iterate(pgov) {
-    if (!pgov->disabled) {
+    if (!pgov->ruledit_disabled) {
       QListWidgetItem *item =
         new QListWidgetItem(QString::fromUtf8(government_rule_name(pgov)));
 
@@ -171,7 +170,7 @@ void tab_gov::name_given()
 {
   if (selected != nullptr) {
     governments_iterate(pgov) {
-      if (pgov != selected && !pgov->disabled) {
+      if (pgov != selected && !pgov->ruledit_disabled) {
         if (!strcmp(government_rule_name(pgov), rname->text().toUtf8().data())) {
           ui->display_msg(R__("A government with that rule name already "
                               "exists!"));
@@ -204,7 +203,7 @@ void tab_gov::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
 
     refresh();
     update_gov_info(nullptr);
@@ -234,9 +233,9 @@ void tab_gov::add_now()
 
   // Try to reuse freed government slot
   governments_iterate(pgov) {
-    if (pgov->disabled) {
+    if (pgov->ruledit_disabled) {
       if (initialize_new_gov(pgov)) {
-        pgov->disabled = false;
+        pgov->ruledit_disabled = false;
         update_gov_info(pgov);
         refresh();
       }

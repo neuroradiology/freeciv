@@ -211,6 +211,8 @@ static struct tile *find_dispersed_position(struct player *pplayer,
   } while (!((ptile = map_pos_to_tile(&(wld.map), x, y))
              && tile_continent(pcenter) == tile_continent(ptile)
              && !is_ocean_tile(ptile)
+             && real_map_distance(pcenter, ptile) < game.server.dispersion
+                + 1
              && !is_non_allied_unit_tile(ptile, pplayer)));
 
   return ptile;
@@ -827,8 +829,6 @@ void init_new_game(void)
     fc_assert_msg(game.server.start_city || 0 < placed_units[player_index(pplayer)],
                   _("No units placed for %s!"), player_name(pplayer));
   } players_iterate_end;
-
-  shuffle_players();
 }
 
 /************************************************************************//**

@@ -309,7 +309,16 @@ bool script_server_init(void)
   api_specenum_open(fcl_main->state);
   tolua_game_open(fcl_main->state);
   tolua_signal_open(fcl_main->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_server_open(fcl_main->state);
+#else  /* MESON_BUILD */
   tolua_server_open(fcl_main->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(fcl_main->state);
 
   script_server_code_init();
@@ -333,7 +342,16 @@ bool script_server_init(void)
   tolua_common_a_open(fcl_unsafe->state);
   api_specenum_open(fcl_unsafe->state);
   tolua_game_open(fcl_unsafe->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_server_open(fcl_unsafe->state);
+#else  /* MESON_BUILD */
   tolua_server_open(fcl_unsafe->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(fcl_unsafe->state);
 
   luascript_signal_init(fcl_unsafe);
@@ -387,12 +405,12 @@ void script_server_state_save(struct section_file *file)
 /***********************************************************************//**
   Invoke all the callback functions attached to a given signal.
 ***************************************************************************/
-void script_server_signal_emit(const char *signal_name, int nargs, ...)
+void script_server_signal_emit(const char *signal_name, ...)
 {
   va_list args;
 
-  va_start(args, nargs);
-  luascript_signal_emit_valist(fcl_main, signal_name, nargs, args);
+  va_start(args, signal_name);
+  luascript_signal_emit_valist(fcl_main, signal_name, args);
   va_end(args);
 }
 
@@ -444,6 +462,15 @@ static void script_server_signals_create(void)
                           API_TYPE_BUILDING_TYPE, API_TYPE_CITY,
                           API_TYPE_STRING);
 
+  /* Third argument gives a reason; "landlocked", "cant_maintain", "obsolete",
+   * "sold", "disaster", "sabotaged", "razed", "city_destroyed",
+   * "conquered" (applicable for small wonders only)
+   * Fourth argument gives unit that caused that, applicable for "sabotaged"
+   */
+  luascript_signal_create(fcl_main, "building_lost", 4,
+                          API_TYPE_CITY, API_TYPE_BUILDING_TYPE,
+                          API_TYPE_STRING, API_TYPE_UNIT);
+
   /* The third argument contains the source: "researched", "traded",
    * "stolen", "hut". */
   luascript_signal_create(fcl_main, "tech_researched", 3,
@@ -465,14 +492,19 @@ static void script_server_signals_create(void)
                                  API_TYPE_CITY, API_TYPE_PLAYER, API_TYPE_PLAYER);
   deprecate_signal(depr, "city_lost", "city_transferred", "2.6");
 
-  luascript_signal_create(fcl_main, "hut_enter", 1,
-                          API_TYPE_UNIT);
+  luascript_signal_create(fcl_main, "hut_enter", 2,
+                          API_TYPE_UNIT, API_TYPE_STRING);
+  luascript_signal_create(fcl_main, "hut_frighten", 2,
+                          API_TYPE_UNIT, API_TYPE_STRING);
 
   luascript_signal_create(fcl_main, "unit_lost", 3,
                           API_TYPE_UNIT, API_TYPE_PLAYER, API_TYPE_STRING);
 
   luascript_signal_create(fcl_main, "disaster_occurred", 3,
                           API_TYPE_DISASTER, API_TYPE_CITY, API_TYPE_BOOL);
+
+  luascript_signal_create(fcl_main, "nuke_exploded", 2, API_TYPE_TILE,
+                          API_TYPE_PLAYER);
 
   /* Deprecated form of the 'disaster_occurred' signal without 'had_internal_effct'
    * support. */
@@ -518,32 +550,23 @@ static void script_server_signals_create(void)
 ***************************************************************************/
 static void script_server_functions_define(void)
 {
-  luascript_func_add(fcl_main, "respawn_callback", FALSE, 1,
+  luascript_func_add(fcl_main, "respawn_callback", FALSE, 1, 0,
                      API_TYPE_PLAYER);
 }
 
 /***********************************************************************//**
   Call a lua function.
 ***************************************************************************/
-bool script_server_call(const char *func_name, int nargs, ...)
+bool script_server_call(const char *func_name, ...)
 {
   bool success;
-  int ret;
 
   va_list args;
-  va_start(args, nargs);
-  success = luascript_func_call_valist(fcl_main, func_name, &ret, nargs, args);
+  va_start(args, func_name);
+  success = luascript_func_call_valist(fcl_main, func_name, args);
   va_end(args);
 
-  if (!success) {
-    log_error("Lua function '%s' not defined.", func_name);
-    return FALSE;
-  } else if (!ret) {
-    log_error("Error executing lua function '%s'.", func_name);
-    return FALSE;
-  }
-
-  return TRUE;
+  return success;
 }
 
 /***********************************************************************//**

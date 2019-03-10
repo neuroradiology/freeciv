@@ -720,6 +720,9 @@ void client_exit(void)
   }
 
   overview_free();
+  if (unscaled_tileset != NULL) {
+    tileset_free(unscaled_tileset);
+  }
   tileset_free(tileset);
 
   ui_exit();
@@ -761,7 +764,8 @@ void client_packet_input(void *packet, int type)
       && PACKET_AUTHENTICATION_REQ != type
       && PACKET_SERVER_SHUTDOWN != type
       && PACKET_CONNECT_MSG != type
-      && PACKET_EARLY_CHAT_MSG != type) {
+      && PACKET_EARLY_CHAT_MSG != type
+      && PACKET_SERVER_INFO != type) {
     log_error("Received packet %s (%d) before establishing connection!",
               packet_name(type), type);
     disconnect_from_server();

@@ -388,6 +388,8 @@ struct city {
 
   struct worker_task_list *task_reqs;
 
+  int steal; /* diplomats steal once; for spies, gets harder */
+
   union {
     struct {
       /* Only used in the server (./ai/ and ./server/). */
@@ -396,8 +398,6 @@ struct city {
       int mgr_score_calc_turn; /* turn the migration score was calculated */
 
       int illness;
-
-      int steal; /* diplomats steal once; for spies, gets harder */
 
       /* If > 0, workers will not be rearranged until they are unfrozen. */
       int workers_frozen;
@@ -429,6 +429,7 @@ struct city {
       bool unhappy;
       int  city_image;
       int  culture;
+      int  buy_cost;
 
       /* The color is an index into the city_colors array in mapview_common */
       bool colored;
@@ -582,7 +583,6 @@ bool city_got_defense_effect(const struct city *pcity,
 int city_production_build_shield_cost(const struct city *pcity);
 bool city_production_build_units(const struct city *pcity,
                                  bool add_production, int *num_units);
-int city_production_buy_gold_cost(const struct city *pcity);
 
 bool city_production_has_flag(const struct city *pcity,
                               enum impr_flag_id flag);
@@ -611,6 +611,8 @@ const char *city_production_name_translation(const struct city *pcity);
 /* city map functions */
 bool is_valid_city_coords(const int city_radius_sq, const int city_map_x,
                           const int city_map_y);
+bool city_map_includes_tile(const struct city *const pcity,
+                            const struct tile *map_tile);
 bool city_base_to_city_map(int *city_map_x, int *city_map_y,
                            const struct city *const pcity,
                            const struct tile *map_tile);

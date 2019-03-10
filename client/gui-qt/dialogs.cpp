@@ -18,6 +18,7 @@
 // Qt
 #include <QApplication>
 #include <QComboBox>
+#include <QDir>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QImage>
@@ -113,9 +114,20 @@ static void capture_units(QVariant data1, QVariant data2);
 static void expel_unit(QVariant data1, QVariant data2);
 static void bombard(QVariant data1, QVariant data2);
 static void found_city(QVariant data1, QVariant data2);
+static void transform_terrain(QVariant data1, QVariant data2);
+static void irrigate_tf(QVariant data1, QVariant data2);
+static void mine_tf(QVariant data1, QVariant data2);
+static void pillage(QVariant data1, QVariant data2);
+static void road(QVariant data1, QVariant data2);
+static void base(QVariant data1, QVariant data2);
+static void mine(QVariant data1, QVariant data2);
+static void irrigate(QVariant data1, QVariant data2);
 static void nuke(QVariant data1, QVariant data2);
 static void attack(QVariant data1, QVariant data2);
+static void suicide_attack(QVariant data1, QVariant data2);
 static void paradrop(QVariant data1, QVariant data2);
+static void convert_unit(QVariant data1, QVariant data2);
+static void fortify(QVariant data1, QVariant data2);
 static void disband_unit(QVariant data1, QVariant data2);
 static void join_city(QVariant data1, QVariant data2);
 static void unit_home_city(QVariant data1, QVariant data2);
@@ -126,7 +138,7 @@ static void heal_unit(QVariant data1, QVariant data2);
 static void keep_moving(QVariant data1, QVariant data2);
 static void pillage_something(QVariant data1, QVariant data2);
 static void action_entry(choice_dialog *cd,
-                         gen_action act,
+                         action_id act,
                          const struct act_prob *act_probs,
                          QString custom,
                          QVariant data1, QVariant data2);
@@ -152,9 +164,9 @@ qdef_act* qdef_act::m_instance = 0;
   Initialize a mapping between an action and the function to call if
   the action's button is pushed.
 ***************************************************************************/
-static const QHash<enum gen_action, pfcn_void> af_map_init(void)
+static const QHash<action_id, pfcn_void> af_map_init(void)
 {
-  QHash<enum gen_action, pfcn_void> action_function;
+  QHash<action_id, pfcn_void> action_function;
 
   /* Unit acting against a city target. */
   action_function[ACTION_ESTABLISH_EMBASSY] = spy_embassy;
@@ -208,16 +220,27 @@ static const QHash<enum gen_action, pfcn_void> af_map_init(void)
   action_function[ACTION_NUKE] = nuke;
   action_function[ACTION_PARADROP] = paradrop;
   action_function[ACTION_ATTACK] = attack;
+  action_function[ACTION_SUICIDE_ATTACK] = suicide_attack;
+  action_function[ACTION_TRANSFORM_TERRAIN] = transform_terrain;
+  action_function[ACTION_IRRIGATE_TF] = irrigate_tf;
+  action_function[ACTION_MINE_TF] = mine_tf;
+  action_function[ACTION_PILLAGE] = pillage;
+  action_function[ACTION_ROAD] = road;
+  action_function[ACTION_BASE] = base;
+  action_function[ACTION_MINE] = mine;
+  action_function[ACTION_IRRIGATE] = irrigate;
 
   /* Unit acting with no target except itself. */
   action_function[ACTION_DISBAND_UNIT] = disband_unit;
+  action_function[ACTION_FORTIFY] = fortify;
+  action_function[ACTION_CONVERT] = convert_unit;
 
   return action_function;
 }
 
 /* Mapping from an action to the function to call when its button is
  * pushed. */
-static const QHash<enum gen_action, pfcn_void> af_map = af_map_init();
+static const QHash<action_id, pfcn_void> af_map = af_map_init();
 
 /***********************************************************************//**
   Constructor for custom dialog with themed titlebar
@@ -951,7 +974,7 @@ void qdef_act::vs_unit_set(int i)
 /***********************************************************************//**
   Returns default action vs city
 ***************************************************************************/
-int qdef_act::vs_city_get()
+action_id qdef_act::vs_city_get()
 {
   return vs_city;
 }
@@ -959,7 +982,7 @@ int qdef_act::vs_city_get()
 /***********************************************************************//**
   Returns default action vs unit
 ***************************************************************************/
-int qdef_act::vs_unit_get()
+action_id qdef_act::vs_unit_get()
 {
   return vs_unit;
 }
@@ -1132,7 +1155,7 @@ void unit_select_dialog_popup(struct tile *ptile)
 /***********************************************************************//**
   Update the dialog window to select units on a particular tile.
 ***************************************************************************/
-void unit_select_dialog_update_real(void)
+void unit_select_dialog_update_real(void *unused)
 {
   gui()->update_unit_sel();
 }
@@ -1275,8 +1298,9 @@ choice_dialog::choice_dialog(const QString title, const QString text,
   target_id[ATK_SELF] = unit_id;
   target_id[ATK_CITY] = IDENTITY_NUMBER_ZERO;
   target_id[ATK_UNIT] = IDENTITY_NUMBER_ZERO;
-  target_id[ATK_UNITS] = IDENTITY_NUMBER_ZERO;
-  target_id[ATK_TILE] = IDENTITY_NUMBER_ZERO;
+  target_id[ATK_UNITS] = TILE_INDEX_NONE;
+  target_id[ATK_TILE] = TILE_INDEX_NONE;
+  target_extra_id = EXTRA_NONE;
 
   targeted_unit = nullptr;
   /* No buttons are added yet. */
@@ -1411,14 +1435,14 @@ Choice_dialog_button *choice_dialog::get_identified_button(const int id)
 ***************************************************************************/
 bool try_default_unit_action(QVariant q1, QVariant q2)
 {
-  int action;
+  action_id action;
   pfcn_void func;
 
   action = qdef_act::action()->vs_unit_get();
   if (action == -1) {
     return false;
   }
-  func = af_map[static_cast<gen_action>(action)];
+  func = af_map[action];
 
   func(q1, q2);
   return true;
@@ -1429,14 +1453,14 @@ bool try_default_unit_action(QVariant q1, QVariant q2)
 ***************************************************************************/
 bool try_default_city_action(QVariant q1, QVariant q2)
 {
-  int action;
+  action_id action;
   pfcn_void func;
 
   action = qdef_act::action()->vs_city_get();
   if (action == -1) {
     return false;
   }
-  func = af_map[static_cast<gen_action>(action)];
+  func = af_map[action];
   func(q1, q2);
   return true;
 }
@@ -1520,7 +1544,11 @@ void choice_dialog::update_dialog(const struct act_prob *act_probs)
   }
   unit_skip->setParent(nullptr);
   action_selection_refresh(game_unit_by_number(unit_id), nullptr,
-                          targeted_unit, targeted_unit->tile, act_probs);
+                           targeted_unit, targeted_unit->tile,
+                           (target_extra_id != EXTRA_NONE
+                              ? extra_by_number(target_extra_id)
+                              : NULL),
+                           act_probs);
   layout->addLayout(unit_skip);
 }
 
@@ -1538,7 +1566,7 @@ void choice_dialog::switch_target()
                                 unit_id,
                                 targeted_unit->id,
                                 targeted_unit->tile->index,
-                                EXTRA_NONE,
+                                action_selection_target_extra(),
                                 TRUE);
   layout->addLayout(unit_skip);
 }
@@ -1827,7 +1855,8 @@ static QString city_prod_remaining(struct city *target_city)
   }
 
   return QString(_("%1 remaining")).arg(
-        impr_build_shield_cost(target_city->production.value.building)
+        impr_build_shield_cost(target_city,
+                               target_city->production.value.building)
         - target_city->shield_stock);
 }
 
@@ -1839,6 +1868,7 @@ void popup_action_selection(struct unit *actor_unit,
                             struct city *target_city,
                             struct unit *target_unit,
                             struct tile *target_tile,
+                            struct extra_type *target_extra,
                             const struct act_prob *act_probs)
 {
   struct astring title = ASTRING_INIT, text = ASTRING_INIT;
@@ -1847,8 +1877,8 @@ void popup_action_selection(struct unit *actor_unit,
   QVariant qv1, qv2;
   pfcn_void func;
   struct city *actor_homecity;
-  int unit_act;
-  int city_act;
+  action_id unit_act;
+  action_id city_act;
 
   unit_act = qdef_act::action()->vs_unit_get();
   city_act = qdef_act::action()->vs_city_get();
@@ -1870,14 +1900,14 @@ void popup_action_selection(struct unit *actor_unit,
   }
   if (target_city
       && try_default_city_action(actor_unit->id, target_city->id)
-      && action_prob_possible(act_probs[static_cast<gen_action>(unit_act)])) {
+      && action_prob_possible(act_probs[unit_act])) {
     diplomat_queue_handle_primary(actor_unit->id);
     return;
   }
 
   if (target_unit
       && try_default_unit_action(actor_unit->id, target_unit->id)
-      && action_prob_possible(act_probs[static_cast<gen_action>(city_act)])) {
+      && action_prob_possible(act_probs[city_act])) {
     diplomat_queue_handle_primary(actor_unit->id);
     return;
   }
@@ -1953,13 +1983,19 @@ void popup_action_selection(struct unit *actor_unit,
   if (target_tile) {
     cd->target_id[ATK_UNITS] = tile_index(target_tile);
   } else {
-    cd->target_id[ATK_UNITS] = IDENTITY_NUMBER_ZERO;
+    cd->target_id[ATK_UNITS] = TILE_INDEX_NONE;
   }
 
   if (target_tile) {
     cd->target_id[ATK_TILE] = tile_index(target_tile);
   } else {
-    cd->target_id[ATK_TILE] = IDENTITY_NUMBER_ZERO;
+    cd->target_id[ATK_TILE] = TILE_INDEX_NONE;
+  }
+
+  if (target_extra) {
+    cd->target_extra_id = extra_number(target_extra);
+  } else {
+    cd->target_extra_id = EXTRA_NONE;
   }
 
   /* Unit acting against a city */
@@ -1970,9 +2006,7 @@ void popup_action_selection(struct unit *actor_unit,
   action_iterate(act) {
     if (action_id_get_actor_kind(act) == AAK_UNIT
         && action_id_get_target_kind(act) == ATK_CITY) {
-      action_entry(cd,
-                   (enum gen_action)act,
-                   act_probs,
+      action_entry(cd, act, act_probs,
                    act == ACTION_HELP_WONDER ?
                      city_prod_remaining(target_city) : "",
                    qv1, qv2);
@@ -1987,11 +2021,7 @@ void popup_action_selection(struct unit *actor_unit,
   action_iterate(act) {
     if (action_id_get_actor_kind(act) == AAK_UNIT
         && action_id_get_target_kind(act) == ATK_UNIT) {
-      action_entry(cd,
-                   (enum gen_action)act,
-                   act_probs,
-                   "",
-                   qv1, qv2);
+      action_entry(cd, act, act_probs, "", qv1, qv2);
     }
   } action_iterate_end;
 
@@ -2003,11 +2033,7 @@ void popup_action_selection(struct unit *actor_unit,
   action_iterate(act) {
     if (action_id_get_actor_kind(act) == AAK_UNIT
         && action_id_get_target_kind(act) == ATK_UNITS) {
-      action_entry(cd,
-                   (enum gen_action)act,
-                   act_probs,
-                   "",
-                   qv1, qv2);
+      action_entry(cd, act, act_probs, "", qv1, qv2);
     }
   } action_iterate_end;
 
@@ -2019,11 +2045,7 @@ void popup_action_selection(struct unit *actor_unit,
   action_iterate(act) {
     if (action_id_get_actor_kind(act) == AAK_UNIT
         && action_id_get_target_kind(act) == ATK_TILE) {
-      action_entry(cd,
-                   (enum gen_action)act,
-                   act_probs,
-                   "",
-                   qv1, qv2);
+      action_entry(cd, act, act_probs, "", qv1, qv2);
     }
   } action_iterate_end;
 
@@ -2035,11 +2057,7 @@ void popup_action_selection(struct unit *actor_unit,
   action_iterate(act) {
     if (action_id_get_actor_kind(act) == AAK_UNIT
         && action_id_get_target_kind(act) == ATK_SELF) {
-      action_entry(cd,
-                   (enum gen_action)act,
-                   act_probs,
-                   "",
-                   qv1, qv2);
+      action_entry(cd, act, act_probs, "", qv1, qv2);
     }
   } action_iterate_end;
 
@@ -2077,11 +2095,11 @@ void popup_action_selection(struct unit *actor_unit,
   Get the non targeted version of an action so it, if enabled, can appear
   in the target selection dialog.
 ***************************************************************************/
-static int get_non_targeted_action_id(int tgt_action_id)
+static action_id get_non_targeted_action_id(action_id tgt_action_id)
 {
   /* Don't add an action mapping here unless the non targeted version is
    * selectable in the targeted version's target selection dialog. */
-  switch (tgt_action_id) {
+  switch ((enum gen_action)tgt_action_id) {
   case ACTION_SPY_TARGETED_SABOTAGE_CITY:
     return ACTION_SPY_SABOTAGE_CITY;
   case ACTION_SPY_TARGETED_SABOTAGE_CITY_ESC:
@@ -2090,21 +2108,21 @@ static int get_non_targeted_action_id(int tgt_action_id)
     return ACTION_SPY_STEAL_TECH;
   case ACTION_SPY_TARGETED_STEAL_TECH_ESC:
     return ACTION_SPY_STEAL_TECH_ESC;
+  default:
+    /* No non targeted version found. */
+    return ACTION_NONE;
   }
-
-  /* No non targeted version found. */
-  return ACTION_NONE;
 }
 
 /***********************************************************************//**
   Get the targeted version of an action so it, if enabled, can hide the
   non targeted action in the action selection dialog.
 ***************************************************************************/
-static int get_targeted_action_id(int non_tgt_action_id)
+static action_id get_targeted_action_id(action_id non_tgt_action_id)
 {
   /* Don't add an action mapping here unless the non targeted version is
    * selectable in the targeted version's target selection dialog. */
-  switch (non_tgt_action_id) {
+  switch ((enum gen_action)non_tgt_action_id) {
   case ACTION_SPY_SABOTAGE_CITY:
     return ACTION_SPY_TARGETED_SABOTAGE_CITY;
   case ACTION_SPY_SABOTAGE_CITY_ESC:
@@ -2113,17 +2131,17 @@ static int get_targeted_action_id(int non_tgt_action_id)
     return ACTION_SPY_TARGETED_STEAL_TECH;
   case ACTION_SPY_STEAL_TECH_ESC:
     return ACTION_SPY_TARGETED_STEAL_TECH_ESC;
+  default:
+    /* No targeted version found. */
+    return ACTION_NONE;
   }
-
-  /* No targeted version found. */
-  return ACTION_NONE;
 }
 
 /***********************************************************************//**
   Show the user the action if it is enabled.
 ***************************************************************************/
 static void action_entry(choice_dialog *cd,
-                         gen_action act,
+                         action_id act,
                          const struct act_prob *act_probs,
                          QString custom,
                          QVariant data1, QVariant data2)
@@ -2164,7 +2182,7 @@ static void action_entry(choice_dialog *cd,
   Update an existing button.
 ***************************************************************************/
 static void action_entry_update(Choice_dialog_button *button,
-                                gen_action act,
+                                action_id act,
                                 const struct act_prob *act_probs,
                                 QString custom,
                                 QVariant data1, QVariant data2)
@@ -2199,6 +2217,32 @@ static void disband_unit(QVariant data1, QVariant data2)
   int target_id = data2.toInt();
 
   request_do_action(ACTION_DISBAND_UNIT, actor_id,
+                    target_id, 0, "");
+}
+
+/***********************************************************************//**
+  Action "Fortify" for choice dialog
+***************************************************************************/
+static void fortify(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)) {
+    request_do_action(ACTION_FORTIFY, actor_id,
+                      target_id, 0, "");
+  }
+}
+
+/***********************************************************************//**
+  Action Convert Unit for choice dialog
+***************************************************************************/
+static void convert_unit(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  request_do_action(ACTION_CONVERT, actor_id,
                     target_id, 0, "");
 }
 
@@ -2303,6 +2347,155 @@ static void found_city(QVariant data1, QVariant data2)
 }
 
 /***********************************************************************//**
+  Action "Transform Terrain" for choice dialog
+***************************************************************************/
+static void transform_terrain(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)) {
+    request_do_action(ACTION_TRANSFORM_TERRAIN,
+                      actor_id, target_id, 0, "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Irrigate TF" for choice dialog
+***************************************************************************/
+static void irrigate_tf(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)) {
+    request_do_action(ACTION_IRRIGATE_TF,
+                      actor_id, target_id, 0, "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Mine TF" for choice dialog
+***************************************************************************/
+static void mine_tf(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)) {
+    request_do_action(ACTION_MINE_TF,
+                      actor_id, target_id, 0, "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Pillage" for choice dialog
+***************************************************************************/
+static void pillage(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)) {
+    request_do_action(ACTION_PILLAGE,
+                      actor_id, target_id,
+                      /* FIXME: will cause problems if more than
+                       * one action selection dialog at a time
+                       * becomes supported. */
+                      action_selection_target_extra(),
+                      "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Road" for choice dialog
+***************************************************************************/
+static void road(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)
+      && NULL != extra_by_number(action_selection_target_extra())) {
+    request_do_action(ACTION_ROAD,
+                      actor_id, target_id,
+                      /* FIXME: will cause problems if more than
+                       * one action selection dialog at a time
+                       * becomes supported. */
+                      action_selection_target_extra(),
+                      "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Build Base" for choice dialog
+***************************************************************************/
+static void base(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)
+      && NULL != extra_by_number(action_selection_target_extra())) {
+    request_do_action(ACTION_BASE,
+                      actor_id, target_id,
+                      /* FIXME: will cause problems if more than
+                       * one action selection dialog at a time
+                       * becomes supported. */
+                      action_selection_target_extra(),
+                      "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Build Mine" for choice dialog
+***************************************************************************/
+static void mine(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)
+      && NULL != extra_by_number(action_selection_target_extra())) {
+    request_do_action(ACTION_MINE,
+                      actor_id, target_id,
+                      /* FIXME: will cause problems if more than
+                       * one action selection dialog at a time
+                       * becomes supported. */
+                      action_selection_target_extra(),
+                      "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Build Irrigation" for choice dialog
+***************************************************************************/
+static void irrigate(QVariant data1, QVariant data2)
+{
+  int actor_id = data1.toInt();
+  int target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(actor_id)
+      && NULL != index_to_tile(&(wld.map), target_id)
+      && NULL != extra_by_number(action_selection_target_extra())) {
+    request_do_action(ACTION_IRRIGATE,
+                      actor_id, target_id,
+                      /* FIXME: will cause problems if more than
+                       * one action selection dialog at a time
+                       * becomes supported. */
+                      action_selection_target_extra(),
+                      "");
+  }
+}
+
+/***********************************************************************//**
   Action "Explode Nuclear" for choice dialog
 ***************************************************************************/
 static void nuke(QVariant data1, QVariant data2)
@@ -2328,6 +2521,21 @@ static void attack(QVariant data1, QVariant data2)
   if (NULL != game_unit_by_number(diplomat_id)
       && NULL != index_to_tile(&(wld.map), diplomat_target_id)) {
     request_do_action(ACTION_ATTACK,
+                      diplomat_id, diplomat_target_id, 0, "");
+  }
+}
+
+/***********************************************************************//**
+  Action "Suicide Attack" for choice dialog
+***************************************************************************/
+static void suicide_attack(QVariant data1, QVariant data2)
+{
+  int diplomat_id = data1.toInt();
+  int diplomat_target_id = data2.toInt();
+
+  if (NULL != game_unit_by_number(diplomat_id)
+      && NULL != index_to_tile(&(wld.map), diplomat_target_id)) {
+    request_do_action(ACTION_SUICIDE_ATTACK,
                       diplomat_id, diplomat_target_id, 0, "");
   }
 }
@@ -2365,7 +2573,8 @@ static void join_city(QVariant data1, QVariant data2)
 /***********************************************************************//**
   Action steal tech with spy for choice dialog
 ***************************************************************************/
-static void spy_steal_shared(QVariant data1, QVariant data2, int action_id)
+static void spy_steal_shared(QVariant data1, QVariant data2,
+                             action_id act_id)
 {
   QString str;
   QVariant qv1;
@@ -2396,7 +2605,7 @@ static void spy_steal_shared(QVariant data1, QVariant data2, int action_id)
   /* Put both actor and target city in qv1 since qv2 is taken */
   actor_and_target.append(diplomat_id);
   actor_and_target.append(diplomat_target_id);
-  actor_and_target.append(action_id);
+  actor_and_target.append(act_id);
   qv1 = QVariant::fromValue(actor_and_target);
 
   struct player *pplayer = client.conn.playing;
@@ -2416,7 +2625,7 @@ static void spy_steal_shared(QVariant data1, QVariant data2, int action_id)
     } advance_index_iterate_end;
 
     if (action_prob_possible(actor_unit->client.act_prob_cache[
-                             get_non_targeted_action_id(action_id)])) {
+                             get_non_targeted_action_id(act_id)])) {
       astr_set(&stra, _("At %s's Discretion"),
                unit_name_translation(actor_unit));
       func = spy_steal_something;
@@ -2453,17 +2662,17 @@ static void spy_steal_something(QVariant data1, QVariant data2)
 {
   int diplomat_id = data1.toList().at(0).toInt();
   int diplomat_target_id = data1.toList().at(1).toInt();
-  int action_id = data1.toList().at(2).toInt();
+  action_id act_id = data1.toList().at(2).toInt();
 
   if (NULL != game_unit_by_number(diplomat_id)
       && NULL != game_city_by_number(diplomat_target_id)) {
     if (data2.toInt() == A_UNSET) {
       /* This is the untargeted version. */
-      request_do_action((gen_action)get_non_targeted_action_id(action_id),
+      request_do_action(get_non_targeted_action_id(act_id),
                         diplomat_id, diplomat_target_id, data2.toInt(), "");
     } else {
       /* This is the targeted version. */
-      request_do_action((gen_action)action_id, diplomat_id,
+      request_do_action(act_id, diplomat_id,
                         diplomat_target_id, data2.toInt(), "");
     }
   }
@@ -2954,18 +3163,18 @@ static void spy_sabotage(QVariant data1, QVariant data2)
 {
   int diplomat_id = data1.toList().at(0).toInt();
   int diplomat_target_id = data1.toList().at(1).toInt();
-  int action_id = data1.toList().at(2).toInt();
+  action_id act_id = data1.toList().at(2).toInt();
 
   if (NULL != game_unit_by_number(diplomat_id)
       && NULL != game_city_by_number(diplomat_target_id)) {
     if (data2.toInt() == B_LAST) {
       /* This is the untargeted version. */
-      request_do_action((gen_action)get_non_targeted_action_id(action_id),
+      request_do_action(get_non_targeted_action_id(act_id),
                         diplomat_id, diplomat_target_id, data2.toInt() + 1,
                         "");
     } else {
       /* This is the targeted version. */
-      request_do_action((gen_action)action_id, diplomat_id,
+      request_do_action(act_id, diplomat_id,
                         diplomat_target_id, data2.toInt() + 1, "");
     }
   }
@@ -3283,6 +3492,40 @@ int action_selection_target_city(void)
 }
 
 /***********************************************************************//**
+  Returns id of the target tile of the actions currently handled in action
+  selection dialog when the action selection dialog is open and it has a
+  tile target. Returns TILE_INDEX_NONE if no action selection dialog is
+  open.
+***************************************************************************/
+int action_selection_target_tile(void)
+{
+  choice_dialog *cd = gui()->get_diplo_dialog();
+
+  if (cd != NULL) {
+    return cd->target_id[ATK_TILE];
+  } else {
+    return TILE_INDEX_NONE;
+  }
+}
+
+/**********************************************************************//**
+  Returns id of the target extra of the actions currently handled in action
+  selection dialog when the action selection dialog is open and it has an
+  extra target. Returns EXTRA_NONE if no action selection dialog is open
+  or no extra target is present in the action selection dialog.
+**************************************************************************/
+int action_selection_target_extra(void)
+{
+  choice_dialog *cd = gui()->get_diplo_dialog();
+
+  if (cd != NULL) {
+    return cd->target_extra_id;
+  } else {
+    return EXTRA_NONE;
+  }
+}
+
+/***********************************************************************//**
   Returns id of the target unit of the actions currently handled in action
   selection dialog when the action selection dialog is open and it has a
   unit target. Returns IDENTITY_NUMBER_ZERO if no action selection dialog
@@ -3306,6 +3549,7 @@ void action_selection_refresh(struct unit *actor_unit,
                               struct city *target_city,
                               struct unit *target_unit,
                               struct tile *target_tile,
+                              struct extra_type *target_extra,
                               const struct act_prob *act_probs)
 {
   choice_dialog *asd;
@@ -3400,7 +3644,7 @@ void action_selection_refresh(struct unit *actor_unit,
                       "Action enabled against all units on "
                       "non existing tile!");
 
-        qv2 = IDENTITY_NUMBER_ZERO;
+        qv2 = TILE_INDEX_NONE;
       }
       break;
     case ATK_SELF:
@@ -3415,11 +3659,11 @@ void action_selection_refresh(struct unit *actor_unit,
     if (asd->get_identified_button(act)) {
       /* Update the existing button. */
       action_entry_update(asd->get_identified_button(act),
-                          (enum gen_action)act, act_probs, custom,
+                          act, act_probs, custom,
                           qv1, qv2);
     } else {
       /* Add the button (unless its probability is 0). */
-      action_entry(asd, (enum gen_action)act, act_probs, custom,
+      action_entry(asd, act, act_probs, custom,
                    qv1, qv2);
     }
   } action_iterate_end;
@@ -3577,11 +3821,16 @@ void units_select::create_pixmap()
   QString str;
   struct canvas *unit_pixmap;
   struct unit *punit;
+  float isosize;
 
   if (pix != NULL) {
     delete pix;
     pix = NULL;
   };
+  isosize = 0.7;
+  if (tileset_hex_height(tileset) > 0 || tileset_hex_width(tileset) > 0) {
+    isosize = 0.5;
+  }
 
   update_units();
   if (unit_list.count() > 0) {
@@ -3589,8 +3838,8 @@ void units_select::create_pixmap()
     item_size.setWidth(tileset_unit_width(tileset));
     item_size.setHeight(tileset_unit_width(tileset));
   } else {
-    item_size.setWidth(tileset_unit_width(tileset) * 0.7);
-    item_size.setHeight(tileset_unit_width(tileset) * 0.7);
+    item_size.setWidth(tileset_unit_width(tileset) * isosize);
+    item_size.setHeight(tileset_unit_width(tileset) * isosize);
   }
   more = false;
   if (h_pix != nullptr) {
@@ -3627,8 +3876,8 @@ void units_select::create_pixmap()
                                Qt::KeepAspectRatio,
                                Qt::SmoothTransformation);
     } else {
-      img = cropped_img.scaled(tileset_unit_width(tileset) * 0.7,
-                               tileset_unit_width(tileset) * 0.7,
+      img = cropped_img.scaled(tileset_unit_width(tileset) * isosize,
+                               tileset_unit_width(tileset) * isosize,
                                Qt::KeepAspectRatio,
                                Qt::SmoothTransformation);
     }
@@ -3996,9 +4245,36 @@ void qtg_popup_combat_info(int attacker_unit_id, int defender_unit_id,
                                                attacker_hp, defender_hp,
                                                make_att_veteran,
                                                make_def_veteran,
+                                               gui()->battlelog_wdg->scale,
                                                gui()->battlelog_wdg);
 
     gui()->battlelog_wdg->add_combat_info(huc);
     gui()->battlelog_wdg->show();
   }
+}
+
+/***********************************************************************//**
+  Popup dialog showing given image and text,
+  start playing given sound, stop playing sound when popup is closed.
+  Take all space available to show image if fullsize is set.
+  If there are other the same popups show them in queue.
+***************************************************************************/
+void show_img_play_snd(const char *img_path, const char *snd_path,
+                       const char *desc, bool fullsize)
+{
+  QPixmap *pix = new QPixmap;
+  QString img, snd;
+  hud_img *hi;
+  QDir dir;
+
+  img = dir.absolutePath() + QString("/data/") + QString(img_path);
+  pix->load(img);
+  if (pix->isNull()) {
+    delete pix;
+    return;
+  }
+  snd = dir.absolutePath() + QString("/data/") + QString(snd_path);
+  hi = new hud_img(pix, snd, desc, fullsize,  gui()->mapview_wdg);
+  hi->init();
+
 }

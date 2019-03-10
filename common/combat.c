@@ -124,6 +124,7 @@ enum unit_attack_result unit_attack_unit_at_tile_result(const struct unit *punit
 {
   /* 1. Can we attack _anything_ ? */
   if (!(utype_can_do_action(unit_type_get(punit), ACTION_ATTACK)
+        || utype_can_do_action(unit_type_get(punit), ACTION_SUICIDE_ATTACK)
         /* Needed because ACTION_NUKE uses this when evaluating its hard
          * requirements. */
         || utype_can_do_action(unit_type_get(punit), ACTION_NUKE))) {
@@ -138,6 +139,9 @@ enum unit_attack_result unit_attack_unit_at_tile_result(const struct unit *punit
   /* 3. Can't attack with ground unit from ocean, except for marines */
   if (!is_native_tile(unit_type_get(punit), unit_tile(punit))
       && !utype_can_do_act_when_ustate(unit_type_get(punit), ACTION_ATTACK,
+                                       USP_NATIVE_TILE, FALSE)
+      && !utype_can_do_act_when_ustate(unit_type_get(punit),
+                                       ACTION_SUICIDE_ATTACK,
                                        USP_NATIVE_TILE, FALSE)) {
     return ATT_NONNATIVE_SRC;
   }
@@ -677,7 +681,7 @@ struct unit *get_defender(const struct unit *attacker,
     if (unit_can_defend_here(&(wld.map), defender)
         && unit_attack_unit_at_tile_result(attacker, defender, ptile) == ATT_OK) {
       bool change = FALSE;
-      int build_cost = unit_build_shield_cost(defender);
+      int build_cost = unit_build_shield_cost_base(defender);
       int defense_rating = get_defense_rating(attacker, defender);
       /* This will make units roughly evenly good defenders look alike. */
       int unit_def 
@@ -717,26 +721,26 @@ struct unit *get_defender(const struct unit *attacker,
 }
 
 /*******************************************************************//**
-get unit at (x, y) that wants to kill defender.
+  Get unit at (x, y) that wants to kill defender.
 
-Works like get_defender; see comment there.
-This function is mostly used by the AI.
+  Works like get_defender; see comment there.
+  This function is mostly used by the AI.
 ***********************************************************************/
 struct unit *get_attacker(const struct unit *defender,
-			  const struct tile *ptile)
+                          const struct tile *ptile)
 {
   struct unit *bestatt = 0;
   int bestvalue = -1, unit_a, best_cost = 0;
 
   unit_list_iterate(ptile->units, attacker) {
-    int build_cost = unit_build_shield_cost(attacker);
+    int build_cost = unit_build_shield_cost_base(attacker);
 
     if (pplayers_allied(unit_owner(defender), unit_owner(attacker))) {
       return NULL;
     }
     unit_a = (int) (100000 * (unit_win_chance(attacker, defender)));
-    if (unit_a > bestvalue ||
-	(unit_a == bestvalue && build_cost < best_cost)) {
+    if (unit_a > bestvalue
+        || (unit_a == bestvalue && build_cost < best_cost)) {
       bestvalue = unit_a;
       bestatt = attacker;
       best_cost = build_cost;

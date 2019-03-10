@@ -688,44 +688,6 @@ static void editbar_refresh(struct editbar *eb)
 }
 
 /************************************************************************//**
-  Create a pixbuf containing a representative image for the given extra
-  type, to be used as an icon in the GUI.
-
-  May return NULL on error.
-
-  NB: You must call g_object_unref on the non-NULL return value when you
-  no longer need it.
-****************************************************************************/
-static GdkPixbuf *create_extra_pixbuf(const struct extra_type *pextra)
-{
-  struct drawn_sprite sprs[80];
-  int count, w, h, canvas_x, canvas_y;
-  GdkPixbuf *pixbuf;
-  struct canvas canvas = FC_STATIC_CANVAS_INIT;
-  cairo_t *cr;
-
-  w = tileset_tile_width(tileset);
-  h = tileset_tile_height(tileset);
-
-  canvas.surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-  canvas_x = 0;
-  canvas_y = 0;
-
-  cr = cairo_create(canvas.surface);
-  cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-  cairo_paint(cr);
-  cairo_destroy(cr);
-
-  count = fill_basic_extra_sprite_array(tileset, sprs, pextra);
-  put_drawn_sprites(&canvas, 1.0, canvas_x, canvas_y, count, sprs, FALSE);
-
-  pixbuf = surface_get_pixbuf(canvas.surface, w, h);
-  cairo_surface_destroy(canvas.surface);
-
-  return pixbuf;
-}
-
-/************************************************************************//**
   Create a pixbuf containing a representative image for the given terrain
   type, to be used as an icon in the GUI.
 
@@ -1086,7 +1048,7 @@ create_tool_value_selector(struct editbar *eb,
                                  GTK_POLICY_AUTOMATIC);
   gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scrollwin),
                                              10 * tileset_tile_height(tileset));
-  gtk_box_pack_start(GTK_BOX(vbox), scrollwin, TRUE, TRUE);
+  gtk_box_pack_start(GTK_BOX(vbox), scrollwin);
 
   view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(tvs->store));
   gtk_widget_set_size_request(view, -1, 10 * tileset_tile_height(tileset));
@@ -1226,7 +1188,7 @@ static void editinfobox_tool_applied_player_changed(GtkComboBox *combo,
 ****************************************************************************/
 static struct editinfobox *editinfobox_create(void)
 {
-  GtkWidget *label, *vbox, *frame, *hbox, *vbox2, *image, *evbox;
+  GtkWidget *label, *vbox, *frame, *hbox, *vbox2, *image;
   GtkWidget *spin, *combo;
   GtkListStore *store;
   GtkCellRenderer *cell;
@@ -1257,14 +1219,11 @@ static struct editinfobox *editinfobox_create(void)
   gtk_grid_set_column_spacing(GTK_GRID(hbox), 8);
   gtk_container_add(GTK_CONTAINER(vbox), hbox);
 
-  evbox = gtk_event_box_new();
-  gtk_widget_set_tooltip_text(evbox, _("Click to change value if applicable."));
-  g_signal_connect(evbox, "button_press_event",
-      G_CALLBACK(editinfobox_handle_tool_image_button_press), NULL);
-  gtk_container_add(GTK_CONTAINER(hbox), evbox);
-
   image = gtk_image_new();
-  gtk_container_add(GTK_CONTAINER(evbox), image);
+  gtk_widget_set_tooltip_text(image, _("Click to change value if applicable."));
+  g_signal_connect(image, "button_press_event",
+      G_CALLBACK(editinfobox_handle_tool_image_button_press), NULL);
+  gtk_container_add(GTK_CONTAINER(hbox), image);
   ei->tool_image = image;
 
   vbox2 = gtk_grid_new();
@@ -1290,14 +1249,11 @@ static struct editinfobox *editinfobox_create(void)
   gtk_grid_set_column_spacing(GTK_GRID(hbox), 8);
   gtk_container_add(GTK_CONTAINER(vbox), hbox);
 
-  evbox = gtk_event_box_new();
-  gtk_widget_set_tooltip_text(evbox, _("Click to change tool mode."));
-  g_signal_connect(evbox, "button_press_event",
-      G_CALLBACK(editinfobox_handle_mode_image_button_press), NULL);
-  gtk_container_add(GTK_CONTAINER(hbox), evbox);
-
   image = gtk_image_new();
-  gtk_container_add(GTK_CONTAINER(evbox), image);
+  gtk_widget_set_tooltip_text(image, _("Click to change tool mode."));
+  g_signal_connect(image, "button_press_event",
+      G_CALLBACK(editinfobox_handle_mode_image_button_press), NULL);
+  gtk_container_add(GTK_CONTAINER(hbox), image);
   ei->mode_image = image;
 
   vbox2 = gtk_grid_new();

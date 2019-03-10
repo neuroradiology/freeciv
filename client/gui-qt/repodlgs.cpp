@@ -58,8 +58,8 @@
 extern QString split_text(QString text, bool cut);
 extern QString cut_helptext(QString text);
 extern QString get_tooltip_improvement(impr_type *building,
-                                       struct city *pcity);
-extern QString get_tooltip_unit(struct unit_type *unit);
+                                       struct city *pcity, bool ext);
+extern QString get_tooltip_unit(struct unit_type *unit, bool ext);
 extern QApplication *qapp;
 
 units_reports* units_reports::m_instance = 0;
@@ -191,7 +191,7 @@ void unittype_item::init_img()
 {
   struct sprite *sp;
 
-  sp = get_unittype_sprite(tileset, utype, direction8_invalid());
+  sp = get_unittype_sprite(get_tileset(), utype, direction8_invalid());
   label_pix.setPixmap(*sp->pm);
 }
 
@@ -903,6 +903,13 @@ science_report::science_report(): QWidget()
 ****************************************************************************/
 science_report::~science_report()
 {
+  if (curr_list) {
+    delete curr_list;
+  }
+
+  if (goal_list) {
+    delete goal_list;
+  }
   gui()->remove_repo_dlg("SCI");
 }
 
@@ -953,6 +960,7 @@ void science_report::update_report()
   double not_used;
   QString str;
   qlist_item item;
+  struct sprite *sp;
 
   fc_assert_ret(NULL != research);
 
@@ -1026,13 +1034,25 @@ void science_report::update_report()
   researching_combo->clear();
   goal_combo->clear();
   for (int i = 0; i < curr_list->count(); i++) {
+    QIcon ic;
+
+    sp = get_tech_sprite(tileset, curr_list->at(i).id);
+    if (sp) {
+      ic = QIcon(*sp->pm);
+    }
     qvar = curr_list->at(i).id;
-    researching_combo->insertItem(i, curr_list->at(i).tech_str, qvar);
+    researching_combo->insertItem(i, ic, curr_list->at(i).tech_str, qvar);
   }
 
   for (int i = 0; i < goal_list->count(); i++) {
+    QIcon ic;
+
+    sp = get_tech_sprite(tileset, goal_list->at(i).id);
+    if (sp) {
+      ic = QIcon(*sp->pm);
+    }
     qvar = goal_list->at(i).id;
-    goal_combo->insertItem(i, goal_list->at(i).tech_str, qvar);
+    goal_combo->insertItem(i, ic, goal_list->at(i).tech_str, qvar);
   }
 
   /** set current tech and goal */
@@ -1123,7 +1143,7 @@ void science_report::goal_tech_changed(int changed_index)
 /************************************************************************//**
   Update the science report.
 ****************************************************************************/
-void real_science_report_dialog_update(void)
+void real_science_report_dialog_update(void *unused)
 {
   int i;
   int percent;
@@ -1643,7 +1663,7 @@ void science_report_dialog_popup(bool raise)
 /************************************************************************//**
   Update the economy report.
 ****************************************************************************/
-void real_economy_report_dialog_update(void)
+void real_economy_report_dialog_update(void *unused)
 {
   int i;
   eco_report *eco_rep;
@@ -1690,7 +1710,7 @@ void economy_report_dialog_popup(bool raise)
 /************************************************************************//**
   Update the units report.
 ****************************************************************************/
-void real_units_report_dialog_update(void)
+void real_units_report_dialog_update(void *unused)
 {
   if (units_reports::instance()->isVisible()) {
     units_reports::instance()->update_units();

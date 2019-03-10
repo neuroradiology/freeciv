@@ -211,6 +211,8 @@ type ESTRING            = estring(char)
 type ACHIEVEMENT_TYPE   = uint8(enum achievement_type)
 type ACTIVITY           = uint8(enum unit_activity)
 type AIRLIFTING_STYLE   = uint8(enum airlifting_style)
+type CARAVAN_BONUS_STYLE = uint8(enum caravan_bonus_style)
+type TRADE_REVENUE_STYLE = uint8(enum trade_revenue_style)
 type PERSISTENT_READY   = uint8(enum persistent_ready)
 type VICTORY_CONDITIONS = uint8(enum victory_condition_type)
 type TECH_UPKEEP_STYLE  = uint8(enum tech_upkeep_style)
@@ -243,7 +245,6 @@ type CBONUS_TYPE        = uint8(enum combat_bonus_type)
 type TRI                = uint8(enum traderoute_illegal_cancelling)
 type RDIR               = uint8(enum route_direction)
 type MOVE_MODE          = uint8(enum road_move_mode)
-type GEN_ACTION         = uint8(enum gen_action)
 type ACTION_AUTO_CAUSE  = uint8(enum action_auto_perf_cause)
 type ACTION_DECISION    = uint8(enum action_decision)
 type ACTOR_KIND         = uint8(enum action_actor_kind)
@@ -268,6 +269,8 @@ type BV_EXTRAS          = bitvector(bv_extras)
 type BV_BASES           = bitvector(bv_bases)
 type BV_ROADS           = bitvector(bv_roads)
 type BV_ROAD_FLAGS      = bitvector(bv_road_flags)
+type BV_CAUSES          = bitvector(bv_causes)
+type BV_RMCAUSES        = bitvector(bv_rmcauses)
 type BV_CITY_OPTIONS    = bitvector(bv_city_options)
 type BV_IMPR_FLAGS      = bitvector(bv_impr_flags)
 type BV_IMPRS           = bitvector(bv_imprs)
@@ -286,7 +289,8 @@ type BV_SPACESHIP_STRUCT = bitvector(bv_spaceship_structure)
 
 # typedefs for IDs
 type EXTRA              = SINT8
-type ACTION_TGT         = SINT16
+type ACTION_ID          = uint8(action_id)
+type ACTION_SUB_TGT     = SINT16
 type BASE               = sint8(Base_type_id)
 type ROAD               = sint8(Road_type_id)
 type CITY               = UINT16
@@ -311,7 +315,6 @@ type UNIT_TYPE          = uint8(Unit_type_id)
 type GOODS              = uint8(Goods_type_id)
 
 # other typedefs
-type CITY_COORD         = UINT8
 type GOLD               = UINT32
 type HP                 = UINT8
 type PERCENT            = UINT8
@@ -375,6 +378,12 @@ end
 # ... and the server replies.
 # For compatibility with older versions, this number cannot be changed.
 # Used in initial protocol.
+# This packet cannot be changed for the case where server replies with
+# rejection because of incompatible version. If we really want, we can
+# start sending another kind of package for the case where server accepts
+# the connection, as that one comes when we already know that server and
+# client are compatible, including the fact that acceptance package looks like
+# it does.
 PACKET_SERVER_JOIN_REPLY = 5; sc, no-delta, post-send, post-recv
   BOOL you_can_join;
   STRING message[1536];        /* MAX_LEN_MSG */
@@ -458,11 +467,13 @@ PACKET_GAME_INFO = 16; sc, is-info
   UINT8 angrycitizen;
   SINT16 base_pollution;
   UINT8 base_tech_cost;
+  UINT8 tech_leak_pct;
   UINT16 border_city_radius_sq;
   UINT8 border_size_effect;
   SINT16 border_city_permanent_radius_sq;
   BORDERS_MODE borders;
   UINT32 base_bribe_cost;
+  CARAVAN_BONUS_STYLE caravan_bonus_style;
   UINT32 culture_vic_points;
   UINT16 culture_vic_lead;
   UINT16 culture_migration_pml;
@@ -516,6 +527,7 @@ PACKET_GAME_INFO = 16; sc, is-info
   BOOL is_new_game;
   BOOL killcitizen;
   BOOL killstack;
+  BOOL only_killing_makes_veteran;
   UINT8 min_city_center_output[O_LAST];
   BOOL muuk_food_wipe;
   BOOL muuk_gold_wipe;
@@ -547,12 +559,14 @@ PACKET_GAME_INFO = 16; sc, is-info
   TECH_LEAKAGE_STYLE tech_leakage;
   UINT16 tech_upkeep_divider;
   TECH_UPKEEP_STYLE tech_upkeep_style;
+  SINT16 techloss_forgiveness;
   FTM free_tech_method;
   GLS gameloss_style;
   UINT32 timeout;
   UINT32 first_timeout;
   BOOL tired_attack;
   UINT16 trademindist;
+  TRADE_REVENUE_STYLE trade_revenue_style;
   BOOL trading_city;
   BOOL trading_gold;
   BOOL trading_tech;
@@ -634,6 +648,11 @@ PACKET_CONNECT_MSG = 27; sc, dsend
   STRING message[MAX_LEN_MSG];
 end
 
+PACKET_SERVER_INFO = 29; sc, dsend
+  STRING version_label[48];
+  UINT32 major_version, minor_version, patch_version, emerg_version;
+end
+
 /************** City packets **********************/
 
 PACKET_CITY_REMOVE = 30; sc, dsend, lsend, cancel(PACKET_CITY_INFO), cancel(PACKET_WEB_CITY_INFO_ADDITION), cancel(PACKET_CITY_SHORT_INFO)
@@ -663,6 +682,7 @@ PACKET_CITY_INFO = 31; sc, lsend, is-game-info, force, cancel(PACKET_CITY_SHORT_
 
   UINT16 history;
   UINT16 culture;
+  UINT16 buy_cost;
 
   SINT16 surplus[O_LAST];
   UINT16 waste[O_LAST];
@@ -695,6 +715,8 @@ PACKET_CITY_INFO = 31; sc, lsend, is-game-info, force, cancel(PACKET_CITY_SHORT_
   BOOL diplomat_investigate;
   UINT8 walls;
   SINT8 city_image;
+
+  UINT16 steal;
 
   WORKLIST worklist;
 
@@ -754,12 +776,12 @@ end
 
 PACKET_CITY_MAKE_SPECIALIST = 37; cs, dsend
   CITY city_id;
-  CITY_COORD worker_x, worker_y;
+  TILE tile_id;
 end
 
 PACKET_CITY_MAKE_WORKER = 38; cs, dsend
   CITY city_id;
-  CITY_COORD worker_x, worker_y;
+  TILE tile_id;
 end
 
 PACKET_CITY_CHANGE_SPECIALIST = 39; cs, dsend
@@ -800,7 +822,7 @@ PACKET_CITY_SABOTAGE_LIST = 45; sc, lsend
   UNIT diplomat_id;
   CITY city_id;
   BV_IMPRS improvements;
-  GEN_ACTION action_id;
+  ACTION_ID act_id;
 
   BOOL disturb_player;
 end
@@ -950,6 +972,7 @@ PACKET_UNIT_INFO = 63; sc, lsend, is-game-info, cancel(PACKET_UNIT_SHORT_INFO)
   UINT8 veteran;
   BOOL ai, paradropped;
   BOOL occupied, transported, done_moving;
+  BOOL stay;
 
   UNIT_TYPE type;
   UNIT transported_by; /* Only valid if transported is set. */
@@ -972,9 +995,8 @@ PACKET_UNIT_INFO = 63; sc, lsend, is-game-info, cancel(PACKET_UNIT_SHORT_INFO)
   ORDERS orders[MAX_LEN_ROUTE:orders_length];
   DIRECTION orders_dirs[MAX_LEN_ROUTE:orders_length];
   ACTIVITY orders_activities[MAX_LEN_ROUTE:orders_length];
-  ACTION_TGT orders_targets[MAX_LEN_ROUTE:orders_length];
-  EXTRA orders_extras[MAX_LEN_ROUTE:orders_length];
-  GEN_ACTION orders_actions[MAX_LEN_ROUTE:orders_length];
+  ACTION_SUB_TGT orders_sub_targets[MAX_LEN_ROUTE:orders_length];
+  ACTION_ID orders_actions[MAX_LEN_ROUTE:orders_length];
 
   ACTION_DECISION action_decision_want;
   TILE action_decision_tile;
@@ -1025,9 +1047,8 @@ PACKET_UNIT_ORDERS = 73; cs
   ORDERS orders[MAX_LEN_ROUTE:length];
   DIRECTION dir[MAX_LEN_ROUTE:length];
   ACTIVITY activity[MAX_LEN_ROUTE:length];
-  ACTION_TGT target[MAX_LEN_ROUTE:length];
-  EXTRA extra[MAX_LEN_ROUTE:length];
-  GEN_ACTION action[MAX_LEN_ROUTE:length];
+  ACTION_SUB_TGT sub_target[MAX_LEN_ROUTE:length];
+  ACTION_ID action[MAX_LEN_ROUTE:length];
   TILE dest_tile;
 end
 
@@ -1051,7 +1072,7 @@ end
 PACKET_UNIT_ACTION_QUERY = 82; cs, handle-per-conn, dsend
   UNIT diplomat_id;
   UNIT target_id;   # city_id or unit_id
-  GEN_ACTION action_type;
+  ACTION_ID action_type;
 
   BOOL disturb_player;
 end
@@ -1063,17 +1084,16 @@ end
 PACKET_UNIT_DO_ACTION = 84; cs, dsend
   UNIT actor_id;
   SINT32 target_id;   # city_id, unit_id or tile_id
-  EXTRA extra_id;
-  ACTION_TGT value;
+  ACTION_SUB_TGT sub_tgt_id;
   ESTRING name[MAX_LEN_NAME];
-  GEN_ACTION action_type;
+  ACTION_ID action_type;
 end
 
 PACKET_UNIT_ACTION_ANSWER = 85; sc, dsend
   UNIT diplomat_id;
   UNIT target_id;   # city_id or unit_id
   GOLD cost;
-  GEN_ACTION action_type;
+  ACTION_ID action_type;
 
   BOOL disturb_player;
 end
@@ -1092,6 +1112,7 @@ PACKET_UNIT_ACTIONS = 90; sc, dsend
   UNIT target_unit_id;
   CITY target_city_id;
   TILE target_tile_id;
+  EXTRA target_extra_id;
 
   BOOL disturb_player;
 
@@ -1325,8 +1346,8 @@ PACKET_RULESET_UNIT = 140; sc, lsend
   UINT8 transport_capacity;
   UINT8 hp;
   UINT8 firepower;
-  SINT8 obsoleted_by;
-  SINT8 converted_to;
+  UINT8 obsoleted_by;
+  UINT8 converted_to;
   UINT8 convert_time;
   UINT8 fuel;
 
@@ -1341,7 +1362,7 @@ PACKET_RULESET_UNIT = 140; sc, lsend
   STRING veteran_name[MAX_VET_LEVELS:veteran_levels][MAX_LEN_NAME];
   UINT16 power_fact[MAX_VET_LEVELS:veteran_levels];
   MOVEFRAGS move_bonus[MAX_VET_LEVELS:veteran_levels];
-  UINT8 raise_chance[MAX_VET_LEVELS:veteran_levels];
+  UINT8 base_raise_chance[MAX_VET_LEVELS:veteran_levels];
   UINT8 work_raise_chance[MAX_VET_LEVELS:veteran_levels];
 
   UINT8 bombard_rate;
@@ -1395,7 +1416,7 @@ PACKET_RULESET_GAME = 141; sc, lsend
   STRING veteran_name[MAX_VET_LEVELS:veteran_levels][MAX_LEN_NAME];
   UINT16 power_fact[MAX_VET_LEVELS:veteran_levels];
   MOVEFRAGS move_bonus[MAX_VET_LEVELS:veteran_levels];
-  UINT8 raise_chance[MAX_VET_LEVELS:veteran_levels];
+  UINT8 base_raise_chance[MAX_VET_LEVELS:veteran_levels];
   UINT8 work_raise_chance[MAX_VET_LEVELS:veteran_levels];
 
   UINT8 background_red;
@@ -1652,8 +1673,8 @@ PACKET_RULESET_EXTRA = 232; sc, lsend
   STRING name[MAX_LEN_NAME];
   STRING rule_name[MAX_LEN_NAME];
   UINT8 category;
-  UINT16 causes;
-  UINT8 rmcauses;
+  BV_CAUSES causes;
+  BV_RMCAUSES rmcauses;
   STRING activity_gfx[MAX_LEN_NAME];
   STRING act_gfx_alt[MAX_LEN_NAME];
   STRING act_gfx_alt2[MAX_LEN_NAME];
@@ -1673,6 +1694,7 @@ PACKET_RULESET_EXTRA = 232; sc, lsend
   REQUIREMENT disappearance_reqs[MAX_NUM_REQS:disappearance_reqs_count];
   TECH visibility_req;
   BOOL buildable;
+  BOOL generated;
   UINT8 build_time;
   UINT8 build_time_factor;
   UINT8 removal_time;
@@ -1757,7 +1779,7 @@ PACKET_RULESET_TRADE = 227; sc, lsend
 end
 
 PACKET_RULESET_ACTION = 246; sc, lsend
-  GEN_ACTION id;
+  ACTION_ID id;
 
   STRING ui_name[MAX_LEN_NAME];
   BOOL   quiet;
@@ -1771,7 +1793,7 @@ PACKET_RULESET_ACTION = 246; sc, lsend
 end
 
 PACKET_RULESET_ACTION_ENABLER = 235; sc, lsend
-  GEN_ACTION enabled_action;
+  ACTION_ID enabled_action;
   UINT8 actor_reqs_count;
   REQUIREMENT actor_reqs[MAX_NUM_REQS:actor_reqs_count];
   UINT8 target_reqs_count;
@@ -1786,7 +1808,7 @@ PACKET_RULESET_ACTION_AUTO = 252; sc, lsend
   REQUIREMENT       reqs[MAX_NUM_REQS:reqs_count];
 
   UINT8             alternatives_count;
-  GEN_ACTION        alternatives[MAX_NUM_ACTIONS:alternatives_count];
+  ACTION_ID         alternatives[MAX_NUM_ACTIONS:alternatives_count];
 end
 
 PACKET_RULESET_MUSIC = 240; sc, lsend
@@ -1810,6 +1832,11 @@ PACKET_RULESET_MULTIPLIER = 243; sc, dsend, lsend
   UINT8  reqs_count;
   REQUIREMENT reqs[MAX_NUM_REQS:reqs_count];
   STRVEC helptext[MAX_LEN_PACKET];
+end
+
+PACKET_RULESET_CLAUSE = 512; sc, lsend
+  CLAUSE type;
+  BOOL   enabled;
 end
 
 /**************************************************************************
@@ -2127,6 +2154,7 @@ PACKET_EDIT_UNIT = 210; cs, handle-per-conn, handle-via-packet
   BOOL paradropped;
   BOOL done_moving;
   UNIT transported_by;
+  BOOL stay;
 end
 
 PACKET_EDIT_CITY_CREATE = 211; cs, handle-per-conn, dsend
@@ -2203,7 +2231,7 @@ PACKET_EDIT_PLAYER = 216; cs, handle-per-conn, lsend
   UINT16 future_tech;
   TECH researching;
   UINT32 bulbs_researched;
-  BOOL inventions[A_LAST+1]; diff
+  BOOL inventions[A_LAST + 1]; diff
 
   BOOL ai;
   BOOL scenario_reserved;
@@ -2249,6 +2277,13 @@ PACKET_PLAY_MUSIC = 245; sc, lsend
   STRING tag[MAX_LEN_NAME];
 end
 
+PACKET_SHOW_IMG_PLAY_SOUND = 192; sc, lsend
+  STRING img_path[MAX_LEN_NAME];
+  STRING snd_path[MAX_LEN_NAME];
+  STRING desc[MAX_LEN_NAME];
+  BOOL fullsize;
+end
+
 /*************** Webclient specific packets ****************/
 /* Use range 256:511 for these                             */
 
@@ -2257,5 +2292,16 @@ PACKET_WEB_CITY_INFO_ADDITION = 256; sc, lsend, is-game-info, force, cancel(PACK
 
   UINT16 granary_size;
   TURN granary_turns;
-  UINT16 buy_gold_cost;
+end
+
+PACKET_WEB_PLAYER_INFO_ADDITION = 257; sc, is-info
+  PLAYER playerno; key
+
+  UINT32 expected_income;
+end
+
+PACKET_WEB_RULESET_UNIT_ADDITION = 258; sc, lsend
+  UNIT_TYPE id; key
+
+  BV_ACTIONS utype_actions;
 end

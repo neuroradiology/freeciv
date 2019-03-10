@@ -1433,7 +1433,7 @@ static void city_activated_callback(GtkTreeView *view, GtkTreePath *path,
     return;
   }
 
-  win = gdk_get_default_root_window();
+  win = gtk_widget_get_window(GTK_WIDGET(view));
   seat = gdk_display_get_default_seat(gdk_window_get_display(win));
 
   gdk_window_get_device_position(win, gdk_seat_get_pointer(seat),
@@ -1449,7 +1449,7 @@ static void city_activated_callback(GtkTreeView *view, GtkTreePath *path,
 /************************************************************************//**
   Update the city report dialog
 ****************************************************************************/
-void real_city_report_dialog_update(void)
+void real_city_report_dialog_update(void *unused)
 {
   GHashTable *selected;
   ITree iter;
@@ -1979,7 +1979,7 @@ static void update_total_buy_cost(void)
     path = p->data;
     if (gtk_tree_model_get_iter(model, &iter, path)) {
       if ((pcity = city_model_get(model, &iter))) {
-        total += city_production_buy_gold_cost(pcity);
+        total += pcity->client.buy_cost;
       }
     }
     gtk_tree_path_free(path);
@@ -1988,6 +1988,7 @@ static void update_total_buy_cost(void)
 
   if (total > 0) {
     gchar *buf = g_strdup_printf(_("Total Buy Cost: %d"), total);
+
     gtk_label_set_text(GTK_LABEL(label), buf);
     g_free(buf);
   } else {

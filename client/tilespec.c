@@ -482,8 +482,6 @@ struct tileset {
 
   enum direction8 unit_default_orientation;
 
-  int city_names_font_size, city_productions_font_size;
-
   enum fog_style fogstyle;
   enum darkness_style darkness_style;
 
@@ -539,6 +537,7 @@ struct tileset {
 };
 
 struct tileset *tileset;
+struct tileset *unscaled_tileset;
 
 int focus_unit_state = 0;
 
@@ -560,9 +559,11 @@ static bool load_river_sprites(struct tileset *t,
                                struct river_sprites *store, const char *tag_pfx);
 
 static void tileset_setup_base(struct tileset *t,
-                               const struct extra_type *pextra);
+                               const struct extra_type *pextra,
+                               const char *tag);
 static void tileset_setup_road(struct tileset *t,
-                               struct extra_type *pextra);
+                               struct extra_type *pextra,
+                               const char *tag);
 
 static bool is_extra_drawing_enabled(struct extra_type *pextra);
 
@@ -640,6 +641,18 @@ static void drawing_data_destroy(struct drawing_data *draw)
     free(draw->layer[i].cells);
   }
   free(draw);
+}
+
+/************************************************************************//**
+  Return unscaled tileset if it exists, or default otherwise
+****************************************************************************/
+struct tileset* get_tileset(void)
+{
+  if (unscaled_tileset != NULL) {
+    return unscaled_tileset;
+  } else {
+    return tileset;
+  }
 }
 
 /************************************************************************//**
@@ -1011,11 +1024,11 @@ static int ts_topology_index(int actual_topology)
       && (actual_topology & TF_ISO)) {
     idx = TS_TOPO_ISOHEX;
   } else if (actual_topology & TF_ISO) {
-    idx = TS_TOPO_ISO;
+    idx = TS_TOPO_SQUARE;
   } else if (actual_topology & TF_HEX) {
     idx = TS_TOPO_HEX;
   } else {
-    idx = TS_TOPO_OVERHEAD;
+    idx = TS_TOPO_SQUARE;
   }
 
   return idx;
@@ -1027,7 +1040,7 @@ static int ts_topology_index(int actual_topology)
 ****************************************************************************/
 const struct strvec *get_tileset_list(const struct option *poption)
 {
-  static struct strvec *tilesets[4] = { NULL, NULL, NULL, NULL };
+  static struct strvec *tilesets[3] = { NULL, NULL, NULL };
   int topo = option_get_cb_data(poption);
   int idx;
 
@@ -1301,9 +1314,19 @@ bool tilespec_reread(const char *new_tileset_name,
 
   /* Step 1:  Cleanup.
    *
-   * We free all old data in preparation for re-reading it.
+   * Free old tileset or keep it in memeory if we are loading the same
+   * tileset with scaling and old one was not scaled.
    */
-  tileset_free(tileset);
+
+  if (strcmp(tileset_name, old_name) == 0 && tileset->scale == 1.0f
+      && scale != 1.0f) {
+    if (unscaled_tileset) {
+      tileset_free(unscaled_tileset);
+    }
+    unscaled_tileset = tileset;
+  } else {
+    tileset_free(tileset);
+  }
 
   /* Step 2:  Read.
    *
@@ -1438,7 +1461,10 @@ void tilespec_reread_callback(struct option *poption)
 }
 
 /************************************************************************//**
-  FIXME: ?????
+  Read a new tilespec in from scratch. Keep UI frozen while tileset is
+  partially loaded; in inconsistent state.
+
+  See tilespec_reread() for details.
 ****************************************************************************/
 void tilespec_reread_frozen_refresh(const char *tname)
 {
@@ -1879,9 +1905,12 @@ static struct tileset *tileset_read_toplevel(const char *tileset_name,
     t->type = TS_ISOMETRIC;
   }
 
-  if (topology_id >= 0 && topo != (topology_id & (TF_ISO | TF_HEX))) {
-    /* Not of requested topology */
-    goto ON_ERROR;
+  if (topology_id >= 0) {
+    if (((topology_id & TF_HEX) && topology_id != (topo & (TF_ISO | TF_HEX)))
+        || (!(topology_id & TF_HEX) && (topo & TF_HEX))) {
+      /* Not of requested topology */
+      goto ON_ERROR;
+    }
   }
 
   t->ts_topo_idx = ts_topology_index(topo);
@@ -2035,11 +2064,7 @@ static struct tileset *tileset_read_toplevel(const char *tileset_name,
       || !secfile_lookup_int(file, &t->occupied_offset_x,
                              "tilespec.occupied_offset_x")
       || !secfile_lookup_int(file, &t->occupied_offset_y,
-                             "tilespec.occupied_offset_y")
-      || !secfile_lookup_int(file, &t->city_names_font_size,
-                             "tilespec.city_names_font_size")
-      || !secfile_lookup_int(file, &t->city_productions_font_size,
-                             "tilespec.city_productions_font_size")) {
+                             "tilespec.occupied_offset_y")) {
     log_error("Tileset \"%s\" invalid: %s", t->name, secfile_error());
     goto ON_ERROR;
   }
@@ -2052,8 +2077,6 @@ static struct tileset *tileset_read_toplevel(const char *tileset_name,
   t->city_size_offset_y = t->scale * t->city_size_offset_y;
   t->select_offset_x = t->scale * t->select_offset_x;
   t->select_offset_y = t->scale * t->select_offset_y;
-  t->activity_offset_x = t->scale * t->activity_offset_x;
-  t->activity_offset_y = t->scale * t->activity_offset_y;
   t->unit_flag_offset_x = t->scale * t->unit_flag_offset_x;
   t->unit_flag_offset_y = t->scale * t->unit_flag_offset_y;
   t->city_flag_offset_x = t->scale * t->city_flag_offset_x;
@@ -2076,9 +2099,6 @@ static struct tileset *tileset_read_toplevel(const char *tileset_name,
       && t->unit_upkeep_small_offset_y != t->unit_upkeep_offset_y) {
     t->unit_upkeep_small_offset_y = t->scale * t->unit_upkeep_small_offset_y;
   }
-
-  set_city_names_font_sizes(t->city_names_font_size,
-                            t->city_productions_font_size);
 
   c = secfile_lookup_str_default(file, NULL,
                                  "tilespec.unit_default_orientation");
@@ -2589,7 +2609,12 @@ static struct sprite *create_plr_sprite(struct color *pcolor)
 
   fc_assert_ret_val(pcolor != NULL, NULL);
 
-  sprite = create_sprite(128, 64, pcolor);
+  if (tileset->scale == 1.0f) {
+    sprite = create_sprite(128, 64, pcolor);
+  } else {
+    sprite = create_sprite(tileset->full_tile_width,
+                           tileset->full_tile_height, pcolor);
+  }
 
   return sprite;
 }
@@ -3559,14 +3584,21 @@ void tileset_setup_extra(struct tileset *t,
     /* Extra without graphics */
     t->sprites.extras[id].extrastyle = extrastyle_id_invalid();
   } else {
+    const char *tag;
 
-    if (!estyle_hash_lookup(t->estyle_hash, pextra->graphic_str,
-                            &extrastyle)
-        && !estyle_hash_lookup(t->estyle_hash, pextra->graphic_alt,
-                               &extrastyle)) {
-      tileset_error(LOG_FATAL, _("No extrastyle for \"%s\" or \"%s\"."),
-                    pextra->graphic_str,
-                    pextra->graphic_alt);
+    tag = pextra->graphic_str;
+    if (!estyle_hash_lookup(t->estyle_hash, tag, &extrastyle)) {
+      tag = pextra->graphic_alt;
+      if (!estyle_hash_lookup(t->estyle_hash, tag, &extrastyle)) {
+        tileset_error(LOG_FATAL, _("No extra style for \"%s\" or \"%s\"."),
+                      pextra->graphic_str,
+                      pextra->graphic_alt);
+      } else {
+        log_verbose("Using alternate graphic \"%s\" "
+                    "(instead of \"%s\") for extra \"%s\".",
+                    pextra->graphic_alt, pextra->graphic_str,
+                    extra_rule_name(pextra));
+      }
     }
 
     t->sprites.extras[id].extrastyle = extrastyle;
@@ -3579,19 +3611,19 @@ void tileset_setup_extra(struct tileset *t,
 
     switch (extrastyle) {
     case ESTYLE_3LAYER:
-      tileset_setup_base(t, pextra);
+      tileset_setup_base(t, pextra, tag);
       break;
 
     case ESTYLE_ROAD_ALL_SEPARATE:
     case ESTYLE_ROAD_PARITY_COMBINED:
     case ESTYLE_ROAD_ALL_COMBINED:
     case ESTYLE_RIVER:
-      tileset_setup_road(t, pextra);
+      tileset_setup_road(t, pextra, tag);
       break;
 
     case ESTYLE_SINGLE1:
     case ESTYLE_SINGLE2:
-      SET_SPRITE_ALT(extras[id].u.single, pextra->graphic_str, pextra->graphic_alt);
+      SET_SPRITE(extras[id].u.single, tag);
       break;
 
     case ESTYLE_CARDINALS:
@@ -3604,29 +3636,19 @@ void tileset_setup_extra(struct tileset *t,
          * graphics. */
         for (i = 0; i < t->num_index_cardinal; i++) {
           fc_snprintf(buffer, sizeof(buffer), "%s_%s",
-                      pextra->graphic_str, cardinal_index_str(t, i));
+                      tag, cardinal_index_str(t, i));
           t->sprites.extras[id].u.cardinals[i] = load_sprite(t, buffer,
                                                              TRUE, TRUE);
           if (!t->sprites.extras[id].u.cardinals[i]) {
             t->sprites.extras[id].u.cardinals[i] = load_sprite(t,
-                                                  pextra->graphic_str, TRUE,
+                                                  tag, TRUE,
                                                   TRUE);
           }
           if (!t->sprites.extras[id].u.cardinals[i]) {
-            fc_snprintf(buffer, sizeof(buffer), "%s_%s",
-                        pextra->graphic_alt, cardinal_index_str(t, i));
-            t->sprites.extras[id].u.cardinals[i] = load_sprite(t, buffer,
-                                                               TRUE, TRUE);
-          }
-          if (!t->sprites.extras[id].u.cardinals[i]) {
-            t->sprites.extras[id].u.cardinals[i] = load_sprite(t,
-                                                  pextra->graphic_alt, TRUE,
-                                                  TRUE);
-          }
-          if (!t->sprites.extras[id].u.cardinals[i]) {
-            tileset_error(LOG_FATAL, _("Sprite for tags '%s' and alternate '%s' are "
-                                       "both missing."),
-                          pextra->graphic_str, pextra->graphic_alt);
+            tileset_error(LOG_FATAL,
+                          _("No cardinal-style graphics \"%s*\" for "
+                            "extra \"%s\""),
+                          tag, extra_rule_name(pextra));
           }
         }
       }
@@ -3677,10 +3699,10 @@ void tileset_setup_extra(struct tileset *t,
   tilespec_load_tiles().
 ****************************************************************************/
 static void tileset_setup_road(struct tileset *t,
-                               struct extra_type *pextra)
+                               struct extra_type *pextra,
+                               const char *tag)
 {
   char full_tag_name[MAX_LEN_NAME + strlen("_isolated")];
-  char full_alt_name[MAX_LEN_NAME + strlen("_isolated")];
   const int id = extra_index(pextra);
   int i;
   enum extrastyle_id extrastyle = t->sprites.extras[id].extrastyle;
@@ -3690,32 +3712,28 @@ static void tileset_setup_road(struct tileset *t,
   if (extrastyle == ESTYLE_ROAD_ALL_SEPARATE
       || extrastyle == ESTYLE_ROAD_PARITY_COMBINED) {
     fc_snprintf(full_tag_name, sizeof(full_tag_name),
-                "%s_isolated", pextra->graphic_str);
-    fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                "%s_isolated", pextra->graphic_alt);
+                "%s_isolated", tag);
 
-    SET_SPRITE_ALT(extras[id].u.road.isolated, full_tag_name, full_alt_name);
+    SET_SPRITE(extras[id].u.road.isolated, full_tag_name);
   }
 
   if (extrastyle == ESTYLE_ROAD_ALL_SEPARATE) {
-    /* ESTYLE_ROAD_ALL_SEPARATE has just 8 additional sprites for each road type:
-     * one going off in each direction. */
+    /* ESTYLE_ROAD_ALL_SEPARATE has just 8 additional sprites for each
+     * road type: one going off in each direction. */
     for (i = 0; i < t->num_valid_tileset_dirs; i++) {
       enum direction8 dir = t->valid_tileset_dirs[i];
       const char *dir_name = dir_get_tileset_name(dir);
 
       fc_snprintf(full_tag_name, sizeof(full_tag_name),
-                  "%s_%s", pextra->graphic_str, dir_name);
-      fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                  "%s_%s", pextra->graphic_alt, dir_name);
+                  "%s_%s", tag, dir_name);
 
-      SET_SPRITE_ALT(extras[id].u.road.ru.dir[i], full_tag_name, full_alt_name);
+      SET_SPRITE(extras[id].u.road.ru.dir[i], full_tag_name);
     }
   } else if (extrastyle == ESTYLE_ROAD_PARITY_COMBINED) {
     int num_index = 1 << (t->num_valid_tileset_dirs / 2), j;
 
-    /* ESTYLE_ROAD_PARITY_COMBINED has 32 additional sprites for each road type:
-     * 16 each for cardinal and diagonal directions.  Each set
+    /* ESTYLE_ROAD_PARITY_COMBINED has 32 additional sprites for each road
+     * type: 16 each for cardinal and diagonal directions.  Each set
      * of 16 provides a NSEW-indexed sprite to provide connectors for
      * all rails in the cardinal/diagonal directions.  The 0 entry is
      * unused (the "isolated" sprite is used instead). */
@@ -3735,18 +3753,14 @@ static void tileset_setup_road(struct tileset *t,
       }
 
       fc_snprintf(full_tag_name, sizeof(full_tag_name),
-                  "%s_c_%s", pextra->graphic_str, c);
-      fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                  "%s_c_%s", pextra->graphic_alt, c);
+                  "%s_c_%s", tag, c);
 
-      SET_SPRITE_ALT(extras[id].u.road.ru.combo.even[i], full_tag_name, full_alt_name);
+      SET_SPRITE(extras[id].u.road.ru.combo.even[i], full_tag_name);
 
       fc_snprintf(full_tag_name, sizeof(full_tag_name),
-                  "%s_d_%s", pextra->graphic_str, d);
-      fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                  "%s_d_%s", pextra->graphic_alt, d);
+                  "%s_d_%s", tag, d);
 
-      SET_SPRITE_ALT(extras[id].u.road.ru.combo.odd[i], full_tag_name, full_alt_name);
+      SET_SPRITE(extras[id].u.road.ru.combo.odd[i], full_tag_name);
     }
   } else if (extrastyle == ESTYLE_ROAD_ALL_COMBINED) {
     /* ESTYLE_ROAD_ALL_COMBINED includes 256 sprites, one for every possibility.
@@ -3755,20 +3769,15 @@ static void tileset_setup_road(struct tileset *t,
       char *idx_str = valid_index_str(t, i);
 
       fc_snprintf(full_tag_name, sizeof(full_tag_name),
-                  "%s_%s", pextra->graphic_str, idx_str);
-      fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                  "%s_%s", pextra->graphic_alt, idx_str);
+                  "%s_%s", tag, idx_str);
 
-      SET_SPRITE_ALT(extras[id].u.road.ru.total[i], full_tag_name, full_alt_name);
+      SET_SPRITE(extras[id].u.road.ru.total[i], full_tag_name);
     }
   } else if (extrastyle == ESTYLE_RIVER) {
-    if (!load_river_sprites(t, &t->sprites.extras[id].u.road.ru.rivers,
-                            pextra->graphic_str)) {
-      if (!load_river_sprites(t, &t->sprites.extras[id].u.road.ru.rivers,
-                              pextra->graphic_alt)) {
-        tileset_error(LOG_FATAL, _("Cannot load river \"%s\" or \"%s\""),
-                      pextra->graphic_str, pextra->graphic_alt);
-      }
+    if (!load_river_sprites(t, &t->sprites.extras[id].u.road.ru.rivers, tag)) {
+      tileset_error(LOG_FATAL,
+                    _("No river-style graphics \"%s*\" for extra \"%s\""),
+                    tag, extra_rule_name(pextra));
     }
   } else {
     fc_assert(FALSE);
@@ -3786,10 +3795,8 @@ static void tileset_setup_road(struct tileset *t,
 
         fc_snprintf(full_tag_name, sizeof(full_tag_name),
                     "%s_c_%s", pextra->graphic_str, dtn);
-        fc_snprintf(full_alt_name, sizeof(full_alt_name),
-                    "%s_c_%s", pextra->graphic_alt, dtn);
 
-        SET_SPRITE_ALT_OPT(extras[id].u.road.corner[dir], full_tag_name, full_alt_name);
+        SET_SPRITE_OPT(extras[id].u.road.corner[dir], full_tag_name);
       }
     }
   }
@@ -3800,24 +3807,25 @@ static void tileset_setup_road(struct tileset *t,
   tilespec_load_tiles().
 ****************************************************************************/
 static void tileset_setup_base(struct tileset *t,
-                               const struct extra_type *pextra)
+                               const struct extra_type *pextra,
+                               const char *tag)
 {
   char full_tag_name[MAX_LEN_NAME + strlen("_fg")];
   const int id = extra_index(pextra);
 
   fc_assert_ret(id >= 0 && id < extra_count());
 
-  sz_strlcpy(full_tag_name, pextra->graphic_str);
+  sz_strlcpy(full_tag_name, tag);
   strcat(full_tag_name, "_bg");
   t->sprites.extras[id].u.bmf.background = load_sprite(t, full_tag_name,
                                                        TRUE, TRUE);
 
-  sz_strlcpy(full_tag_name, pextra->graphic_str);
+  sz_strlcpy(full_tag_name, tag);
   strcat(full_tag_name, "_mg");
   t->sprites.extras[id].u.bmf.middleground = load_sprite(t, full_tag_name,
                                                          TRUE, TRUE);
 
-  sz_strlcpy(full_tag_name, pextra->graphic_str);
+  sz_strlcpy(full_tag_name, tag);
   strcat(full_tag_name, "_fg");
   t->sprites.extras[id].u.bmf.foreground = load_sprite(t, full_tag_name,
                                                        TRUE, TRUE);
@@ -3825,34 +3833,10 @@ static void tileset_setup_base(struct tileset *t,
   if (t->sprites.extras[id].u.bmf.background == NULL
       && t->sprites.extras[id].u.bmf.middleground == NULL
       && t->sprites.extras[id].u.bmf.foreground == NULL) {
-    /* No primary graphics at all. Try alternative */
-    log_verbose("Using alternate graphic \"%s\" "
-                "(instead of \"%s\") for extra \"%s\".",
-                pextra->graphic_alt, pextra->graphic_str,
-                extra_rule_name(pextra));
-
-    sz_strlcpy(full_tag_name, pextra->graphic_alt);
-    strcat(full_tag_name, "_bg");
-    t->sprites.extras[id].u.bmf.background = load_sprite(t, full_tag_name,
-                                                         TRUE, TRUE);
-
-    sz_strlcpy(full_tag_name, pextra->graphic_alt);
-    strcat(full_tag_name, "_mg");
-    t->sprites.extras[id].u.bmf.middleground = load_sprite(t, full_tag_name,
-                                                           TRUE, TRUE);
-
-    sz_strlcpy(full_tag_name, pextra->graphic_alt);
-    strcat(full_tag_name, "_fg");
-    t->sprites.extras[id].u.bmf.foreground = load_sprite(t, full_tag_name,
-                                                         TRUE, TRUE);
-
-    if (t->sprites.extras[id].u.bmf.background == NULL
-        && t->sprites.extras[id].u.bmf.middleground == NULL
-        && t->sprites.extras[id].u.bmf.foreground == NULL) {
-      /* Cannot find alternative graphics either */
-      tileset_error(LOG_FATAL, _("No graphics for extra \"%s\" at all!"),
-                    extra_rule_name(pextra));
-    }
+    /* There was an extra style definition but no matching graphics */
+    tileset_error(LOG_FATAL,
+                  _("No graphics with tag \"%s_bg/mg/fg\" for extra \"%s\""),
+                  tag, extra_rule_name(pextra));
   }
 }
 
@@ -5209,12 +5193,19 @@ static int fill_grid_sprite_array(const struct tileset *t,
       unit[i] = FALSE;
       if (tile && !citymode) {
         unit_list_iterate(pfocus_units, pfocus_unit) {
-          if (unit_drawn_with_city_outline(pfocus_unit, FALSE)
-              && city_tile_to_city_map(&dummy_x, &dummy_y,
-                                       game.info.init_city_radius_sq,
-                                       unit_tile(pfocus_unit), tile)) {
-            unit[i] = TRUE;
-            break;
+          if (unit_drawn_with_city_outline(pfocus_unit, FALSE)) {
+            struct tile *utile = unit_tile(pfocus_unit);
+            int radius = game.info.init_city_radius_sq
+              + get_target_bonus_effects(NULL, unit_owner(pfocus_unit), NULL,
+                                         NULL, NULL, utile, NULL, NULL,
+                                         NULL, NULL, NULL,
+                                         EFT_CITY_RADIUS_SQ);
+
+            if (city_tile_to_city_map(&dummy_x, &dummy_y, radius,
+                                      utile, tile)) {
+              unit[i] = TRUE;
+              break;
+            }
           }
         } unit_list_iterate_end;
       }
@@ -5987,6 +5978,12 @@ int fill_sprite_array(struct tileset *t,
             ADD_SPRITE(t->sprites.unit.transform,
                          TRUE, FULL_TILE_X_OFFSET + t->activity_offset_x,
                          FULL_TILE_Y_OFFSET + t->activity_offset_y);
+            break;
+          case ACTIVITY_POLLUTION:
+          case ACTIVITY_FALLOUT:
+            ADD_SPRITE(t->sprites.extras[extra_index(ptask->tgt)].rmact,
+                       TRUE, FULL_TILE_X_OFFSET + t->activity_offset_x,
+                       FULL_TILE_Y_OFFSET + t->activity_offset_y);
             break;
           default:
             break;

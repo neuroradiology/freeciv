@@ -134,7 +134,8 @@ static void unit_restore_hitpoints(struct unit *punit);
 static void unit_restore_movepoints(struct player *pplayer, struct unit *punit);
 static void update_unit_activity(struct unit *punit);
 static bool try_to_save_unit(struct unit *punit, struct unit_type *pttype,
-                             bool helpless, bool teleporting);
+                             bool helpless, bool teleporting,
+                             const struct city *pexclcity);
 static void wakeup_neighbor_sentries(struct unit *punit);
 static void do_upgrade_effects(struct player *pplayer);
 
@@ -248,7 +249,7 @@ static bool maybe_become_veteran_real(struct unit *punit, bool settler)
     /* The modification is tacked on as a multiplier to the base chance.
      * For example with a base chance of 50% for green units and a modifier
      * of +50% the end chance is 75%. */
-    chance = vlevel->raise_chance * mod / 100;
+    chance = vlevel->base_raise_chance * mod / 100;
   } else if (settler && unit_has_type_flag(punit, UTYF_SETTLERS)) {
     chance = vlevel->work_raise_chance;
   } else {
@@ -364,11 +365,14 @@ void unit_bombs_unit(struct unit *attacker, struct unit *defender,
 **************************************************************************/
 void combat_veterans(struct unit *attacker, struct unit *defender)
 {
-  if (attacker->hp > 0) {
-    maybe_make_veteran(attacker); 
-  }
-  if (defender->hp > 0) {
-    maybe_make_veteran(defender); 
+  if (attacker->hp <= 0 || defender->hp <= 0
+      || !game.info.only_killing_makes_veteran) {
+    if (attacker->hp > 0) {
+      maybe_make_veteran(attacker);
+    }
+    if (defender->hp > 0) {
+      maybe_make_veteran(defender);
+    }
   }
 }
 
@@ -1012,13 +1016,17 @@ static void update_unit_activity(struct unit *punit)
   }
 
   if (activity == ACTIVITY_FORTIFYING) {
-    if (punit->activity_count >= 1) {
+    if (punit->activity_count
+        >= action_id_get_act_time(ACTION_FORTIFY,
+                                  punit, ptile, punit->activity_target)) {
       set_unit_activity(punit, ACTIVITY_FORTIFIED);
     }
   }
 
   if (activity == ACTIVITY_CONVERT) {
-    if (punit->activity_count >= unit_type_get(punit)->convert_time * ACTIVITY_FACTOR) {
+    if (punit->activity_count
+        >= action_id_get_act_time(ACTION_CONVERT,
+                                  punit, ptile, punit->activity_target)) {
       unit_convert(punit);
       set_unit_activity(punit, ACTIVITY_IDLE);
     }
@@ -1548,6 +1556,7 @@ void transform_unit(struct unit *punit, struct unit_type *to_unit,
   unit_refresh_vision(punit);
 
   CALL_PLR_AI_FUNC(unit_transformed, pplayer, punit, old_type);
+  CALL_FUNC_EACH_AI(unit_info, punit);
 
   send_unit_info(NULL, punit);
   conn_list_do_unbuffer(pplayer->connections);
@@ -1764,10 +1773,8 @@ static void server_remove_unit_full(struct unit *punit, bool transported,
     player_status_add(unit_owner(punit), PSTATUS_DYING);
   }
 
-  script_server_signal_emit("unit_lost", 3,
-                            API_TYPE_UNIT, punit,
-                            API_TYPE_PLAYER, unit_owner(punit),
-                            API_TYPE_STRING, unit_loss_reason_name(reason));
+  script_server_signal_emit("unit_lost", punit, unit_owner(punit),
+                            unit_loss_reason_name(reason));
 
   script_server_remove_exported_object(punit);
   game_remove_unit(&wld, punit);
@@ -1846,9 +1853,20 @@ static void wipe_unit_full(struct unit *punit, bool transported,
   struct unit_list *imperiled = unit_list_new();
   struct unit_list *unsaved = unit_list_new();
   struct unit *ptrans = unit_transport_get(punit);
+  struct city *pexclcity;
 
   /* The unit is doomed. */
   punit->server.dying = TRUE;
+
+  /* If a unit is being lost due to loss of its city, ensure that we don't
+   * try to teleport any of its cargo to that city (which may not yet
+   * have changed hands or disappeared). (It is assumed that the unit's
+   * home city is always the one that is being lost/transferred/etc.) */
+  if (reason == ULR_CITY_LOST) {
+    pexclcity = unit_home(punit);
+  } else {
+    pexclcity = NULL;
+  }
 
   /* Remove unit itself from its transport */
   if (ptrans != NULL) {
@@ -1946,7 +1964,8 @@ static void wipe_unit_full(struct unit *punit, bool transported,
           || unit_has_type_flag(pcargo, UTYF_GAMELOSS)) {
         if (!try_to_save_unit(pcargo, putype_save, TRUE,
                               unit_has_type_flag(pcargo,
-                                                 UTYF_EVAC_FIRST))) {
+                                                 UTYF_EVAC_FIRST),
+                              pexclcity)) {
           unit_list_prepend(unsaved, pcargo);
         }
       } else {
@@ -1956,7 +1975,7 @@ static void wipe_unit_full(struct unit *punit, bool transported,
 
     /* Handle non-priority units. */
     unit_list_iterate_safe(remaining, pcargo) {
-      if (!try_to_save_unit(pcargo, putype_save, TRUE, FALSE)) {
+      if (!try_to_save_unit(pcargo, putype_save, TRUE, FALSE, pexclcity)) {
         unit_list_prepend(unsaved, pcargo);
       }
     } unit_list_iterate_safe_end;
@@ -1976,7 +1995,8 @@ static void wipe_unit_full(struct unit *punit, bool transported,
           || unit_has_type_flag(pcargo, UTYF_GAMELOSS)) {
         if (!try_to_save_unit(pcargo, putype_save, FALSE,
                               unit_has_type_flag(pcargo,
-                                                 UTYF_EVAC_FIRST))) {
+                                                 UTYF_EVAC_FIRST),
+                              pexclcity)) {
           unit_list_prepend(unsaved, pcargo);
         }
       } else {
@@ -1986,7 +2006,7 @@ static void wipe_unit_full(struct unit *punit, bool transported,
 
     /* Handle non-priority units. */
     unit_list_iterate_safe(remaining, pcargo) {
-      if (!try_to_save_unit(pcargo, putype_save, FALSE, FALSE)) {
+      if (!try_to_save_unit(pcargo, putype_save, FALSE, FALSE, pexclcity)) {
         unit_list_prepend(unsaved, pcargo);
       }
     } unit_list_iterate_safe_end;
@@ -2016,11 +2036,13 @@ void wipe_unit(struct unit *punit, enum unit_loss_reason reason,
 
 /**********************************************************************//**
   Determine if it is possible to save a given unit, and if so, save them.
+  'pexclcity' is a city to avoid teleporting to, if 'teleporting' is set.
   Note that despite being saved from drowning, teleporting the units to
   "safety" may have killed them in the end.
 **************************************************************************/
 static bool try_to_save_unit(struct unit *punit, struct unit_type *pttype,
-                             bool helpless, bool teleporting)
+                             bool helpless, bool teleporting,
+                             const struct city *pexclcity)
 {
   struct tile *ptile = unit_tile(punit);
   struct player *pplayer = unit_owner(punit);
@@ -2035,7 +2057,8 @@ static bool try_to_save_unit(struct unit *punit, struct unit_type *pttype,
   } else {
     /* Only units that cannot find transport are considered for teleport. */
     if (teleporting) {
-      struct city *pcity = find_closest_city(ptile, NULL, unit_owner(punit),
+      struct city *pcity = find_closest_city(ptile, pexclcity,
+                                             unit_owner(punit),
                                              FALSE, FALSE, FALSE, TRUE, FALSE,
                                              utype_class(pttype));
       if (pcity != NULL) {
@@ -2478,6 +2501,7 @@ void package_unit(struct unit *punit, struct packet_unit_info *packet)
                        ? tile_index(punit->goto_tile) : -1);
   packet->paradropped = punit->paradropped;
   packet->done_moving = punit->done_moving;
+  packet->stay        = punit->stay;
   if (!unit_transported(punit)) {
     packet->transported = FALSE;
     packet->transported_by = 0;
@@ -2504,8 +2528,7 @@ void package_unit(struct unit *punit, struct packet_unit_info *packet)
       packet->orders[i] = punit->orders.list[i].order;
       packet->orders_dirs[i] = punit->orders.list[i].dir;
       packet->orders_activities[i] = punit->orders.list[i].activity;
-      packet->orders_targets[i] = punit->orders.list[i].target;
-      packet->orders_extras[i] = punit->orders.list[i].extra;
+      packet->orders_sub_targets[i] = punit->orders.list[i].sub_target;
       packet->orders_actions[i] = punit->orders.list[i].action;
     }
   } else {
@@ -2657,8 +2680,16 @@ void send_all_known_units(struct conn_list *dest)
 static void do_nuke_tile(struct player *pplayer, struct tile *ptile)
 {
   struct city *pcity = NULL;
+  int pop_loss;
+
+  pcity = tile_city(ptile);
 
   unit_list_iterate_safe(ptile->units, punit) {
+
+    /* unit in a city may survive */
+    if (pcity && fc_rand(100) < game.server.nuke_defender_survival_chance_pct) {
+      continue;
+    }
     notify_player(unit_owner(punit), ptile, E_UNIT_LOST_MISC, ftc_server,
                   _("Your %s was nuked by %s."),
                   unit_tile_link(punit),
@@ -2674,7 +2705,6 @@ static void do_nuke_tile(struct player *pplayer, struct tile *ptile)
     wipe_unit(punit, ULR_NUKE, pplayer);
   } unit_list_iterate_safe_end;
 
-  pcity = tile_city(ptile);
 
   if (pcity) {
     notify_player(city_owner(pcity), ptile, E_CITY_NUKED, ftc_server,
@@ -2690,13 +2720,14 @@ static void do_nuke_tile(struct player *pplayer, struct tile *ptile)
                     city_link(pcity));
     }
 
-    city_reduce_size(pcity, city_size_get(pcity) / 2, pplayer, "nuke");
+    pop_loss = (game.server.nuke_pop_loss_pct * city_size_get(pcity)) / 100;
+    city_reduce_size(pcity, pop_loss, pplayer, "nuke");
   }
 
   if (fc_rand(2) == 1) {
     struct extra_type *pextra;
 
-    pextra = rand_extra_for_tile(ptile, EC_FALLOUT);
+    pextra = rand_extra_for_tile(ptile, EC_FALLOUT, FALSE);
     if (pextra != NULL && !tile_has_extra(ptile, pextra)) {
       tile_add_extra(ptile, pextra);
       update_tile_knowledge(ptile);
@@ -2714,6 +2745,8 @@ void do_nuclear_explosion(struct player *pplayer, struct tile *ptile)
     do_nuke_tile(pplayer, ptile1);
   } square_iterate_end;
 
+  script_server_signal_emit("nuke_exploded", 2, API_TYPE_TILE, ptile,
+                            API_TYPE_PLAYER, pplayer);
   notify_conn(NULL, ptile, E_NUKE, ftc_server,
               _("The %s detonated a nuke!"),
               nation_plural_for_player(pplayer));
@@ -2954,17 +2987,18 @@ static void unit_enter_hut(struct unit *punit)
     return;
   }
 
-  extra_type_by_category_iterate(ECAT_BONUS, pextra) {
+  extra_type_by_cause_iterate(EC_HUT, pextra) {
     if (tile_has_extra(ptile, pextra)) {
       pplayer->server.huts++;
 
       destroy_extra(ptile, pextra);
       update_tile_knowledge(unit_tile(punit));
 
+      /* FIXME: enable different classes
+       * to behave differently with different huts */
       if (behavior == HUT_FRIGHTEN) {
-        notify_player(pplayer, unit_tile(punit), E_HUT_BARB, ftc_server,
-                      _("Your overflight frightens the tribe;"
-                        " they scatter in terror."));
+        script_server_signal_emit("hut_frighten", punit,
+                                  extra_rule_name(pextra));
         return;
       }
   
@@ -2975,10 +3009,9 @@ static void unit_enter_hut(struct unit *punit)
       }
 
       /* FIXME: Should have parameter for hut extra type */
-      script_server_signal_emit("hut_enter", 1,
-                                API_TYPE_UNIT, punit);
+      script_server_signal_emit("hut_enter", punit, extra_rule_name(pextra));
     }
-  } extra_type_by_category_iterate_end;
+  } extra_type_by_cause_iterate_end;
 
   send_player_info_c(pplayer, pplayer->connections); /* eg, gold */
   return;
@@ -3941,10 +3974,7 @@ bool unit_move(struct unit *punit, struct tile *pdesttile, int move_cost,
 
   if (unit_lives) {
     /* Let the scripts run ... */
-    script_server_signal_emit("unit_moved", 3,
-                              API_TYPE_UNIT, punit,
-                              API_TYPE_TILE, psrctile,
-                              API_TYPE_TILE, pdesttile);
+    script_server_signal_emit("unit_moved", punit, psrctile, pdesttile);
     unit_lives = unit_is_alive(saved_id);
   }
 
@@ -4057,6 +4087,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
   struct player *pplayer = unit_owner(punit);
   int moves_made = 0;
   enum unit_activity activity;
+  struct extra_type *pextra;
 
   fc_assert_ret_val(unit_has_orders(punit), TRUE);
 
@@ -4097,6 +4128,16 @@ bool execute_orders(struct unit *punit, const bool fresh)
     moves_made++;
 
     order = punit->orders.list[punit->orders.index];
+
+    /* An ORDER_PERFORM_ACTION that doesn't specify an action should not get
+     * this far. */
+    fc_assert_action((order.order != ORDER_PERFORM_ACTION
+                      || action_id_exists(order.action)),
+                     continue);
+
+    pextra = (order.sub_target == EXTRA_NONE ?
+                NULL :
+                extra_by_number(order.sub_target));
 
     switch (order.order) {
     case ORDER_MOVE:
@@ -4150,10 +4191,6 @@ bool execute_orders(struct unit *punit, const bool fresh)
     case ORDER_ACTIVITY:
       activity = order.activity;
       {
-        struct extra_type *pextra = (order.extra == EXTRA_NONE ?
-                                       NULL :
-                                       extra_by_number(order.extra));
-
         if (pextra == NULL && activity_requires_target(order.activity)) {
           /* Try to find a target extra before giving up this order or, if
            * serious enough, all orders. */
@@ -4353,7 +4390,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
         break;
       case ATK_TILE:
         prob = action_prob_vs_tile(punit, order.action,
-                                   dst_tile, NULL);
+                                   dst_tile, pextra);
         tgt_id = dst_tile->index;
         break;
       case ATK_CITY:
@@ -4400,7 +4437,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
         return TRUE;
       }
 
-      if (action_id_has_result(order.action, ACTION_FOUND_CITY)) {
+      if (action_id_has_result_safe(order.action, ACTION_FOUND_CITY)) {
         /* This action needs a name. */
         name = city_name_suggestion(pplayer, unit_tile(punit));
       } else {
@@ -4411,8 +4448,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
       performed = unit_perform_action(pplayer,
                                       unitid,
                                       tgt_id,
-                                      order.target,
-                                      EXTRA_NONE,
+                                      order.sub_target,
                                       name,
                                       order.action,
                                       ACT_REQ_PLAYER);
@@ -4434,6 +4470,14 @@ bool execute_orders(struct unit *punit, const bool fresh)
                       tile_link(dst_tile));
 
         return TRUE;
+      }
+
+      if (action_id_get_act_time(order.action, punit, dst_tile, pextra)
+          != ACT_TIME_INSTANTANEOUS) {
+        /* Done at turn change. */
+        punit->done_moving = TRUE;
+        send_unit_info(NULL, punit);
+        break;
       }
 
       break;

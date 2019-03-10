@@ -108,30 +108,28 @@ bool unit_move_handling(struct unit *punit, struct tile *pdesttile,
 void unit_do_action(struct player *pplayer,
                     const int actor_id,
                     const int target_id,
-                    const int extra_id,
-                    const int value,
+                    const int sub_tgt_id,
                     const char *name,
-                    const enum gen_action action_type);
+                    const action_id action_type);
 
 bool unit_perform_action(struct player *pplayer,
                          const int actor_id,
                          const int target_id,
-                         const int extra_id,
-                         const int value,
+                         const int sub_tgt_id,
                          const char *name,
-                         const enum gen_action action_type,
+                         const action_id action_type,
                          const enum action_requester requester);
 
 void illegal_action_msg(struct player *pplayer,
                         const enum event_type event,
                         struct unit *actor,
-                        const int stopped_action,
+                        const action_id stopped_action,
                         const struct tile *target_tile,
                         const struct city *target_city,
                         const struct unit *target_unit);
 
 enum ane_kind action_not_enabled_reason(struct unit *punit,
-                                        enum gen_action action_id,
+                                        action_id act_id,
                                         const struct tile *target_tile,
                                         const struct city *target_city,
                                         const struct unit *target_unit);

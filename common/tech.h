@@ -42,7 +42,7 @@ typedef int Tech_type_id;
  */
 #define A_NONE 0
 #define A_FIRST 1
-#define A_LAST MAX_NUM_ITEMS /* Used in the network protocol. */
+#define A_LAST (MAX_NUM_ADVANCES + 1) /* Used in the network protocol. */
 #define A_FUTURE (A_LAST + 1)
 #define A_ARRAY_SIZE (A_FUTURE + 1)
 #define A_UNSET (A_LAST + 2)
@@ -117,7 +117,7 @@ enum tech_req {
 struct tech_class {
   int idx;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
   int cost_pct;
 };
 
@@ -129,6 +129,7 @@ struct advance {
   struct tech_class *tclass;
 
   struct advance *require[AR_SIZE];
+  bool inherited_root_req;
 
   /* Required to start researching this tech. For shared research it must
    * be fulfilled for at least one player that shares the research. */
@@ -189,11 +190,11 @@ struct tech_class *tech_class_by_rule_name(const char *name);
   }                                               \
 }
 
-#define tech_class_active_iterate(_p)                                  \
+#define tech_class_re_active_iterate(_p)                               \
   tech_class_iterate(_p) {                                             \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define tech_class_active_iterate_end                                  \
+#define tech_class_re_active_iterate_end                               \
     }                                                                  \
   } tech_class_iterate_end;
 
@@ -247,16 +248,18 @@ const struct advance *advance_array_last(void);
   }									\
 }
 
-#define advance_active_iterate(_p)                                      \
+#define advance_re_active_iterate(_p)                                    \
   advance_iterate(A_FIRST, _p) {                                         \
     if (_p->require[AR_ONE] != A_NEVER) {
 
-#define advance_active_iterate_end                                      \
+#define advance_re_active_iterate_end                                   \
     }                                                                   \
   } advance_iterate_end;
 
 
-/* Advance requirements iterator. */
+/* Advance requirements iterator.
+ * Iterates over 'goal' and all its requirements (including root_reqs),
+ * recursively. */
 struct advance_req_iter;
 
 size_t advance_req_iter_sizeof(void);
@@ -268,6 +271,22 @@ struct iterator *advance_req_iter_init(struct advance_req_iter *it,
                   _padvance, advance_req_iter_sizeof, advance_req_iter_init,\
                   _goal)
 #define advance_req_iterate_end generic_iterate_end
+
+/* Iterates over all the root requirements of 'goal'.
+ * (Not including 'goal' itself, unless it is the special case of a
+ * self-root-req technology.) */
+struct advance_root_req_iter;
+
+size_t advance_root_req_iter_sizeof(void);
+struct iterator *advance_root_req_iter_init(struct advance_root_req_iter *it,
+                                            const struct advance *goal);
+
+#define advance_root_req_iterate(_goal, _padvance)                          \
+  generic_iterate(struct advance_root_req_iter, const struct advance *,     \
+                  _padvance, advance_root_req_iter_sizeof,                  \
+                  advance_root_req_iter_init,                               \
+                  _goal)
+#define advance_root_req_iterate_end generic_iterate_end
 
 #ifdef __cplusplus
 }

@@ -475,6 +475,30 @@ Actions done by a unit against all units at a tile
  * the actor must be on the tile next to the target.
  * the actor's attack must be above 0
  * the actor can't have the "NonMil" unit type flag (!)
+ * the actor can't have the "Missile" unit class flag (!)
+ * the actor must be native to the target tile unless it has the
+   "AttackNonNative" unit class flag and not the "Only_Native_Attack" unit
+   type flag.
+ * the target tile has no non enemy units. (!)
+ * the target tile has no non enemy city.
+ * one or all (unreachableprotects) non transported units at the target
+   tile must be reachable. A unit is reachable if any of the following is
+   true:
+   - it doesn't have the "Unreachable" unit class flag
+   - it is listed in the actor unit's targets
+   - it is in a city
+   - it is on a tile with a native Extra
+
+"Suicide Attack"
+ * UI name can be set using ui_name_suicide_attack
+ * spends the actor unit
+ * if force_capture_units is true "Capture Units" must be impossible
+ * if force_bombard is true "Bombard" must be impossible
+ * if force_explode_nuclear is true "Explode Nuclear" must be impossible
+ * the actor must be on the tile next to the target.
+ * the actor's attack must be above 0
+ * the actor can't have the "NonMil" unit type flag (!)
+ * the actor must have the "Missile" unit class flag (!)
  * the actor must be native to the target tile unless it has the
    "AttackNonNative" unit class flag and not the "Only_Native_Attack" unit
    type flag.
@@ -544,10 +568,86 @@ Actions done by a unit against a tile
  * the actor unit has "CanPillage" unit class flag
  * terrain type must be one where pillaging is possible
 
-"Fortify"           - Fortify at tile
- * UI name can be set using ui_name_fortify
- * the actor unit has "CanFortify" unit class flag
- * terrain type must be one where fortifying is possible
+"Road"        - Build road at the target tile.
+ * UI name can be set using ui_name_road
+ * actor must be on the same tile as the target.
+ * the actor unit has the "Settlers" unit type flag
+ * the target tile can't have an extra that the target extra must bridge
+   over (see extra type's bridged_over) unless the actor player knows a
+   tech with the "Bridge" tech flag
+ * the target extra (the extra to be built) is an road
+ * the target tile doesn't already have the target extra
+ * the target extra is buildable (see extra type's buildable)
+ * the target tile's terrain's road_time isn't 0
+ * if the target extra is both a road and a base the target tile's terrain's
+   base_time isn't 0
+ * if the target extra is both a road and a base the target extra can't
+   claim land (see base type's border_sq) if the target tile has a city
+ * to begin a road the build requirements of the target road (see road
+   type's first_reqs) must be fulfilled. Building a road when no (cardinal)
+   adjacent tile has the target extra is considered beginning it.
+ * the build requirements of the target extra (see extra type's reqs) must
+   be fulfilled
+
+"Build Base"        - Build base at the target tile.
+ * UI name can be set using ui_name_build_base
+ * the actor unit has the "Settlers" unit type flag
+ * the target tile can't have an extra that the target extra must bridge
+   over (see extra type's bridged_over) unless the actor player knows a
+   tech with the "Bridge" tech flag
+ * the target extra (the extra to be built) is an base
+ * the target tile doesn't already have the target extra
+ * the target extra is buildable (see extra type's buildable)
+ * the target tile's terrain's base_time isn't 0
+ * the target extra can't claim land (see base type's border_sq) if the
+   target tile has a city
+ * if the target extra is both a road and a base the target tile's terrain's
+   road_time isn't 0
+ * the build requirements of the target extra (see extra type's reqs) must
+   be fulfilled
+
+"Build Mine"        - Build mine at the target tile.
+ * UI name can be set using ui_name_build_mine
+ * actor must be on the same tile as the target.
+ * the actor unit has the "Settlers" unit type flag
+ * the target tile can't have an extra that the target extra must bridge
+   over (see extra type's bridged_over) unless the actor player knows a
+   tech with the "Bridge" tech flag
+ * the target extra (the extra to be built) is a mine
+ * the target tile doesn't already have the target extra
+ * the target extra is buildable (see extra type's buildable)
+ * the target tile's terrain's mining_time isn't 0
+ * the target tile's terrain's mining_result is "yes"
+ * if the target extra is both a mine and a base the target tile's terrain's
+   base_time isn't 0
+ * if the target extra is both a mine and a base the target extra can't
+   claim land (see base type's border_sq) if the target tile has a city
+ * if the target extra is both a mine and a road the target tile's terrain's
+   road_time isn't 0
+ * the build requirements of the target extra (see extra type's reqs) must
+   be fulfilled
+
+"Build Irrigation"  - Build irrigation at the target tile.
+ * UI name can be set using ui_name_irrigate
+ * actor must be on the same tile as the target.
+ * the actor unit has the "Settlers" unit type flag
+ * the target tile can't have an extra that the target extra must bridge
+   over (see extra type's bridged_over) unless the actor player knows a
+   tech with the "Bridge" tech flag
+ * the target extra (the extra to be built) is an irrigation
+ * the target tile doesn't already have the target extra
+ * the target extra is buildable (see extra type's buildable)
+ * the target tile's terrain's irrigation_time isn't 0
+ * the target tile's terrain's irrigation_result is "yes"
+ * if the target extra is both an irrigation and a base the target tile's
+   terrain's base_time isn't 0
+ * if the target extra is both an irrigation and a base the target extra
+   can't claim land (see base type's border_sq) if the target tile has a
+   city
+ * if the target extra is both an irrigation and a road the target tile's
+   terrain's road_time isn't 0
+ * the build requirements of the target extra (see extra type's reqs) must
+   be fulfilled
 
 Actions done by a unit to it self
 =================================
@@ -558,6 +658,12 @@ Actions done by a unit to it self
  * UI name can be set using ui_name_disband_unit
  * "Help Wonder" must be impossible
  * "Recycle Unit" must be impossible
+
+"Fortify"           - Fortify at tile
+ * UI name can be set using ui_name_fortify
+ * the actor unit has "CanFortify" unit class flag (!)
+ * the actor unit can't have the "Cant_Fortify" unit type flag (!)
+ * terrain type must be one where fortifying is possible
 
 "Convert Unit" - Convert the unit to another unit type.
  * UI name can be set using ui_name_convert_unit

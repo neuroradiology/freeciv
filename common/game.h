@@ -156,6 +156,7 @@ struct civ_game {
       int mgr_nationchance;
       int mgr_turninterval;
       int mgr_worldchance;
+      bool multiresearch;
       bool migration;
       enum trait_dist_mode trait_dist;
       int min_players;
@@ -170,6 +171,7 @@ struct civ_game {
       int razechance;
       unsigned revealmap;
       int revolution_length;
+      int spaceship_travel_time;
       bool threaded_save;
       int save_compress_level;
       enum fz_method save_compress_type;
@@ -182,7 +184,6 @@ struct civ_game {
       char start_units[MAX_LEN_STARTUNIT];
       bool start_city;
       int start_year;
-      int techloss_forgiveness;
       int techloss_restore;
       int techlost_donor;
       int techlost_recv;
@@ -220,7 +221,9 @@ struct civ_game {
       int seed;
 
       bool global_warming;
+      int global_warming_percent;
       bool nuclear_winter;
+      int nuclear_winter_percent;
 
       bool fogofwar_old; /* as the fog_of_war bit get changed by setting
                           * the server we need to remember the old setting */
@@ -235,6 +238,8 @@ struct civ_game {
       struct rgbcolor_list *plr_colors;
 
       struct section_file *luadata;
+      int nuke_pop_loss_pct;
+      int nuke_defender_survival_chance_pct;
 
       struct {
         int turns;
@@ -392,7 +397,16 @@ extern struct world wld;
 #define GAME_DEFAULT_FOGGEDBORDERS   FALSE
 
 #define GAME_DEFAULT_GLOBAL_WARMING  TRUE
+
+#define GAME_DEFAULT_GLOBAL_WARMING_PERCENT 100
+#define GAME_MIN_GLOBAL_WARMING_PERCENT 1
+#define GAME_MAX_GLOBAL_WARMING_PERCENT 10000
+
 #define GAME_DEFAULT_NUCLEAR_WINTER  TRUE
+
+#define GAME_DEFAULT_NUCLEAR_WINTER_PERCENT 100
+#define GAME_MIN_NUCLEAR_WINTER_PERCENT 1
+#define GAME_MAX_NUCLEAR_WINTER_PERCENT 10000
 
 #define GAME_DEFAULT_BORDERS         BORDERS_ENABLED
 
@@ -419,6 +433,10 @@ extern struct world wld;
 #define GAME_DEFAULT_TECHLOSSREST    50
 #define GAME_MIN_TECHLOSSREST        -1
 #define GAME_MAX_TECHLOSSREST        100
+
+#define GAME_DEFAULT_TECHLEAK        100
+#define GAME_MIN_TECHLEAK            0
+#define GAME_MAX_TECHLEAK            300
 
 #define GAME_DEFAULT_CITYMINDIST     2
 #define GAME_MIN_CITYMINDIST         1
@@ -500,6 +518,7 @@ extern struct world wld;
 #define GAME_MAX_TECHLOST_DONOR      100
 
 #define GAME_DEFAULT_TEAM_POOLED_RESEARCH TRUE
+#define GAME_DEFAULT_MULTIRESEARCH   FALSE
 
 #define GAME_DEFAULT_RAZECHANCE      20
 #define GAME_MIN_RAZECHANCE          0
@@ -518,6 +537,10 @@ extern struct world wld;
 
 #define GAME_DEFAULT_VICTORY_CONDITIONS (1 << VC_SPACERACE | 1 << VC_ALLIED)
 #define GAME_DEFAULT_END_SPACESHIP   TRUE
+
+#define GAME_DEFAULT_SPACESHIP_TRAVEL_TIME 100
+#define GAME_MIN_SPACESHIP_TRAVEL_TIME     50
+#define GAME_MAX_SPACESHIP_TRAVEL_TIME     1000
 
 #define GAME_DEFAULT_TURNBLOCK       TRUE
 
@@ -579,9 +602,13 @@ extern struct world wld;
 #define GAME_DEFAULT_TRADING_GOLD    TRUE
 #define GAME_DEFAULT_TRADING_CITY    TRUE
 
+#define GAME_DEFAULT_CARAVAN_BONUS_STYLE CBS_CLASSIC
+
 #define GAME_DEFAULT_TRADEMINDIST    9
 #define GAME_MIN_TRADEMINDIST        1
 #define GAME_MAX_TRADEMINDIST        999
+
+#define GAME_DEFAULT_TRADE_REVENUE_STYLE TRS_CLASSIC
 
 #define GAME_DEFAULT_BARBARIANRATE   BARBS_NORMAL
 
@@ -772,6 +799,13 @@ extern struct world wld;
 #define RS_DEFAULT_SLOW_INVASIONS                TRUE
 
 #define RS_DEFAULT_TIRED_ATTACK                  FALSE
+#define RS_DEFAULT_ONLY_KILLING_VETERAN          FALSE
+#define RS_DEFAULT_NUKE_POP_LOSS_PCT             50
+#define RS_MIN_NUKE_POP_LOSS_PCT                 0
+#define RS_MAX_NUKE_POP_LOSS_PCT                 100
+#define RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
+#define RS_MIN_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
+#define RS_MAX_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 100
 
 #define RS_DEFAULT_BASE_BRIBE_COST               750
 #define RS_MIN_BASE_BRIBE_COST                   0

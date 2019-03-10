@@ -39,17 +39,6 @@ const char * const gui_character_encoding = "UTF-8";
 const bool gui_use_transliteration = FALSE;
 
 /**********************************************************************//**
-  Called by the tileset code to set the font size that should be used to
-  draw the city names and productions.
-**************************************************************************/
-void gui_set_city_names_font_sizes(int my_city_names_font_size,
-                                   int my_city_productions_font_size)
-{
-  log_error("Unimplemented set_city_names_font_sizes.");
-  /* PORTME */
-}
-
-/**********************************************************************//**
   Do any necessary pre-initialization of the UI, if necessary.
 **************************************************************************/
 void gui_ui_init(void)
@@ -144,7 +133,7 @@ enum gui_type gui_get_gui_type(void)
 /**********************************************************************//**
   Update the connected users list at pregame state.
 **************************************************************************/
-void gui_real_conn_list_dialog_update(void)
+void gui_real_conn_list_dialog_update(void *unused)
 {
   /* PORTME */
 }

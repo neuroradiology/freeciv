@@ -79,7 +79,8 @@ sabotage	= 100
 sound		= "b_airport"
 sound_alt	= "b_generic"
 helptext	= _("\
-Allows a city to produce veteran air units (including helicopters). \
+Allows a city to produce veteran air units (including helicopters and\
+ missiles).\
  Also, damaged air units (again, including helicopters) which stay in\
  town for one full turn without moving are completely restored.\
 "), _("\
@@ -1428,9 +1429,9 @@ sound_alt	= "w_generic"
 helptext	= _("\
 This stunning technological achievement makes one content citizen \
 happy in each of your cities (2 extra luxury per city). It further \
-reduces the risk of plague in the city (by 10% of the base chance); \
-together with an Aqueduct, a Sewer System, and knowledge of Medicine, \
-it entirely eliminates the risk of plague.\
+reduces your risk of plague (by 10% of the base chance); with \
+knowledge of Medicine, any of your cities with an Aqueduct and a \
+Sewer System will be entirely free of plague.\
 ")
 
 [building_darwins_voyage]

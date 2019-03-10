@@ -66,8 +66,6 @@ static const char * const help_type_names[] = {
   "Ruleset", "Tileset", "Nations", "Multipliers", NULL
 };
 
-/*define MAX_LAST (MAX(MAX(MAX(A_LAST,B_LAST),U_LAST),terrain_count()))*/
-
 #define SPECLIST_TAG help
 #define SPECLIST_TYPE struct help_item
 #include "speclist.h"
@@ -2117,7 +2115,7 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
       strvec_clear(extras_vec);
     }
 
-    if (effect_cumulative_max(EFT_MINING_POSSIBLE, &for_utype) > 0) {
+    if (utype_can_do_action(utype, ACTION_MINE)) {
       extra_type_by_cause_iterate(EC_MINE, pextra) {
         if (help_is_extra_buildable(pextra, utype)) {
           strvec_append(extras_vec, extra_name_translation(pextra));
@@ -2136,7 +2134,7 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
                             "mining.\n"));
     }
 
-    if (effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_utype) > 0) {
+    if (utype_can_do_action(utype, ACTION_IRRIGATE)) {
       extra_type_by_cause_iterate(EC_IRRIGATION, pextra) {
         if (help_is_extra_buildable(pextra, utype)) {
           strvec_append(extras_vec, extra_name_translation(pextra));
@@ -2231,11 +2229,6 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
     CATLSTR(buf, bufsz,
             _("* Won't lose all movement when moving from non-native "
               "terrain to native terrain.\n"));
-  }
-  if (!utype_is_consumed_by_action(action_by_number(ACTION_ATTACK), utype)
-      && utype_has_flag(utype, UTYF_ONEATTACK)) {
-    CATLSTR(buf, bufsz,
-	    _("* Making an attack ends this unit's turn.\n"));
   }
   if (utype_has_flag(utype, UTYF_CITYBUSTER)) {
     CATLSTR(buf, bufsz,
@@ -2502,7 +2495,7 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
                      /* TRANS: the %d is the number of shields the unit can
                       * contribute. */
                      _("  * adds %d production.\n"),
-                     utype_build_shield_cost(utype));
+                     utype_build_shield_cost_base(utype));
         break;
       case ACTION_FOUND_CITY:
         if (game.scenario.prevent_new_cities) {
@@ -2551,11 +2544,17 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
                      utype_name_translation(utype->obsoleted_by));
         break;
       case ACTION_ATTACK:
+      case ACTION_SUICIDE_ATTACK:
         if (game.info.tired_attack) {
           cat_snprintf(buf, bufsz,
                        _("  * weaker when tired. If performed with less "
                          "than a single move point left the attack power "
                          "is reduced accordingly.\n"));
+        }
+        if (action_has_result(paction, ACTION_ATTACK)
+            && utype_has_flag(utype, UTYF_ONEATTACK)) {
+          cat_snprintf(buf, bufsz,
+                       _("  * ends this unit's turn.\n"));
         }
         break;
       case ACTION_CONVERT:
@@ -2656,9 +2655,7 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
 #if 0
     /* Some units can never become veteran through combat in practice. */
     bool veteran_through_combat =
-      !((!utype_can_do_action(utype, ACTION_ATTACK)
-         || utype_is_consumed_by_action(action_by_number(ACTION_ATTACK),
-                                        utype))
+      !(!utype_can_do_action(utype, ACTION_ATTACK)
         && utype->defense_strength == 0);
 #endif
     /* FIXME: if we knew the raise chances on the client, we could be
@@ -2667,8 +2664,7 @@ char *helptext_unit(char *buf, size_t bufsz, struct player *pplayer,
      * UTYF_NO_VETERAN when writing this text. (Gna patch #4794) */
     CATLSTR(buf, bufsz, _("* May acquire veteran status.\n"));
     if (utype_veteran_has_power_bonus(utype)) {
-      if ((!utype_can_do_action(utype, ACTION_NUKE)
-           && utype_can_do_action(utype, ACTION_ATTACK))
+      if (utype_can_do_action(utype, ACTION_ATTACK)
           || utype->defense_strength > 0) {
         CATLSTR(buf, bufsz,
                 _("  * Veterans have increased strength in combat.\n"));
@@ -2769,9 +2765,9 @@ void helptext_advance(char *buf, size_t bufsz, struct player *pplayer,
                     bulbs);
         cat_snprintf(buf, bufsz,
                      /* TRANS: last %s is a sentence pluralized separately. */
-                     PL_("To reach %s you need to obtain %d other"
+                     PL_("To research %s you need to research %d other"
                          " technology first.%s",
-                         "To reach %s you need to obtain %d other"
+                         "To research %s you need to research %d other"
                          " technologies first.%s",
                          research_goal_unknown_techs(presearch, i) - 1),
                      advance_name_translation(vap),
@@ -2842,9 +2838,63 @@ void helptext_advance(char *buf, size_t bufsz, struct player *pplayer,
     }
   } nations_iterate_end;
 
+  /* Explain the effects of root_reqs. */
+  {
+    bv_techs roots, rootsofroots;
+
+    BV_CLR_ALL(roots);
+    BV_CLR_ALL(rootsofroots);
+    advance_root_req_iterate(vap, proot) {
+      if (proot == vap) {
+        /* Don't say anything at all if this tech is a self-root-req one;
+         * assume that the ruleset help will explain how to get it. */
+        BV_CLR_ALL(roots);
+        break;
+      }
+      BV_SET(roots, advance_number(proot));
+      if (advance_requires(proot, AR_ROOT) != proot) {
+        /* Now find out what roots each of this tech's root_req has, so that
+         * we can suppress them. If tech A has roots B/C, and B has root C,
+         * it's not worth saying that A needs C, and can lead to overwhelming
+         * lists. */
+        /* (Special case: don't do this if the root is a self-root-req tech,
+         * since it would appear in its own root iteration; in the scenario
+         * where S is a self-root tech that is root for T, this would prevent
+         * S appearing in T's help.) */
+        /* FIXME this is quite inefficient */
+        advance_root_req_iterate(proot, prootroot) {
+          BV_SET(rootsofroots, advance_number(prootroot));
+        } advance_root_req_iterate_end;
+      }
+    } advance_root_req_iterate_end;
+
+    /* Filter out all but the direct root reqs. */
+    BV_CLR_ALL_FROM(roots, rootsofroots);
+
+    if (BV_ISSET_ANY(roots)) {
+      const char *root_techs[A_LAST];
+      size_t n_roots = 0;
+      struct astring root_list = ASTRING_INIT;
+
+      advance_index_iterate(A_FIRST, root) {
+        if (BV_ISSET(roots, root)) {
+          root_techs[n_roots++]
+            = advance_name_translation(advance_by_number(root));
+        }
+      } advance_index_iterate_end;
+      fc_assert(n_roots > 0);
+      cat_snprintf(buf, bufsz,
+                   /* TRANS: 'and'-separated list of techs */
+                   _("* Only those who know %s can acquire this "
+                     "technology (by any means).\n"),
+                   astr_build_and_list(&root_list, root_techs, n_roots));
+      astr_free(&root_list);
+    }
+  }
+
   if (advance_has_flag(i, TF_BONUS_TECH)) {
     cat_snprintf(buf, bufsz,
-		 _("* The first player to research %s gets"
+		 _("* The first player to learn %s gets"
 		   " an immediate advance.\n"),
                  advance_name_translation(vap));
   }
@@ -3974,7 +4024,7 @@ void helptext_government(char *buf, size_t bufsz, struct player *pplayer,
         if (playerwide) {
           cat_snprintf(buf, bufsz,
                        _("* If you lose your capital,"
-                         " the chance of civil war is %d%%.\n"),
+                         " the base chance of civil war is %d%%.\n"),
                        net_value);
         }
         break;

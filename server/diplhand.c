@@ -530,11 +530,8 @@ void handle_diplomacy_accept_treaty_req(struct player *pplayer,
 
           if (transfer_city(pdest, pcity, -1, TRUE, TRUE, FALSE,
                             !is_barbarian(pdest))) {
-            script_server_signal_emit("city_transferred", 4,
-                                      API_TYPE_CITY, pcity,
-                                      API_TYPE_PLAYER, pgiver,
-                                      API_TYPE_PLAYER, pdest,
-                                      API_TYPE_STRING, "trade");
+            script_server_signal_emit("city_transferred", pcity, pgiver,
+                                      pdest, "trade");
           }
 	  break;
 	}
@@ -577,25 +574,29 @@ void handle_diplomacy_accept_treaty_req(struct player *pplayer,
         ds_destgiver->max_state = dst_closest(DS_PEACE,
                                               ds_destgiver->max_state);
         notify_player(pgiver, NULL, E_TREATY_PEACE, ftc_server,
-                      /* TRANS: ... the Poles ... Polish territory. */
+                      /* TRANS: ... the Poles ... Polish territory */
                       PL_("You agree on an armistice with the %s. In %d turn, "
                           "it will become a peace treaty. Move your "
-                          "units out of %s territory.",
+                          "military units out of %s territory to avoid them "
+                          "being disbanded.",
                           "You agree on an armistice with the %s. In %d turns, "
-                          "it will become a peace treaty. Move your "
-                          "units out of %s territory.",
+                          "it will become a peace treaty. Move any "
+                          "military units out of %s territory to avoid them "
+                          "being disbanded.",
                           TURNS_LEFT),
                       nation_plural_for_player(pdest),
                       TURNS_LEFT,
                       nation_adjective_for_player(pdest));
         notify_player(pdest, NULL, E_TREATY_PEACE, ftc_server,
-                      /* TRANS: ... the Poles ... Polish territory. */
+                      /* TRANS: ... the Poles ... Polish territory */
                       PL_("You agree on an armistice with the %s. In %d turn, "
                           "it will become a peace treaty. Move your "
-                          "units out of %s territory.",
+                          "military units out of %s territory to avoid them "
+                          "being disbanded.",
                           "You agree on an armistice with the %s. In %d turns, "
-                          "it will become a peace treaty. Move your "
-                          "units out of %s territory.",
+                          "it will become a peace treaty. Move any "
+                          "military units out of %s territory to avoid them "
+                          "being disbanded.",
                           TURNS_LEFT),
                       nation_plural_for_player(pgiver),
                       TURNS_LEFT,
@@ -641,6 +642,9 @@ void handle_diplomacy_accept_treaty_req(struct player *pplayer,
          * within radius of our own city. */
         worker_refresh_required = TRUE;
 	break;
+      case CLAUSE_COUNT:
+        fc_assert(pclause->type != CLAUSE_COUNT);
+        break;
       }
 
     } clause_list_iterate_end;

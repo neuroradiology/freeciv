@@ -43,7 +43,7 @@ void achievements_init(void)
 
   for (i = 0; i < ARRAY_SIZE(achievements); i++) {
     achievements[i].id = i;
-    achievements[i].disabled = FALSE;
+    achievements[i].ruledit_disabled = FALSE;
     achievements[i].first = NULL;
     achievements[i].value = 0;
     achievements[i].culture = 0;
@@ -163,7 +163,11 @@ struct player *achievement_plr(struct achievement *ach,
     credited = player_list_get(achievers, fc_rand(player_list_size(achievers)));
 
     ach->first = credited;
-    credited->culture += ach->culture;
+
+    if (ach->unique) {
+      /* For !ach->unique achievements culture was already added above. */
+      credited->culture += ach->culture;
+    }
 
     /* Mark the selected player as the only one having the achievement */
     BV_SET(ach->achievers, player_index(credited));

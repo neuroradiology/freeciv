@@ -204,30 +204,36 @@ static void selection_callback(GtkTreeSelection *selection, gpointer data)
 **************************************************************************/
 static gboolean button_press_callback(GtkTreeView *view, GdkEvent *ev)
 {
-  if (gdk_event_get_event_type(ev) == GDK_2BUTTON_PRESS) {
-    GtkTreePath *path;
+  if (gdk_event_get_event_type(ev) == GDK_BUTTON_PRESS) {
+    guint click_count;
 
-    gtk_tree_view_get_cursor(view, &path, NULL);
-    if (path) {
-      GtkTreeModel *model = gtk_tree_view_get_model(view);
-      GtkTreeIter it;
-      gint id;
-      struct player *plr;
-      guint button;
+    gdk_event_get_click_count(ev, &click_count);
 
-      gtk_tree_model_get_iter(model, &it, path);
-      gtk_tree_path_free(path);
+    if (click_count == 2) {
+      GtkTreePath *path;
 
-      gtk_tree_model_get(model, &it, PLR_DLG_COL_ID, &id, -1);
-      plr = player_by_number(id);
+      gtk_tree_view_get_cursor(view, &path, NULL);
+      if (path) {
+        GtkTreeModel *model = gtk_tree_view_get_model(view);
+        GtkTreeIter it;
+        gint id;
+        struct player *plr;
+        guint button;
 
-      gdk_event_get_button(ev, &button);
-      if (button == 1) {
-        if (can_intel_with_player(plr)) {
-          popup_intel_dialog(plr);
+        gtk_tree_model_get_iter(model, &it, path);
+        gtk_tree_path_free(path);
+
+        gtk_tree_model_get(model, &it, PLR_DLG_COL_ID, &id, -1);
+        plr = player_by_number(id);
+
+        gdk_event_get_button(ev, &button);
+        if (button == 1) {
+          if (can_intel_with_player(plr)) {
+            popup_intel_dialog(plr);
+          }
+        } else if (can_meet_with_player(plr)) {
+          dsend_packet_diplomacy_init_meeting_req(&client.conn, id);
         }
-      } else if (can_meet_with_player(plr)) {
-        dsend_packet_diplomacy_init_meeting_req(&client.conn, id);
       }
     }
   }
@@ -321,7 +327,7 @@ static void toggle_dead_players(GtkCheckMenuItem* item, gpointer data)
 {
   gui_options.player_dlg_show_dead_players = 
     gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item));
-  real_players_dialog_update();
+  real_players_dialog_update(NULL);
 }
 
 /**********************************************************************//**
@@ -574,7 +580,7 @@ void create_players_dialog(void)
 
   gui_dialog_show_all(players_dialog_shell);
 
-  real_players_dialog_update();
+  real_players_dialog_update(NULL);
 
   gui_dialog_set_default_response(players_dialog_shell,
     GTK_RESPONSE_CLOSE);
@@ -712,7 +718,7 @@ static bool player_should_be_shown(const struct player *pplayer)
 /**********************************************************************//**
   Clear and refill the entire player list.
 **************************************************************************/
-void real_players_dialog_update(void)
+void real_players_dialog_update(void *unused)
 {
   GtkTreeModel *model;
   GtkTreeIter iter;

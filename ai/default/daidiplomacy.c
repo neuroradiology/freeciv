@@ -561,11 +561,16 @@ static int dai_goldequiv_clause(struct ai_type *ait,
                     + pplayer->ai_common.love[player_index(aplayer)], 
                     -5 * game.info.turn);
       }
+    } else if (game.info.tech_leakage == TECH_LEAKAGE_EMBASSIES) {
+      worth = game.info.tech_leak_pct / 10;
     } else {
       worth = 0; /* We don't need no stinkin' embassy, do we? */
     }
     DIPLO_LOG(ait, LOG_DIPL, pplayer, aplayer, "embassy clause worth %d",
               worth);
+    break;
+  case CLAUSE_COUNT:
+    fc_assert(pclause->type != CLAUSE_COUNT);
     break;
   } /* end of switch */
 
@@ -778,14 +783,16 @@ static int dai_war_desire(struct ai_type *ait, struct player *pplayer,
     fear += get_city_bonus(pcity, EFT_DEFEND_BONUS);
 
     city_built_iterate(pcity, pimprove) {
-      want += impr_build_shield_cost(pimprove);
+      int cost = impr_build_shield_cost(pcity, pimprove);
+
+      want += cost;
       if (improvement_obsolete(pplayer, pimprove, pcity)) {
         continue;
       }
       if (is_great_wonder(pimprove)) {
-        want += impr_build_shield_cost(pimprove) * 2;
+        want += cost * 2;
       } else if (is_small_wonder(pimprove)) {
-        want += impr_build_shield_cost(pimprove);
+        want += cost;
       }
     } city_built_iterate_end;
   } city_list_iterate_end;

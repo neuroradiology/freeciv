@@ -1215,7 +1215,7 @@ GtkWidget *create_network_page(void)
   lan_selection = selection;
   gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
   g_signal_connect(view, "focus",
-      		   G_CALLBACK(gtk_true), NULL);
+                   G_CALLBACK(terminate_signal_processing), NULL);
   g_signal_connect(view, "row-activated",
                    G_CALLBACK(network_activate_callback), NULL);
   g_signal_connect(selection, "changed",
@@ -1263,7 +1263,7 @@ GtkWidget *create_network_page(void)
   meta_selection = selection;
   gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
   g_signal_connect(view, "focus",
-      		   G_CALLBACK(gtk_true), NULL);
+                   G_CALLBACK(terminate_signal_processing), NULL);
   g_signal_connect(view, "row-activated",
                    G_CALLBACK(network_activate_callback), NULL);
   g_signal_connect(selection, "changed",
@@ -1450,6 +1450,7 @@ static GtkWidget *observe_button, *ready_button, *nation_button;
 static GtkTreeStore *connection_list_store;
 static GtkTreeView *connection_list_view;
 static GtkWidget *start_aifill_spin = NULL;
+static GtkWidget *ai_lvl_combobox = NULL;
 
 
 /* NB: Must match creation arguments in connection_list_store_new(). */
@@ -1576,22 +1577,21 @@ static void game_options_callback(GtkWidget *w, gpointer data)
 **************************************************************************/
 static void ai_skill_callback(GtkWidget *w, gpointer data)
 {
-  enum ai_level level;
   enum ai_level *levels = (enum ai_level *)data;
   const char *name;
   int i;
 
   i = gtk_combo_box_get_active(GTK_COMBO_BOX(w));
 
-  if (i == -1) {
-    level = AI_LEVEL_DEFAULT;
-  } else {
-    level = levels[i];
+  if (i != -1) {
+    enum ai_level level = levels[i];
+
+    /* Suppress changes provoked by server rather than local user */
+    if (server_ai_level() != level) {
+      name = ai_level_cmd(level);
+      send_chat_printf("/%s", name);
+    }
   }
-
-  name = ai_level_cmd(level);
-
-  send_chat_printf("/%s", name);
 }
 
 /* HACK: sometimes when creating the ruleset combo the value is set without
@@ -1975,29 +1975,36 @@ static gboolean delayed_unselect_path(gpointer data)
   Called on a button event on the pregame player list.
 **************************************************************************/
 static gboolean connection_list_event(GtkWidget *widget,
-                                      GdkEventButton *event,
+                                      GdkEvent *ev,
                                       gpointer data)
 {
   GtkTreeView *tree = GTK_TREE_VIEW(widget);
   GtkTreePath *path = NULL;
   GtkTreeSelection *selection = gtk_tree_view_get_selection(tree);
   gboolean ret = FALSE;
+  GdkEventType type;
+  guint button;
+  gdouble x, y;
 
-  if ((1 != event->button && 3 != event->button)
-      || GDK_BUTTON_PRESS != event->type
+  type = gdk_event_get_event_type(ev);
+  gdk_event_get_button(ev, &button);
+  gdk_event_get_coords(ev, &x, &y);
+
+  if ((1 != button && 3 != button)
+      || GDK_BUTTON_PRESS != type
       || !gtk_tree_view_get_path_at_pos(tree,
-                                        event->x, event->y,
+                                        x, y,
                                         &path, NULL, NULL, NULL)) {
     return FALSE;
   }
 
-  if (1 == event->button) {
+  if (1 == button) {
     if (gtk_tree_selection_path_is_selected(selection, path)) {
       /* Need to delay to avoid problem with the expander. */
       g_idle_add(delayed_unselect_path, path);
       return FALSE;     /* Return now, don't free the path. */
     }
-  } else if (3 == event->button) {
+  } else if (3 == button) {
     GtkTreeModel *model = gtk_tree_view_get_model(tree);
     GtkTreeIter iter;
     GtkWidget *menu;
@@ -2330,7 +2337,7 @@ static bool model_get_conn_iter(GtkTreeModel *model, GtkTreeIter *iter,
 /**********************************************************************//**
   Update the connected users list at pregame state.
 **************************************************************************/
-void real_conn_list_dialog_update(void)
+void real_conn_list_dialog_update(void *unused)
 {
   if (client_state() == C_S_PREPARING
       && get_client_page() == PAGE_START
@@ -2349,6 +2356,26 @@ void real_conn_list_dialog_update(void)
     char name[MAX_LEN_NAME + 8];
     enum cmdlevel access_level;
     int conn_id;
+
+    /* Refresh the AI skill level control */
+    if (ai_lvl_combobox) {
+      enum ai_level new_level = server_ai_level(), level;
+      int i = 0;
+
+      for (level = 0; level < AI_LEVEL_COUNT; level++) {
+        if (is_settable_ai_level(level)) {
+          if (level == new_level) {
+            gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), i);
+            break;
+          }
+          i++;
+        }
+      }
+      if (level == AI_LEVEL_COUNT) {
+        /* Probably ai_level_invalid() */
+        gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), -1);
+      }
+    }
 
     /* Save the selected connection. */
     (void) conn_list_selection(&pselected_player, &pselected_conn);
@@ -2592,7 +2619,7 @@ static void add_tree_col(GtkWidget *treeview, GType gtype,
 GtkWidget *create_start_page(void)
 {
   GtkWidget *box, *sbox, *table, *vbox;
-  GtkWidget *view, *sw, *text, *toolkit_view, *button, *spin, *ai_lvl_combobox;
+  GtkWidget *view, *sw, *text, *toolkit_view, *button, *spin;
   GtkWidget *label;
   GtkTreeSelection *selection;
   enum ai_level level;
@@ -2668,7 +2695,7 @@ GtkWidget *create_start_page(void)
       i++;
     }
   }
-  gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), 0);
+  gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), -1);
   g_signal_connect(ai_lvl_combobox, "changed",
                    G_CALLBACK(ai_skill_callback), levels);
 

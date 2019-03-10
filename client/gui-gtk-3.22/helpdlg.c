@@ -796,7 +796,7 @@ static void help_update_improvement(const struct help_item *pitem,
     const char *req = skip_intl_qualifier_prefix(REQ_LABEL_NONE);
     char req_buf[512];
 
-    sprintf(buf, "%d", impr_build_shield_cost(imp));
+    sprintf(buf, "%d", impr_build_shield_cost(NULL, imp));
     gtk_label_set_text(GTK_LABEL(help_ilabel[1]), buf);
     sprintf(buf, "%d", imp->upkeep);
     gtk_label_set_text(GTK_LABEL(help_ilabel[3]), buf);
@@ -846,7 +846,7 @@ static void help_update_wonder(const struct help_item *pitem,
     int i;
     char req_buf[512];
 
-    sprintf(buf, "%d", impr_build_shield_cost(imp));
+    sprintf(buf, "%d", impr_build_shield_cost(NULL, imp));
     gtk_label_set_text(GTK_LABEL(help_wlabel[1]), buf);
 
     /* FIXME: this should show ranges, negated reqs, and all the
@@ -904,7 +904,7 @@ static void help_update_unit_type(const struct help_item *pitem,
   create_help_page(HELP_UNIT);
 
   if (utype) {
-    sprintf(buf, "%d", utype_build_shield_cost(utype));
+    sprintf(buf, "%d", utype_build_shield_cost_base(utype));
     gtk_label_set_text(GTK_LABEL(help_ulabel[0][1]), buf);
     sprintf(buf, "%d", utype->attack_strength);
     gtk_label_set_text(GTK_LABEL(help_ulabel[0][4]), buf);
@@ -1284,12 +1284,12 @@ static void help_update_terrain(const struct help_item *pitem,
 
     if (pterrain->irrigation_result == pterrain
         && pterrain->irrigation_time != 0
-        && effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_terr) > 0) {
+        && univs_have_action_enabler(ACTION_IRRIGATE, NULL, &for_terr)) {
       help_extras_of_act_for_terrain(pterrain, ACTIVITY_IRRIGATE, _("Build as irrigation"));
     }
     if (pterrain->mining_result == pterrain
         && pterrain->mining_time != 0
-        && effect_cumulative_max(EFT_MINING_POSSIBLE, &for_terr) > 0) {
+        && univs_have_action_enabler(ACTION_MINE, NULL, &for_terr)) {
       help_extras_of_act_for_terrain(pterrain, ACTIVITY_MINE, _("Build as mine"));
     }
     if (pterrain->road_time != 0) {
