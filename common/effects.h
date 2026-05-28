@@ -21,11 +21,12 @@ extern "C" {
 #include "support.h"            /* bool type */
 
 /* common */
-#include "connection.h"
 #include "fc_types.h"
-#include "multipliers.h"
 
 #include "requirements.h"
+
+struct conn_list;
+struct multiplier;
 
 /* Type of effects. Add new values via SPECENUM_VALUE%d and
  * SPECENUM_VALUE%dNAME at the end of the list.
@@ -69,9 +70,8 @@ extern "C" {
 #define SPECENUM_VALUE14NAME "Give_Imm_Tech"
 #define SPECENUM_VALUE15 EFT_GROWTH_FOOD
 #define SPECENUM_VALUE15NAME "Growth_Food"
-/* reduced illness due to buildings ... */
-#define SPECENUM_VALUE16 EFT_HEALTH_PCT
-#define SPECENUM_VALUE16NAME "Health_Pct"
+#define SPECENUM_VALUE16 EFT_SHRINK_FOOD
+#define SPECENUM_VALUE16NAME "Shrink_Food"
 #define SPECENUM_VALUE17 EFT_HAVE_EMBASSIES
 #define SPECENUM_VALUE17NAME "Have_Embassies"
 #define SPECENUM_VALUE18 EFT_MAKE_CONTENT
@@ -296,9 +296,61 @@ extern "C" {
 #define SPECENUM_VALUE116NAME "Attack_Bonus"
 #define SPECENUM_VALUE117 EFT_CONQUEST_TECH_PCT
 #define SPECENUM_VALUE117NAME "Conquest_Tech_Pct"
-/* keep this last */
+#define SPECENUM_VALUE118 EFT_ACTION_SUCCESS_MOVE_COST
+#define SPECENUM_VALUE118NAME "Action_Success_Actor_Move_Cost"
+#define SPECENUM_VALUE119 EFT_ACTION_SUCCESS_TARGET_MOVE_COST
+#define SPECENUM_VALUE119NAME "Action_Success_Target_Move_Cost"
+#define SPECENUM_VALUE120 EFT_INFRA_POINTS
+#define SPECENUM_VALUE120NAME "Infra_Points"
+#define SPECENUM_VALUE121 EFT_FORTIFY_DEFENSE_BONUS
+#define SPECENUM_VALUE121NAME "Fortify_Defense_Bonus"
+#define SPECENUM_VALUE122 EFT_MAPS_STOLEN_PCT
+#define SPECENUM_VALUE122NAME "Maps_Stolen_Pct"
+#define SPECENUM_VALUE123 EFT_UNIT_SHIELD_VALUE_PCT
+#define SPECENUM_VALUE123NAME "Unit_Shield_Value_Pct"
+#define SPECENUM_VALUE124 EFT_CASUS_BELLI_COMPLETE
+#define SPECENUM_VALUE124NAME "Casus_Belli_Complete"
+#define SPECENUM_VALUE125 EFT_ILLEGAL_ACTION_HP_COST
+#define SPECENUM_VALUE125NAME "Illegal_Action_HP_Cost"
+#define SPECENUM_VALUE126 EFT_POPCOST_FREE
+#define SPECENUM_VALUE126NAME "Popcost_Free"
+#define SPECENUM_VALUE127 EFT_HEAL_UNIT_PCT
+#define SPECENUM_VALUE127NAME "Heal_Unit_Pct"
+#define SPECENUM_VALUE128 EFT_NUKE_BLAST_RADIUS_1_SQ
+#define SPECENUM_VALUE128NAME "Nuke_Blast_Radius_1_Sq"
+#define SPECENUM_VALUE129 EFT_BORDER_STRENGTH_PCT
+#define SPECENUM_VALUE129NAME "Border_Strength_Pct"
+#define SPECENUM_VALUE130 EFT_ACTION_RESIST_PCT
+#define SPECENUM_VALUE130NAME "Action_Resist_Pct"
+#define SPECENUM_VALUE131 EFT_OUTPUT_BONUS_ABSOLUTE
+#define SPECENUM_VALUE131NAME "Output_Bonus_Absolute"
+#define SPECENUM_VALUE132 EFT_MIN_HP_PCT
+#define SPECENUM_VALUE132NAME "Min_HP_Pct"
+#define SPECENUM_VALUE133 EFT_HP_REGEN_2
+#define SPECENUM_VALUE133NAME "HP_Regen_2"
+#define SPECENUM_VALUE134 EFT_TECH_PARASITE_PCT_MAX
+#define SPECENUM_VALUE134NAME "Tech_Parasite_Pct_Max"
+/* Reduced illness due to buildings ... */
+#define SPECENUM_VALUE135 EFT_HEALTH_PCT
+#define SPECENUM_VALUE135NAME "Health_Pct"
+#define SPECENUM_VALUE136 EFT_ACTIVITY_TIME
+#define SPECENUM_VALUE136NAME "Activity_Time"
+/* Ruleset specific effects for use from Lua scripts */
+#define SPECENUM_VALUE137 EFT_USER_EFFECT_1
+#define SPECENUM_VALUE137NAME "User_Effect_1"
+#define SPECENUM_VALUE138 EFT_USER_EFFECT_2
+#define SPECENUM_VALUE138NAME "User_Effect_2"
+#define SPECENUM_VALUE139 EFT_USER_EFFECT_3
+#define SPECENUM_VALUE139NAME "User_Effect_3"
+#define SPECENUM_VALUE140 EFT_USER_EFFECT_4
+#define SPECENUM_VALUE140NAME "User_Effect_4"
+/* Keep this last */
 #define SPECENUM_COUNT EFT_COUNT
 #include "specenum_gen.h"
+
+#define EFT_USER_EFFECT_LAST EFT_USER_EFFECT_4
+
+#define USER_EFFECT_NUMBER(eff) (eff - EFT_USER_EFFECT_1)
 
 /* An effect is provided by a source.  If the source is present, and the
  * other conditions (described below) are met, the effect will be active.
@@ -306,8 +358,8 @@ extern "C" {
 struct effect {
   enum effect_type type;
 
-  /* pointer to multipliers (NULL means that this effect has no multiplier  */
-  struct  multiplier *multiplier;
+  /* Pointer to multipliers (NULL means that this effect has no multiplier */
+  struct multiplier *multiplier;
 
   /* The "value" of the effect.  The meaning of this varies between
    * effects.  When get_xxx_bonus() is called the value of all applicable
@@ -317,6 +369,16 @@ struct effect {
   /* An effect can have multiple requirements.  The effect will only be
    * active if all of these requirement are met. */
   struct requirement_vector reqs;
+
+  /* Only relevant for ruledit and other rulesave users. */
+  struct {
+    /* Indicates that this effect is deleted and shouldn't be saved. */
+    bool do_not_save;
+
+    /* Comment field to save. While an entry in the ini-file, not
+     * used by freeciv. */
+    char *comment;
+  } rulesave;
 };
 
 /* An effect_list is a list of effects. */
@@ -329,7 +391,10 @@ struct effect {
 
 struct effect *effect_new(enum effect_type type, int value,
                           struct multiplier *pmul);
-struct effect *effect_copy(struct effect *old);
+struct effect *effect_copy(struct effect *old,
+                           enum effect_type override_type);
+void effect_free(struct effect *peffect);
+void effect_remove(struct effect *peffect);
 void effect_req_append(struct effect *peffect, struct requirement req);
 
 struct astring;
@@ -346,20 +411,29 @@ void ruleset_cache_free(void);
 void recv_ruleset_effect(const struct packet_ruleset_effect *packet);
 void send_ruleset_cache(struct conn_list *dest);
 
-int effect_cumulative_max(enum effect_type type, struct universal *for_uni);
+int effect_cumulative_max(enum effect_type type, struct universal *unis,
+                          size_t n_unis);
 int effect_cumulative_min(enum effect_type type, struct universal *for_uni);
 
 int effect_value_from_universals(enum effect_type type,
                                  struct universal *unis, size_t n_unis);
 
+bool effect_universals_value_never_below(enum effect_type type,
+                                         struct universal *unis,
+                                         size_t n_unis,
+                                         int min_value);
+
+int effect_value_will_make_positive(enum effect_type type);
+
 bool is_building_replaced(const struct city *pcity,
-			  struct impr_type *pimprove,
+                          const struct impr_type *pimprove,
                           const enum req_problem_type prob_type);
 
-/* functions to know the bonuses a certain effect is granting */
+/* Functions to know the bonuses a certain effect is granting */
 int get_world_bonus(enum effect_type effect_type);
 int get_player_bonus(const struct player *plr, enum effect_type effect_type);
 int get_city_bonus(const struct city *pcity, enum effect_type effect_type);
+int get_tile_bonus(const struct tile *ptile, enum effect_type effect_type);
 int get_city_specialist_output_bonus(const struct city *pcity,
 				     const struct specialist *pspecialist,
 				     const struct output_type *poutput,
@@ -384,13 +458,15 @@ int get_building_bonus(const struct city *pcity,
 int get_unittype_bonus(const struct player *pplayer,
 		       const struct tile *ptile, /* pcity is implied */
 		       const struct unit_type *punittype,
+                       const struct action *paction,
 		       enum effect_type effect_type);
 int get_unit_bonus(const struct unit *punit, enum effect_type effect_type);
-int get_tile_bonus(const struct tile *ptile, const struct unit *punit,
-                   enum effect_type etype);
+int get_unit_vs_tile_bonus(const struct tile *ptile,
+                           const struct unit *punit,
+                           enum effect_type etype);
 
-/* miscellaneous auxiliary effects functions */
-struct effect_list *get_req_source_effects(struct universal *psource);
+/* Miscellaneous auxiliary effects functions */
+struct effect_list *get_req_source_effects(const struct universal *psource);
 
 int get_player_bonus_effects(struct effect_list *plist,
                              const struct player *pplayer,
@@ -401,16 +477,8 @@ int get_city_bonus_effects(struct effect_list *plist,
 			   enum effect_type effect_type);
 
 int get_target_bonus_effects(struct effect_list *plist,
-                             const struct player *target_player,
+                             const struct req_context *context,
                              const struct player *other_player,
-                             const struct city *target_city,
-                             const struct impr_type *target_building,
-                             const struct tile *target_tile,
-                             const struct unit *target_unit,
-                             const struct unit_type *target_unittype,
-                             const struct output_type *target_output,
-                             const struct specialist *target_specialist,
-                             const struct action *target_action,
                              enum effect_type effect_type);
 
 bool building_has_effect(const struct impr_type *pimprove,
@@ -418,15 +486,20 @@ bool building_has_effect(const struct impr_type *pimprove,
 int get_current_construction_bonus(const struct city *pcity,
                                    enum effect_type effect_type,
                                    const enum req_problem_type prob_type);
-int get_potential_improvement_bonus(struct impr_type *pimprove,
+int get_potential_improvement_bonus(const struct impr_type *pimprove,
                                     const struct city *pcity,
                                     enum effect_type effect_type,
-                                    const enum req_problem_type prob_type);
+                                    const enum req_problem_type prob_type,
+                                    bool consider_multipliers);
 
 struct effect_list *get_effects(enum effect_type effect_type);
 
 typedef bool (*iec_cb)(struct effect*, void *data);
 bool iterate_effect_cache(iec_cb cb, void *data);
+
+bool is_user_effect(enum effect_type eff);
+enum effect_type user_effect_ai_valued_as(enum effect_type);
+void user_effect_ai_valued_set(enum effect_type tgt, enum effect_type valued_as);
 
 #ifdef __cplusplus
 }

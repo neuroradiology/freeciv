@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -13,6 +13,7 @@ artists = "
     CapTVK
     GriffonSpade
     Gyubal Wahazar
+    Canik
 "
 
 [file]
@@ -131,6 +132,7 @@ tiles = { "row", "column", "tag"
  15,  3, "t.blend.lake"
  15,  4, "user.attention"
  15,  5, "tx.fog"
+ 15,  6, "user.infratile"
 
 ;goto path sprites
  14,  7, "path.step"            ; turn boundary within path

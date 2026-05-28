@@ -65,11 +65,11 @@ static struct adv_dipl *adv_dipl_get(const struct player *plr1,
 
 /**********************************************************************//**
   Precalculates some important data about the improvements in the game
-  that we use later in ai/aicity.c.  We mark improvements as 'calculate'
-  if we want to run a full test on them, as 'estimate' if we just want
-  to do some guesses on them, or as 'unused' is they are useless to us.
-  Then we find the largest range of calculatable effects in the
-  improvement and record it for later use.
+  that we use later in ai/default/daicity.c. We mark improvements as
+  'calculate' if we want to run a full test on them, as 'estimate' if
+  we just want to do some guesses on them, or as 'unused' is they are
+  useless to us. Then we find the largest range of calculatable effects
+  in the improvement and record it for later use.
 **************************************************************************/
 static void adv_data_city_impr_calc(struct player *pplayer,
                                     struct adv_data *adv)
@@ -216,9 +216,14 @@ static void count_my_units(struct player *pplayer)
       adv->stats.units.coast_strict++;
     }
     if (utype_can_do_action(unit_type_get(punit), ACTION_SUICIDE_ATTACK)) {
-      adv->stats.units.missiles++;
+      adv->stats.units.suicide_attackers++;
     }
-    if (unit_can_do_action(punit, ACTION_PARADROP)) {
+    if (unit_can_do_action(punit, ACTION_PARADROP)
+        || unit_can_do_action(punit, ACTION_PARADROP_CONQUER)
+        || unit_can_do_action(punit, ACTION_PARADROP_FRIGHTEN)
+        || unit_can_do_action(punit, ACTION_PARADROP_FRIGHTEN_CONQUER)
+        || unit_can_do_action(punit, ACTION_PARADROP_ENTER)
+        || unit_can_do_action(punit, ACTION_PARADROP_ENTER_CONQUER)) {
       adv->stats.units.paratroopers++;
     }
     if (utype_can_do_action(punit->utype, ACTION_AIRLIFT)) {
@@ -250,16 +255,25 @@ bool is_adv_data_phase_open(struct player *pplayer)
   because we are omniscient and don't care about such trivialities as who
   can see what.
 
-  FIXME: We should try to find the lowest common defence strength of our
+  FIXME: We should try to find the lowest common defense strength of our
   defending units, and ignore enemy units that are incapable of harming 
   us, instead of just checking attack strength > 1.
 **************************************************************************/
 bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
 {
   struct adv_data *adv = pplayer->server.adv;
-  int i;
-  int nuke_units;
   bool danger_of_nukes;
+  action_id nuke_actions[MAX_NUM_ACTIONS];
+
+  {
+    int i = 0;
+
+    /* Conventional nukes */
+    action_array_add_all_by_result(nuke_actions, &i, ACTRES_NUKE);
+    action_array_add_all_by_result(nuke_actions, &i, ACTRES_NUKE_UNITS);
+    /* TODO: worry about spy nuking too? */
+    action_array_end(nuke_actions, i);
+  }
 
   fc_assert_ret_val(adv != NULL, FALSE);
 
@@ -270,18 +284,27 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
 
   TIMING_LOG(AIT_AIDATA, TIMER_START);
 
-  nuke_units = num_role_units(action_id_get_role(ACTION_NUKE));
   danger_of_nukes = FALSE;
 
   /*** Threats ***/
 
   adv->num_continents    = wld.map.num_continents;
   adv->num_oceans        = wld.map.num_oceans;
-  adv->threats.continent = fc_calloc(adv->num_continents + 1, sizeof(bool));
+  adv->continents        = fc_calloc(adv->num_continents + 1, sizeof(struct adv_area_info));
+  adv->oceans            = fc_calloc(adv->num_oceans + 1, sizeof(struct adv_area_info));
   adv->threats.invasions = FALSE;
-  adv->threats.nuclear   = 0; /* none */
-  adv->threats.ocean     = fc_calloc(adv->num_oceans + 1, sizeof(bool));
+  adv->threats.nuclear   = 0; /* None */
   adv->threats.igwall    = FALSE;
+
+  whole_map_iterate(&(wld.map), ptile) {
+    Continent_id cont = tile_continent(ptile);
+
+    if (cont >= 0) {
+      adv->continents[cont].size++;
+    } else {
+      adv->oceans[-cont].size++;
+    }
+  } whole_map_iterate_end;
 
   players_iterate(aplayer) {
     if (!adv_is_player_dangerous(pplayer, aplayer)) {
@@ -294,8 +317,9 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
      * coastal fortresses and hunting down enemy transports. */
     city_list_iterate(aplayer->cities, acity) {
       Continent_id continent = tile_continent(acity->tile);
+
       if (continent >= 0) {
-        adv->threats.continent[continent] = TRUE;
+        adv->continents[continent].threat = TRUE;
       }
     } city_list_iterate_end;
 
@@ -309,18 +333,19 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
       if (pclass->adv.sea_move != MOVE_NONE) {
         /* If the enemy has not started sailing yet, or we have total
          * control over the seas, don't worry, keep attacking. */
-        if (uclass_has_flag(pclass, UCF_CAN_OCCUPY_CITY)) {
+        if (unit_can_take_over(punit)) {
           /* Enemy represents a cross-continental threat! */
           adv->threats.invasions = TRUE;
         } else if (get_transporter_capacity(punit) > 0) {
-          unit_class_iterate(cargoclass) {
-            if (uclass_has_flag(cargoclass, UCF_CAN_OCCUPY_CITY)
-                && can_unit_type_transport(unit_type_get(punit), cargoclass)) {
+          unit_type_iterate(cargotype) {
+            if (can_unit_type_transport(unit_type_get(punit),
+                                        cargotype->uclass)
+                && utype_can_take_over(cargotype)) {
               /* Enemy can transport some threatening units! */
               adv->threats.invasions = TRUE;
               break;
             }
-          } unit_class_iterate_end;
+          } unit_type_iterate_end;
         }
 
         /* The idea is that while our enemies don't have any offensive
@@ -329,13 +354,13 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
           if (is_ocean_tile(unit_tile(punit))) {
             Continent_id continent = tile_continent(unit_tile(punit));
 
-            adv->threats.ocean[-continent] = TRUE;
+            adv->oceans[-continent].threat = TRUE;
           } else {
             adjc_iterate(&(wld.map), unit_tile(punit), tile2) {
               if (is_ocean_tile(tile2)) {
                 Continent_id continent = tile_continent(tile2);
 
-                adv->threats.ocean[-continent] = TRUE;
+                adv->oceans[-continent].threat = TRUE;
               }
             } adjc_iterate_end;
           }
@@ -343,27 +368,34 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
         continue;
       }
 
-      /* If our enemy builds missiles, worry about missile defence. */
+      /* If our enemy builds missiles, worry about missile defense. */
       if (utype_can_do_action(unit_type_get(punit), ACTION_SUICIDE_ATTACK)
           && unit_type_get(punit)->attack_strength > 1) {
-        adv->threats.missile = TRUE;
+        adv->threats.suicide_attack = TRUE;
       }
 
-      /* If he builds nukes, worry a lot. */
-      if (unit_can_do_action(punit, ACTION_NUKE)) {
-        danger_of_nukes = TRUE;
-      }
+      /* If they build nukes, worry a lot. */
+      action_array_iterate(nuke_actions, act_id) {
+        if (unit_can_do_action(punit, act_id)) {
+          danger_of_nukes = TRUE;
+        }
+      } action_array_iterate_end;
     } unit_list_iterate_end;
 
     /* Check for nuke capability */
-    for (i = 0; i < nuke_units; i++) {
-      struct unit_type *nuke =
-          get_role_unit(action_id_get_role(ACTION_NUKE), i);
+    action_array_iterate(nuke_actions, act_id) {
+      int i;
+      int nuke_units = num_role_units(action_id_get_role(act_id));
 
-      if (can_player_build_unit_direct(aplayer, nuke)) { 
-        adv->threats.nuclear = 1;
+      for (i = 0; i < nuke_units; i++) {
+        struct unit_type *nuke =
+            get_role_unit(action_id_get_role(act_id), i);
+
+        if (can_player_build_unit_direct(aplayer, nuke, FALSE)) {
+          adv->threats.nuclear = 1;
+        }
       }
-    }
+    } action_array_iterate_end;
   } players_iterate_end;
 
   /* Increase from fear to terror if opponent actually has nukes */
@@ -384,7 +416,7 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
     if (is_ocean_tile(ptile)) {
       if (adv->explore.sea_done && has_handicap(pplayer, H_TARGETS) 
           && !map_is_known(ptile, pplayer)) {
-	/* We're not done there. */
+        /* We're not done there. */
         adv->explore.sea_done = FALSE;
         adv->explore.ocean[-continent] = TRUE;
       }
@@ -450,6 +482,14 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
     }
   } players_iterate_end;
 
+  adv->dipl.tech_leader = NULL;
+  players_iterate(aplayer) {
+    if (adv->dipl.tech_leader == NULL
+        || adv->dipl.tech_leader->score.techs < aplayer->score.techs) {
+      adv->dipl.tech_leader = aplayer;
+    }
+  } players_iterate_end;
+
   /*** Priorities ***/
 
   /* NEVER set these to zero! Weight values are usually multiplied by 
@@ -471,6 +511,7 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
   adv->unhappy_priority = TRADE_WEIGHTING; /* danger */
   adv->angry_priority = TRADE_WEIGHTING * 3; /* grave danger */
   adv->pollution_priority = POLLUTION_WEIGHTING;
+  adv->infra_priority = INFRA_WEIGHTING;
 
   /* Research want */
   if (is_future_tech(research_get(pplayer)->researching)
@@ -536,11 +577,11 @@ void adv_data_phase_done(struct player *pplayer)
   free(adv->explore.continent);
   adv->explore.continent = NULL;
 
-  free(adv->threats.continent);
-  adv->threats.continent = NULL;
+  free(adv->continents);
+  adv->continents = NULL;
 
-  free(adv->threats.ocean);
-  adv->threats.ocean = NULL;
+  free(adv->oceans);
+  adv->oceans = NULL;
 
   free(adv->stats.cities);
   adv->stats.cities = NULL;
@@ -777,6 +818,149 @@ static struct adv_dipl *adv_dipl_get(const struct player *plr1,
 }
 
 /**********************************************************************//**
+  Get value of government provided action immunities.
+**************************************************************************/
+adv_want adv_gov_action_immunity_want(struct government *gov)
+{
+  adv_want bonus = 0;
+
+  /* TODO: Individual and well balanced value. */
+  action_iterate(act) {
+    struct action *paction = action_by_number(act);
+
+    if (!action_immune_government(gov, act)) {
+      /* This government doesn't provide immunity against this
+       * action. */
+      continue;
+    }
+
+    switch (paction->result) {
+    case ACTRES_ATTACK:
+    case ACTRES_SPY_INCITE_CITY:
+    case ACTRES_CONQUER_CITY:
+      bonus += 4;
+      break;
+    case ACTRES_SPY_BRIBE_UNIT:
+      bonus += 2;
+      break;
+    case ACTRES_TRANSFORM_TERRAIN:
+      bonus += 1.5;
+      break;
+    case ACTRES_CULTIVATE:
+    case ACTRES_PLANT:
+      bonus += 0.3;
+      break;
+    case ACTRES_CONQUER_EXTRAS:
+    case ACTRES_PILLAGE:
+    case ACTRES_WIPE_UNITS:
+      bonus += 0.2;
+      break;
+    case ACTRES_HUT_ENTER:
+    case ACTRES_HUT_FRIGHTEN:
+      /* It is mine. My own. My precious. */
+      bonus += 0.1;
+      break;
+    case ACTRES_SPY_INVESTIGATE_CITY:
+    case ACTRES_SPY_POISON:
+    case ACTRES_SPY_SPREAD_PLAGUE:
+    case ACTRES_SPY_STEAL_GOLD:
+    case ACTRES_SPY_SABOTAGE_CITY:
+    case ACTRES_SPY_TARGETED_SABOTAGE_CITY:
+    case ACTRES_SPY_SABOTAGE_CITY_PRODUCTION:
+    case ACTRES_SPY_STEAL_TECH:
+    case ACTRES_SPY_TARGETED_STEAL_TECH:
+    case ACTRES_SPY_SABOTAGE_UNIT:
+    case ACTRES_CAPTURE_UNITS:
+    case ACTRES_STEAL_MAPS:
+    case ACTRES_BOMBARD:
+    case ACTRES_SPY_NUKE:
+    case ACTRES_NUKE:
+    case ACTRES_NUKE_UNITS:
+    case ACTRES_DESTROY_CITY:
+    case ACTRES_EXPEL_UNIT:
+    case ACTRES_STRIKE_BUILDING:
+    case ACTRES_STRIKE_PRODUCTION:
+    case ACTRES_SPY_ATTACK:
+      /* Being a target of this is usually undesirable */
+      /* TODO: Individual and well balanced values. */
+      bonus += 0.1;
+      break;
+
+    case ACTRES_UNIT_MOVE:
+    case ACTRES_MARKETPLACE:
+    case ACTRES_FOUND_CITY:
+    case ACTRES_DISBAND_UNIT:
+    case ACTRES_PARADROP:
+    case ACTRES_PARADROP_CONQUER:
+    case ACTRES_FORTIFY:
+    case ACTRES_SPY_ESCAPE:
+      /* Wants the ability to do this to it self. Don't want others
+       * to target it. Do nothing since action_immune_government()
+       * doesn't separate based on who the actor is. */
+      break;
+
+    case ACTRES_NONE:
+      /* Ruleset defined */
+      break;
+
+    case ACTRES_ESTABLISH_EMBASSY:
+    case ACTRES_TRADE_ROUTE:
+    case ACTRES_JOIN_CITY:
+    case ACTRES_HELP_WONDER:
+    case ACTRES_DISBAND_UNIT_RECOVER:
+    case ACTRES_HOME_CITY:
+    case ACTRES_HOMELESS:
+    case ACTRES_UPGRADE_UNIT:
+    case ACTRES_AIRLIFT:
+    case ACTRES_HEAL_UNIT:
+    case ACTRES_ROAD:
+    case ACTRES_CONVERT:
+    case ACTRES_BASE:
+    case ACTRES_MINE:
+    case ACTRES_IRRIGATE:
+    case ACTRES_CLEAN:
+    case ACTRES_CLEAN_POLLUTION:
+    case ACTRES_CLEAN_FALLOUT:
+    case ACTRES_TRANSPORT_DEBOARD:
+    case ACTRES_TRANSPORT_UNLOAD:
+    case ACTRES_TRANSPORT_DISEMBARK:
+    case ACTRES_TRANSPORT_BOARD:
+    case ACTRES_TRANSPORT_LOAD:
+    case ACTRES_TRANSPORT_EMBARK:
+      /* Could be good. An embassy gives permanent contact. A trade
+       * route gives gold per turn. Join city gives population. Help
+       * wonder gives shields. */
+      /* TODO: Individual and well balanced values. */
+      break;
+    }
+  } action_iterate_end;
+
+  return bonus;
+}
+
+/**********************************************************************//**
+  Get value of currently set government provided misc player bonuses.
+
+  Caller can set player's government temporarily to another one to
+  evaluate that government instead of the one player actually have.
+**************************************************************************/
+adv_want adv_gov_player_bonus_want(struct player *pplayer)
+{
+  adv_want bonus = 0;
+
+  /* Bonuses for non-economic abilities. We increase val by
+   * a very small amount here to choose govt in cases where
+   * we have no cities yet. */
+  bonus += get_player_bonus(pplayer, EFT_VETERAN_BUILD) > 0 ? 3 : 0;
+  bonus += get_player_bonus(pplayer, EFT_INSPIRE_PARTISANS) > 0 ? 3 : 0;
+  bonus += get_player_bonus(pplayer, EFT_RAPTURE_GROW) > 0 ? 2 : 0;
+  bonus += get_player_bonus(pplayer, EFT_FANATICS) > 0 ? 3 : 0;
+  bonus += get_player_bonus(pplayer, EFT_OUTPUT_INC_TILE) * 8;
+
+  return bonus;
+}
+
+/**********************************************************************//**
   Find best government to aim for.
   We do it by setting our government to all possible values and calculating
   our GDP (total ai_eval_calc_city) under this government.  If the very
@@ -836,112 +1020,8 @@ void adv_best_government(struct player *pplayer)
           val += adv_eval_calc_city(pcity, adv);
         } city_list_iterate_end;
 
-        /* Bonuses for non-economic abilities. We increase val by
-         * a very small amount here to choose govt in cases where
-         * we have no cities yet. */
-        bonus += get_player_bonus(pplayer, EFT_VETERAN_BUILD) > 0 ? 3 : 0;
-
-        /* TODO: Individual and well balanced value. */
-        action_iterate(act) {
-          if (!action_immune_government(gov, act)) {
-            /* This government doesn't provide immunity againt this
-             * action. */
-            continue;
-          }
-
-          switch((enum gen_action)act) {
-          case ACTION_ATTACK:
-          case ACTION_SUICIDE_ATTACK:
-          case ACTION_SPY_INCITE_CITY:
-          case ACTION_SPY_INCITE_CITY_ESC:
-          case ACTION_CONQUER_CITY:
-            bonus += 4;
-            break;
-          case ACTION_SPY_BRIBE_UNIT:
-            bonus += 2;
-            break;
-          case ACTION_TRANSFORM_TERRAIN:
-            bonus += 1.5;
-            break;
-          case ACTION_IRRIGATE_TF:
-          case ACTION_MINE_TF:
-            bonus += 0.3;
-            break;
-          case ACTION_PILLAGE:
-            bonus += 0.2;
-            break;
-          case ACTION_SPY_INVESTIGATE_CITY:
-          case ACTION_INV_CITY_SPEND:
-          case ACTION_SPY_POISON:
-          case ACTION_SPY_POISON_ESC:
-          case ACTION_SPY_STEAL_GOLD:
-          case ACTION_SPY_STEAL_GOLD_ESC:
-          case ACTION_SPY_SABOTAGE_CITY:
-          case ACTION_SPY_SABOTAGE_CITY_ESC:
-          case ACTION_SPY_TARGETED_SABOTAGE_CITY:
-          case ACTION_SPY_TARGETED_SABOTAGE_CITY_ESC:
-          case ACTION_SPY_STEAL_TECH:
-          case ACTION_SPY_STEAL_TECH_ESC:
-          case ACTION_SPY_TARGETED_STEAL_TECH:
-          case ACTION_SPY_TARGETED_STEAL_TECH_ESC:
-          case ACTION_SPY_SABOTAGE_UNIT:
-          case ACTION_SPY_SABOTAGE_UNIT_ESC:
-          case ACTION_CAPTURE_UNITS:
-          case ACTION_STEAL_MAPS:
-          case ACTION_STEAL_MAPS_ESC:
-          case ACTION_BOMBARD:
-          case ACTION_SPY_NUKE:
-          case ACTION_SPY_NUKE_ESC:
-          case ACTION_NUKE:
-          case ACTION_DESTROY_CITY:
-          case ACTION_EXPEL_UNIT:
-            /* Being a target of this is usually undesireable */
-            /* TODO: Individual and well balanced values. */
-            bonus += 0.1;
-            break;
-
-          case ACTION_MARKETPLACE:
-          case ACTION_FOUND_CITY:
-          case ACTION_DISBAND_UNIT:
-          case ACTION_PARADROP:
-          case ACTION_FORTIFY:
-            /* Wants the ability to do this to it self. Don't want others
-             * to target it. Do nothing since action_immune_government()
-             * doesn't separate based on who the actor is. */
-            break;
-
-          case ACTION_ESTABLISH_EMBASSY:
-          case ACTION_ESTABLISH_EMBASSY_STAY:
-          case ACTION_TRADE_ROUTE:
-          case ACTION_JOIN_CITY:
-          case ACTION_HELP_WONDER:
-          case ACTION_RECYCLE_UNIT:
-          case ACTION_HOME_CITY:
-          case ACTION_UPGRADE_UNIT:
-          case ACTION_AIRLIFT:
-          case ACTION_HEAL_UNIT:
-          case ACTION_ROAD:
-          case ACTION_CONVERT:
-          case ACTION_BASE:
-          case ACTION_MINE:
-          case ACTION_IRRIGATE:
-            /* Could be good. An embassy gives permanent contact. A trade
-             * route gives gold per turn. Join city gives population. Help
-             * wonder gives shields. */
-            /* TODO: Individual and well balanced values. */
-            break;
-
-          case ACTION_COUNT:
-            /* Invalid */
-            fc_assert(act != ACTION_COUNT);
-            break;
-          }
-        } action_iterate_end;
-
-        bonus += get_player_bonus(pplayer, EFT_INSPIRE_PARTISANS) > 0 ? 3 : 0;
-        bonus += get_player_bonus(pplayer, EFT_RAPTURE_GROW) > 0 ? 2 : 0;
-        bonus += get_player_bonus(pplayer, EFT_FANATICS) > 0 ? 3 : 0;
-        bonus += get_player_bonus(pplayer, EFT_OUTPUT_INC_TILE) * 8;
+        bonus += adv_gov_action_immunity_want(gov);
+        bonus += adv_gov_player_bonus_want(pplayer);
 
         revolution_turns = get_player_bonus(pplayer, EFT_REVOLUTION_UNHAPPINESS);
         if (revolution_turns > 0) {
@@ -954,8 +1034,10 @@ void adv_best_government(struct player *pplayer)
         dist = 0;
         requirement_vector_iterate(&gov->reqs, preq) {
           if (VUT_ADVANCE == preq->source.kind) {
-            dist += MAX(1, research_goal_unknown_techs(presearch,
-                                                       advance_number(preq->source.value.advance)));
+            int gut = research_goal_unknown_techs(presearch,
+                                      advance_number(preq->source.value.advance));
+
+            dist += MAX(1, gut);
           }
         } requirement_vector_iterate_end;
         val = amortize(val, dist);
@@ -1012,9 +1094,9 @@ bool adv_wants_science(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  There are some signs that a player might be dangerous: We are at
-  war with him, he has done lots of ignoble things to us, he is an
-  ally of one of our enemies (a ticking bomb to be sure), we don't like him,
+  There are some signs that a player might be dangerous: We are at war
+  with them, they have done lots of ignoble things to us, they are an ally
+  of one of our enemies (a ticking bomb to be sure), we don't like them,
   diplomatic state is neutral or we have cease fire.
 **************************************************************************/
 bool adv_is_player_dangerous(struct player *pplayer,

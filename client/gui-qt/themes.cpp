@@ -21,23 +21,21 @@
 #include <QStyleFactory>
 #include <QTextStream>
 
-/* utility */
+// utility
 #include "mem.h"
 
-/* client */
+// client
 #include "themes_common.h"
 
-/* client/include */
+// client/include
 #include "themes_g.h"
 
 // gui-qt
 #include "fc_client.h"
+#include "gui_main.h"
 
-extern QApplication *current_app();
-extern QApplication *qapp;
 extern QString current_theme;
 static QString def_app_style;
-static QString real_data_dir;
 static QString stylestring;
 
 /*************************************************************************//**
@@ -48,6 +46,7 @@ void qtg_gui_load_theme(const char *directory, const char *theme_name)
   QString name;
   QString path;
   QString fake_dir;
+  QString data_dir;
   QDir dir;
   QFile f;
   QString lnb = "LittleFinger";
@@ -57,12 +56,9 @@ void qtg_gui_load_theme(const char *directory, const char *theme_name)
     def_app_style = QApplication::style()->objectName();
   }
 
-  if (real_data_dir.isEmpty()) {
-    real_data_dir = QString(directory);
-  }
-  
-  path = real_data_dir + DIR_SEPARATOR + theme_name + DIR_SEPARATOR;
-  name = dir.absolutePath() + QDir::separator() + real_data_dir;
+  data_dir = QString(directory);
+
+  path = data_dir + DIR_SEPARATOR + theme_name + DIR_SEPARATOR;
   name = path + "resource.qss";
   f.setFileName(name);
 
@@ -72,8 +68,8 @@ void qtg_gui_load_theme(const char *directory, const char *theme_name)
     }
     return;
   }
-  /* Stylesheet uses UNIX separators */
-  fake_dir = real_data_dir;
+  // Stylesheet uses UNIX separators
+  fake_dir = data_dir;
   fake_dir.replace(QString(DIR_SEPARATOR), "/");
   QTextStream in(&f);
   stylestring = in.readAll();
@@ -107,10 +103,10 @@ void qtg_gui_load_theme(const char *directory, const char *theme_name)
 *****************************************************************************/
 void qtg_gui_clear_theme()
 {
-  if (!load_theme(gui_options.gui_qt_default_theme_name)) {
-    /* TRANS: No full stop after the URL, could cause confusion. */
+  if (!load_theme(FC_QT_DEFAULT_THEME_NAME)) {
+    // TRANS: No full stop after the URL, could cause confusion.
     log_fatal(_("No Qt-client theme was found. For instructions on how to "
-                "get one, please visit %s"), WIKI_URL);
+                "get one, please visit %s"), HOMEPAGE_URL);
     exit(EXIT_FAILURE);
   }
 }
@@ -164,14 +160,14 @@ char **qtg_get_useable_themes_in_directory(const char *directory, int *count)
   foreach(str, sl) {
     f.setFileName(name + DIR_SEPARATOR + str
                   + DIR_SEPARATOR + "resource.qss");
-    if (f.exists() == false) {
+    if (!f.exists()) {
       continue;
     }
     theme_list << str;
   }
 
   qtheme_name = gui_options.gui_qt_default_theme_name;
-  /* move current theme on first position */
+  // Move current theme on first position
   if (theme_list.contains(qtheme_name)) {
     theme_list.removeAll(qtheme_name);
     theme_list.prepend(qtheme_name);
@@ -180,9 +176,12 @@ char **qtg_get_useable_themes_in_directory(const char *directory, int *count)
   *count = theme_list.count();
 
   for (int i = 0; i < *count; i++) {
+    QByteArray tn_bytes;
+
     qba = theme_list[i].toLocal8Bit();
     data = new char[theme_list[i].toLocal8Bit().count() + 1];
-    strcpy(data, theme_list[i].toLocal8Bit().data());
+    tn_bytes = theme_list[i].toLocal8Bit();
+    strcpy(data, tn_bytes.data());
     array[i] = data;
   }
 

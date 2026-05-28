@@ -2,7 +2,7 @@
 [tilespec]
 
 ; Format and options of this tilespec file:
-options = "+Freeciv-tilespec-Devel-2016-Jun-07"
+options = "+Freeciv-tilespec-3.2-Devel-2022-Jun-21"
 
 ; A simple name for the tileset specified by this file:
 name = "Cimpletoon"
@@ -13,13 +13,12 @@ priority = 25
 
 ; Summary and full description of the tileset.
 summary = _("\
-Cimpletoon mostly uses Amplio2 sprites, but has unit sprites of its own. \
-Unlike most tilesets, Cimpletoon's unit sprites show the direction the \
-unit is facing.\
+Variant of Amplio2 isometric tileset with unit sprites showing the \
+direction the unit is facing.\
 ")
 ;description = ""
 
-; TODO: add more overall information fields on tiles, 
+; TODO: add more overall information fields on tiles,
 ; eg, authors, colors, etc.
 
 ; What is the primary ruleset this tileset is meant for.
@@ -38,7 +37,7 @@ is_hex = FALSE
 ; Blended fog
 fog_style      = "Darkness"
 darkness_style = "Corner"
- 
+
 ; offset the flags by this amount when drawing units
 unit_flag_offset_x = 25
 unit_flag_offset_y = 16
@@ -60,6 +59,10 @@ activity_offset_y = 0
 ; offset of the selected unit sprites
 select_offset_x = 0
 select_offset_y = 0
+
+; offset of the unit stack size number sprites
+stack_size_offset_x = 22
+stack_size_offset_y = 10
 
 ; offset the cities by this amount
 city_offset_x = 0
@@ -126,13 +129,14 @@ unit_default_orientation = "s"
 ;  "FocusUnit",  ; The focused unit(s).
 ;  "Goto",       ; Goto turn count and intermediate points, *not* goto lines.
 ;  "WorkerTask", ; The unit task indicators ("G", "S", ...).
-;  "Editor"      ; Editor stuff (selected tile and start points).
+;  "Editor",     ; Editor stuff (selected tile and start points).
+;  "InfraWork"   ; Icons for the extras being placed.
 
 ; This is special because it gets freed and reloaded as required:
 main_intro_file    = "misc/intro"
 
-; Below, the graphics spec files; must be somewhere (anywhere) in 
-; the data path. Order may be important for color allocation on 
+; Below, the graphics spec files; must be somewhere (anywhere) in
+; the data path. Order may be important for color allocation on
 ; low-color systems, and if there are any duplicate tags (lattermost
 ; tag is used).
 files =
@@ -153,7 +157,6 @@ files =
   "misc/specialists.spec",
   "amplio2/veterancy.spec",
   "cimpletoon/orient_units.spec",
-  "misc/flags-large.spec",
   "misc/buildings-large.spec",
   "misc/wonders-large.spec",
   "misc/space.spec",
@@ -170,7 +173,35 @@ files =
   "misc/citybar.spec",
   "misc/shields-large.spec",
   "misc/editor.spec",
-  "misc/icons.spec"
+  "misc/icons.spec",
+  ;add XYZ and Elefant units
+  "cimpletoon/units/abrams/xxx.spec",
+  "cimpletoon/units/assaultgun/xxx.spec",
+  "cimpletoon/units/biplane/xxx.spec",
+  "cimpletoon/units/container_ship/xxx.spec",
+  "cimpletoon/units/flak88/xxx.spec",
+  "cimpletoon/units/icebreaker/xxx.spec",
+  "cimpletoon/units/light_howitzer/xxx.spec",
+  "cimpletoon/units/locomotive/xxx.spec",
+  "cimpletoon/units/m4sherman/xxx.spec",
+  "cimpletoon/units/mig15/xxx.spec",
+  "cimpletoon/units/missile_sub/xxx.spec",
+  "cimpletoon/units/panther/xxx.spec",
+  "cimpletoon/units/panzer_iii/xxx.spec",
+  "cimpletoon/units/pt-boat/xxx.spec",
+  "cimpletoon/units/ROMB/xxx.spec",
+  "cimpletoon/units/stationary_sam/xxx.spec",
+  "cimpletoon/units/steamer/xxx.spec",
+  "cimpletoon/units/technical/xxx.spec",
+  "cimpletoon/units/tiger/xxx.spec",
+  "cimpletoon/units/truck/xxx.spec",
+  "cimpletoon/units/zeppelin/xxx.spec"
+
+files_svg =
+  "misc/flags.spec"
+
+files_pixel =
+  "misc/flags-large.spec"
 
 
 ; Include color definitions
@@ -317,10 +348,13 @@ styles =
       "tx.village",    "Single1"
       "base.outpost",  "3Layer"
       "base.fortress", "3Layer"
+      "base.castle",   "3Layer"
+      "base.castle2",  "3Layer"
       "base.airstrip", "3Layer"
       "base.airbase",  "3Layer"
       "base.buoy",     "3Layer"
       "extra.ruins",   "3Layer"
+      "extra.transport_hub", "3Layer"
       "ts.gold",       "Single1"
       "ts.iron",       "Single1"
       "ts.tundra_game", "Single1"

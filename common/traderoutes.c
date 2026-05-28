@@ -45,7 +45,7 @@ static struct goods_type goods[MAX_GOODS_TYPES];
 /*********************************************************************//**
   Return current maximum number of trade routes city can have.
 *************************************************************************/
-int max_trade_routes(const struct city *pcity)
+unsigned max_trade_routes(const struct city *pcity)
 {
   int eft = get_city_bonus(pcity, EFT_MAX_TRADE_ROUTES);
 
@@ -121,7 +121,7 @@ enum trade_route_type cities_trade_route_type(const struct city *pcity1,
 *************************************************************************/
 int trade_route_type_trade_pct(enum trade_route_type type)
 {
-  if (type < 0 || type >= TRT_LAST) {
+  if (type >= TRT_LAST) {
     return 0;
   }
 
@@ -358,11 +358,23 @@ int trade_base_between_cities(const struct city *pc1, const struct city *pc2)
 int trade_from_route(const struct city *pc1, const struct trade_route *route,
 		     int base)
 {
+  int val;
+
   if (route->dir == RDIR_TO) {
-    return base * route->goods->to_pct / 100;
+    val = base * route->goods->to_pct / 100;
+
+    if (route->goods->to_pct > 0) {
+      val = MAX(val, game.info.min_trade_route_val);
+    }
+  } else {
+    val = base * route->goods->from_pct / 100;
+
+    if (route->goods->from_pct > 0) {
+      val = MAX(val, game.info.min_trade_route_val);
+    }
   }
 
-  return base * route->goods->from_pct / 100;
+  return val;
 }
 
 /*********************************************************************//**
@@ -375,7 +387,7 @@ int city_num_trade_routes(const struct city *pcity)
 
 /*********************************************************************//**
   Comparator used in max_tile_trade.
-**************************************************************************/
+*************************************************************************/
 static int best_value(const void *a, const void *b)
 {
   return *(int *)a < *(int *)b;
@@ -383,7 +395,7 @@ static int best_value(const void *a, const void *b)
 
 /*********************************************************************//**
   Returns the maximum trade production of the tiles of the city.
-**************************************************************************/
+*************************************************************************/
 static int max_tile_trade(const struct city *pcity)
 {
   int i, total = 0;
@@ -427,8 +439,8 @@ static int max_tile_trade(const struct city *pcity)
 
 /*********************************************************************//**
   Returns the maximum trade production of a city.
-**************************************************************************/
-static int max_trade_prod(const struct city *pcity)
+*************************************************************************/
+int max_trade_prod(const struct city *pcity)
 {
   /* Trade tile base */
   int trade_prod = max_tile_trade(pcity);
@@ -453,20 +465,35 @@ static int max_trade_prod(const struct city *pcity)
 *************************************************************************/
 int get_caravan_enter_city_trade_bonus(const struct city *pc1, 
                                        const struct city *pc2,
+                                       const struct unit_type *ut,
                                        struct goods_type *pgood,
                                        const bool establish_trade)
 {
   int tb = 0, bonus = 0;
+  enum trade_route_type trtype = cities_trade_route_type(pc1, pc2);
+
+  if (trtss[trtype].bonus_type == TBONUS_NONE) {
+    return 0;
+  }
 
   if (game.info.caravan_bonus_style == CBS_CLASSIC) {
     /* Should this be real_map_distance? */
-    tb = map_distance(pc1->tile, pc2->tile) + 10;
+    int distance = map_distance(pc1->tile, pc2->tile);
+    int weighted_distance = ((100 - game.info.trade_world_rel_pct) * distance
+                             + game.info.trade_world_rel_pct
+                             * (distance * 40 / MAX(wld.map.xsize, wld.map.ysize))) / 100;
+
+    tb = weighted_distance + 10;
     tb = (tb * (pc1->surplus[O_TRADE] + pc2->surplus[O_TRADE])) / 24;
   } else if (game.info.caravan_bonus_style == CBS_LOGARITHMIC) {
     /* Logarithmic bonus */
-    bonus = pow(log(real_map_distance(pc1->tile, pc2->tile) + 20
-                + max_trade_prod(pc1) + max_trade_prod(pc2)) * 2, 2);
-    tb = (int)bonus;
+    int distance = real_map_distance(pc1->tile, pc2->tile);
+    int weighted_distance = ((100 - game.info.trade_world_rel_pct) * distance
+                             + game.info.trade_world_rel_pct
+                             * (distance * 40 / MAX(wld.map.xsize, wld.map.ysize))) / 100;
+
+    tb = pow(log(weighted_distance + 20
+                 + max_trade_prod(pc1) + max_trade_prod(pc2)) * 2, 2);
   }
 
   if (pgood != NULL) {
@@ -475,19 +502,23 @@ int get_caravan_enter_city_trade_bonus(const struct city *pc1,
 
   /* Trade_revenue_bonus increases revenue by power of 2 in milimes */
   bonus = get_target_bonus_effects(NULL,
-                                   city_owner(pc1), city_owner(pc2),
-                                   pc1, NULL, city_tile(pc1),
-                                   /* TODO: Should unit requirements be
-                                    * allowed so stuff like moves left and
-                                    * unit type can modify the bonus? */
-                                   NULL, NULL,
-                                   NULL, NULL,
+                                   &(const struct req_context) {
+                                     .player = city_owner(pc1),
+                                     .city = pc1,
+                                     .tile = city_tile(pc1),
+                                   /* Putting .unit things like unit veterancy
+                                    * in the scope give little gameplay
+                                    * and overcomplicate the AI logic */
+                                     .unittype = ut,
                                    /* Could be used to reduce the one time
                                     * bonus if no trade route is
                                     * established. */
-                                   action_by_number(establish_trade ?
-                                                      ACTION_TRADE_ROUTE :
-                                                      ACTION_MARKETPLACE),
+                                     .action = action_by_number(
+                                                 establish_trade
+                                                 ? ACTION_TRADE_ROUTE
+                                                 : ACTION_MARKETPLACE
+                                               ),
+                                   }, city_owner(pc2),
                                    EFT_TRADE_REVENUE_BONUS);
 
   /* Be mercy full to players with small amounts. Round up. */
@@ -615,7 +646,7 @@ struct goods_type *goods_by_rule_name(const char *name)
   return NULL;
 }
 
-/*********************************************************************//*
+/*********************************************************************//**
   Returns goods type matching the translated name, or NULL if there is no
   goods type with that name.
 *************************************************************************/
@@ -641,20 +672,18 @@ bool goods_has_flag(const struct goods_type *pgood, enum goods_flag_id flag)
 /*********************************************************************//**
   Can the city provide goods.
 *************************************************************************/
-bool goods_can_be_provided(struct city *pcity, struct goods_type *pgood,
+bool goods_can_be_provided(const struct city *pcity,
+                           const struct goods_type *pgood,
                            struct unit *punit)
 {
-  struct unit_type *ptype;
-
-  if (punit != NULL) {
-    ptype = unit_type_get(punit);
-  } else {
-    ptype = NULL;
-  }
-  
-  return are_reqs_active(city_owner(pcity), NULL,
-                         pcity, NULL, city_tile(pcity),
-                         punit, ptype, NULL, NULL, NULL,
+  return are_reqs_active(&(const struct req_context) {
+                           .player = city_owner(pcity),
+                           .city = pcity,
+                           .tile = city_tile(pcity),
+                           .unit = punit,
+                           .unittype = punit ? unit_type_get(punit) : NULL,
+                         },
+                         NULL,
                          &pgood->reqs, RPT_CERTAIN);
 }
 
@@ -667,7 +696,20 @@ bool city_receives_goods(const struct city *pcity,
   trade_routes_iterate(pcity, proute) {
     if (proute->goods == pgood
         && (proute->dir == RDIR_TO || proute->dir == RDIR_BIDIRECTIONAL)) {
-      return TRUE;
+      struct city *tcity = game_city_by_number(proute->partner);
+      enum trade_route_type type;
+      struct trade_route_settings *settings;
+
+      if (can_cities_trade(pcity, tcity)) {
+        return TRUE;
+      }
+
+      type = cities_trade_route_type(pcity, tcity);
+      settings = trade_route_settings_by_type(type);
+
+      if (settings->cancelling == TRI_ACTIVE) {
+        return TRUE;
+      }
     }
   } trade_routes_iterate_end;
 

@@ -58,6 +58,8 @@ libgui_gtk3_22_la_SOURCES = \
 	happiness.h	\
 	helpdlg.c	\
 	helpdlg.h	\
+	infradlg.c	\
+	infradlg.h	\
 	inputdlg.c	\
 	inputdlg.h	\
 	inteldlg.c	\
@@ -80,6 +82,8 @@ libgui_gtk3_22_la_SOURCES = \
 	pages.h		\
 	plrdlg.c	\
 	plrdlg.h	\
+	rallypointdlg.c	\
+	rallypointdlg.h	\
 	ratesdlg.h	\
 	repodlgs.c	\
 	repodlgs.h	\

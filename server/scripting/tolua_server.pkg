@@ -49,10 +49,6 @@ module server {
     @ civilization_score (lua_State *L, Player *pplayer);
   bool api_play_music
     @ play_music (lua_State *L, Player *pplayer, const char *tag);
-  bool api_showimg_playsnd
-    @ showimg_playsnd (lua_State *L, Player *pplayer,
-                       const char *img_filename, const char *snd_filename,
-                       const char *desc, bool fullsize);
 
   module setting {
     const char *api_server_setting_get
@@ -121,15 +117,24 @@ module edit {
                         Unit_Type *ptype, int veteran_level, City *homecity,
                         int moves_left, int hp_left, Unit *ptransport);
   bool api_edit_unit_teleport
-    @ unit_teleport(lua_State *L, Unit *self, Tile *dest);
+    @ unit_teleport(lua_State *L, Unit *self, Tile *dest,
+                    Unit *embark_to, bool allow_disembark,
+                    bool conquer_city, bool conquer_extra,
+                    bool enter_hut, bool frighten_hut);
   void api_edit_unit_kill
     @ unit_kill(lua_State *L, Unit *self, const char *reason,
                 Player *killer);
   bool api_edit_change_terrain
     @ change_terrain(lua_State *L, Tile *ptile, Terrain *pterr);
-  void api_edit_create_city
+  bool api_edit_create_city
     @ create_city (lua_State *L, Player *pplayer, Tile *ptile,
                    const char *name);
+  void api_edit_remove_city
+    @ remove_city (lua_State *L, City *pcity);
+  void api_edit_create_building
+    @ create_building (lua_State *L, City *pcity, Building_Type *impr);
+  void api_edit_remove_building
+    @ remove_building (lua_State *L, City *pcity, Building_Type *impr);
   void api_edit_create_owned_extra
     @ create_owned_extra (lua_State *L, Tile *ptile,
                           const char *name, Player *pplayer);
@@ -146,11 +151,17 @@ module edit {
     @ remove_extra (lua_State *L, Tile *ptile, const char *name);
   void api_edit_tile_set_label
     @ tile_set_label (lua_State *L, Tile *ptile, const char *label);
+  void api_edit_tile_show
+    @ tile_show (lua_State *L, Tile *ptile, Player *pplayer);
+  bool api_edit_tile_hide
+    @ tile_hide (lua_State *L, Tile *ptile, Player *pplayer);
   Player *api_edit_create_player
     @ create_player(lua_State *L, const char *username, Nation_Type *nation,
                     const char *ai);
   void api_edit_change_gold
     @ change_gold (lua_State *L, Player *pplayer, int amount);
+  void api_edit_change_infrapoints
+    @ change_infrapoints (lua_State *L, Player *pplayer, int amount);
   /* cost:
    *     0 or above - The exact cost % to apply
    *    -1          - Apply freecost
@@ -181,16 +192,44 @@ module edit {
   void api_edit_player_victory
     @ player_victory (lua_State *L, Player *self);
   bool api_edit_unit_move
-    @ unit_move(lua_State *L, Unit *self, Tile *moveto, int movecost);
+    @ unit_move(lua_State *L, Unit *self, Tile *moveto, int movecost,
+                Unit *embark_to, bool allow_disembark,
+                bool conquer_city, bool conquer_extra,
+                bool enter_hut, bool frighten_hut);
   void api_edit_unit_moving_disallow
     @ movement_disallow(lua_State *L, Unit *self);
   void api_edit_unit_moving_allow
     @ movement_allow(lua_State *L, Unit *self);
 
+  bool api_edit_perform_action_unit_vs_city
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     City *tgt);
+  bool api_edit_perform_action_unit_vs_city_impr
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     City *tgt, Building_Type *sub_tgt);
+  bool api_edit_perform_action_unit_vs_city_tech
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     City *tgt, Tech_Type *sub_tgt);
+  bool api_edit_perform_action_unit_vs_unit
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     Unit *tgt);
+  bool api_edit_perform_action_unit_vs_tile
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     Tile *tgt);
+  bool api_edit_perform_action_unit_vs_tile_extra
+    @ perform_action(lua_State *L, Unit *punit, Action *paction,
+                     Tile *tgt, const char *sub_tgt);
+  bool api_edit_perform_action_unit_vs_self
+    @ perform_action(lua_State *L, Unit *punit, Action *paction);
+
   void api_edit_city_add_history
     @ add_city_history(lua_State *L, City *self, int amount);
   void api_edit_player_add_history
     @ add_player_history(lua_State *L, Player *self, int amount);
+
+  void api_edit_player_give_bulbs
+    @ give_bulbs(lua_State *L, Player *self, int amount,
+                 Tech_Type *tech = NULL);
 }
 
 /* Luadata module. */
@@ -301,6 +340,10 @@ function Player:change_gold(amount)
   edit.change_gold(self, amount)
 end
 
+function Player:change_infrapoints(amount)
+  edit.change_infrapoints(self, amount)
+end
+
 function Player:give_tech(tech, cost, notify, reason)
   return edit.give_tech(self, tech, cost, notify, reason)
 end
@@ -328,14 +371,51 @@ function Player:add_history(amount)
   edit.add_player_history(self, amount)
 end
 
+function Player:give_bulbs(amount, tech)
+  edit.give_bulbs(self, amount, tech)
+end
+
 -- Server functions for City module
+function City:remove()
+  edit.remove_city(self)
+end
+
 function City:add_history(amount)
   edit.add_city_history(self, amount)
 end
 
+function City:create_building(impr)
+  edit.create_building(self, impr)
+end
+
+function City:remove_building(impr)
+  edit.remove_building(self, impr)
+end
+
 -- Server functions for Unit module
-function Unit:teleport(dest)
-  return edit.unit_teleport(self, dest)
+function Unit:teleport(dest,
+                       embark_to, allow_disembark,
+                       conquer_city, conquer_extra,
+                       enter_hut, frighten_hut)
+  if allow_disembark == nil then
+    return edit.unit_teleport(self, dest, nil, false,
+                              false, false, false, false)
+  else
+    return edit.unit_teleport(self, dest, 
+                              embark_to, allow_disembark,
+                              conquer_city, conquer_extra,
+                              enter_hut, frighten_hut)
+  end
+end
+
+function Unit:perform_action(action, target, sub_target)
+  if target == nil then
+    return edit.perform_action(self, action)
+  elseif sub_target == nil then
+    return edit.perform_action(self, action, target)
+  else
+    return edit.perform_action(self, action, target, sub_target)
+  end
 end
 
 function Unit:turn(direction)
@@ -346,8 +426,19 @@ function Unit:kill(reason, killer)
   edit.unit_kill(self, reason, killer)
 end
 
-function Unit:move(moveto, movecost)
-  return edit.unit_move(self, moveto, movecost)
+function Unit:move(moveto, movecost,
+                   embark_to, allow_disembark,
+                   conquer_city, conquer_extra,
+                   enter_hut, frighten_hut)
+  if allow_disembark == nil then
+    return edit.unit_move(self, moveto, movecost, nil, false,
+                          false, false, false, false)
+  else
+    return edit.unit_move(self, moveto, movecost,
+                          embark_to, allow_disembark,
+                          conquer_city, conquer_extra,
+                          enter_hut, frighten_hut)
+  end
 end
 
 function Unit:movement_disallow()
@@ -401,16 +492,46 @@ function Tile:set_label(label)
   edit.tile_set_label(self, label)
 end
 
+function Tile:show(player)
+  edit.tile_show(self, player)
+end
+
+function Tile:hide(player)
+  return edit.tile_hide(self, player)
+end
+
 $]
 
 /* Additions to common Player module. */
 module Player {
+  module properties {
+    int api_methods_player_free_bulbs
+      @ free_bulbs (lua_State *L, Player *pplayer);
+  }
   int api_methods_player_trait
     @ trait (lua_State *L, Player *pplayer, const char *tname);
   int api_methods_player_trait_base
     @ trait_base (lua_State *L, Player *pplayer, const char *tname);
   int api_methods_player_trait_current_mod
     @ trait_current_mod (lua_State *L, Player *pplayer, const char *tname);
+  void api_methods_player_lose
+    @ lose (lua_State *L, Player *pplayer, Player *looter = NULL);
+  int api_methods_player_tech_bulbs
+    @ bulbs_saved (lua_State *L, Player *pplayer, Tech_Type *tech);
+}
+
+$[
+	edit.player_lose = Player.lose
+$]
+
+/* server game parameters */
+$#define game_server_autoupgrade_veteran_loss (game.server.autoupgrade_veteran_loss)
+$#define game_server_upgrade_veteran_loss (game.server.upgrade_veteran_loss)
+$#define game_server_multiresearch (game.server.multiresearch)
+module game {
+  extern const int game_server_autoupgrade_veteran_loss @ autoupgrade_veteran_loss;
+  extern const int game_server_upgrade_veteran_loss @ upgrade_veteran_loss;
+  extern const bool game_server_multiresearch @ multiresearch;
 }
 
 /* Additions to common Nation_Type module. */
@@ -422,4 +543,13 @@ module Nation_Type {
   int api_methods_nation_trait_default
     @ trait_default (lua_State *L, Nation_Type *pnation,
                      const char *tname);
+}
+
+/* Additions to common Unit module. */
+module Unit {
+  bool api_edit_unit_upgrade
+    @ upgrade (lua_State *L, Unit *punit, int vet_loss = 0);
+  bool api_edit_unit_transform
+    @ transform (lua_State *L, Unit *punit, Unit_Type *ptype,
+                 int vet_loss = 0);
 }

@@ -50,7 +50,7 @@
 #include "tilespec.h"
 
 /* client/agents */
-#include "cma_fec.h" 
+#include "cma_fec.h"
 
 /* client/gui-gtk-4.0 */
 #include "choice_dialog.h"
@@ -95,6 +95,9 @@ struct unit_node {
   GtkWidget *cmd;
   GtkWidget *pix;
   int height;
+  GtkEventController *left;
+  GtkEventController *middle;
+  GtkEventController *right;
 };
 
 /* get 'struct unit_node' and related function */
@@ -106,15 +109,22 @@ struct unit_node {
     TYPED_VECTOR_ITERATE(struct unit_node, list, elt)
 #define unit_node_vector_iterate_end  VECTOR_ITERATE_END
 
-enum { OVERVIEW_PAGE, MAP_PAGE, BUILDINGS_PAGE, WORKLIST_PAGE,
-  HAPPINESS_PAGE, CMA_PAGE, TRADE_PAGE, MISC_PAGE
+#define NUM_CITIZENS_SHOWN 30
+
+enum { OVERVIEW_PAGE, WORKLIST_PAGE, HAPPINESS_PAGE, CMA_PAGE,
+    SETTINGS_PAGE, STICKY_PAGE,
+    NUM_PAGES  /* the number of pages in city dialog notebook
+                * must match the entries in misc_whichtab_label[] */
 };
 
-#define NUM_CITIZENS_SHOWN 30
-#define NUM_INFO_FIELDS 14      /* number of fields in city_info */
-#define NUM_PAGES 6             /* the number of pages in city dialog notebook 
-                                 * (+1) if you change this, you must add an
-                                 * entry to misc_whichtab_label[] */
+enum {
+    INFO_SIZE, INFO_FOOD, INFO_SHIELD, INFO_TRADE, INFO_GOLD,
+    INFO_LUXURY, INFO_SCIENCE, INFO_GRANARY, INFO_GROWTH,
+    INFO_CORRUPTION, INFO_WASTE, INFO_CULTURE, INFO_POLLUTION,
+    INFO_ILLNESS, INFO_STEAL, INFO_AIRLIFT,
+    NUM_INFO_FIELDS /* number of fields in city_info panel
+                     * must match entries in output_label[] */
+};
 
 /* minimal size for the city map scrolling windows*/
 #define CITY_MAP_MIN_SIZE_X  200
@@ -133,8 +143,8 @@ struct city_dialog {
   cairo_surface_t *map_canvas_store_unscaled;
   GtkWidget *notebook;
 
-  GtkWidget *popup_menu;
-  GtkWidget *citizen_images;
+  GtkWidget *popover;
+  GtkWidget *citizen_pics;
   cairo_surface_t *citizen_surface;
 
   struct {
@@ -184,9 +194,9 @@ struct city_dialog {
     short block_signal;
   } misc;
 
-  GtkWidget *buy_shell, *sell_shell;
+  GtkWidget *sell_shell;
   GtkTreeSelection *change_selection;
-  GtkWidget *rename_shell, *rename_input;
+  GtkWidget *rename_shell;
 
   GtkWidget *show_units_command;
   GtkWidget *prev_command;
@@ -221,8 +231,11 @@ static void city_dialog_map_create(struct city_dialog *pdialog,
 static void city_dialog_map_recenter(GtkWidget *map_canvas_sw);
 
 static struct city_dialog *get_city_dialog(struct city *pcity);
-static gboolean keyboard_handler(GtkWidget *widget, GdkEvent *event,
-                                 struct city_dialog *pdialog);
+static gboolean citydlg_keyboard_handler(GtkEventControllerKey *controller,
+                                         guint keyval,
+                                         guint keycode,
+                                         GdkModifierType state,
+                                         gpointer data);
 
 static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
                                          GtkWidget **info_label);
@@ -251,35 +264,51 @@ static void city_dialog_update_prev_next(void);
 
 static void show_units_response(void *data);
 
-static gboolean supported_unit_callback(GtkWidget *w, GdkEvent *ev,
-                                        gpointer data);
-static gboolean present_unit_callback(GtkWidget *w, GdkEvent *ev,
-                                      gpointer data);
-static gboolean supported_unit_middle_callback(GtkWidget *w,
-                                               GdkEvent *ev,
-                                               gpointer data);
-static gboolean present_unit_middle_callback(GtkWidget *w,
-                                             GdkEvent *ev,
-                                             gpointer data);
+static gboolean supported_unit_callback(GtkGestureClick *gesture, int n_press,
+                                        double x, double y, gpointer data);
+static gboolean present_unit_callback(GtkGestureClick *gesture, int n_press,
+                                      double x, double y, gpointer data);
+static gboolean middle_supported_unit_release(GtkGestureClick *gesture, int n_press,
+                                              double x, double y, gpointer data);
+static gboolean right_supported_unit_release(GtkGestureClick *gesture, int n_press,
+                                             double x, double y, gpointer data);
+static gboolean middle_present_unit_release(GtkGestureClick *gesture, int n_press,
+                                            double x, double y, gpointer data);
+static gboolean right_present_unit_release(GtkGestureClick *gesture, int n_press,
+                                           double x, double y, gpointer data);
 
-static void unit_center_callback(GtkWidget *w, gpointer data);
-static void unit_activate_callback(GtkWidget *w, gpointer data);
-static void supported_unit_activate_close_callback(GtkWidget *w,
+static void close_citydlg_unit_popover(struct city_dialog *pdialog);
+
+static void unit_center_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data);
+static void unit_activate_callback(GSimpleAction *action, GVariant *parameter,
+                                   gpointer data);
+static void supported_unit_activate_close_callback(GSimpleAction *action,
+                                                   GVariant *parameter,
                                                    gpointer data);
-static void present_unit_activate_close_callback(GtkWidget *w,
+static void present_unit_activate_close_callback(GSimpleAction *action,
+                                                 GVariant *parameter,
                                                  gpointer data);
-static void unit_load_callback(GtkWidget * w, gpointer data);
-static void unit_unload_callback(GtkWidget * w, gpointer data);
-static void unit_sentry_callback(GtkWidget * w, gpointer data);
-static void unit_fortify_callback(GtkWidget * w, gpointer data);
-static void unit_disband_callback(GtkWidget * w, gpointer data);
-static void unit_homecity_callback(GtkWidget * w, gpointer data);
-static void unit_upgrade_callback(GtkWidget * w, gpointer data);
-
-static gboolean citizens_callback(GtkWidget *w, GdkEvent *ev,
+static void unit_load_callback(GSimpleAction *action, GVariant *parameter,
+                               gpointer data);
+static void unit_unload_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data);
+static void unit_sentry_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data);
+static void unit_fortify_callback(GSimpleAction *action, GVariant *parameter,
                                   gpointer data);
-static gboolean button_down_citymap(GtkWidget *w, GdkEvent *ev,
-                                    gpointer data);
+static void unit_disband_callback(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data);
+static void unit_homecity_callback(GSimpleAction *action, GVariant *parameter,
+                                   gpointer data);
+static void unit_upgrade_callback(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data);
+static gboolean citizens_callback(GtkGestureClick *gesture, int n_press,
+                                  double x, double y, gpointer data);
+static gboolean left_button_down_citymap(GtkGestureClick *gesture, int n_press,
+                                         double x, double y, gpointer data);
+static gboolean right_button_down_citymap(GtkGestureClick *gesture, int n_press,
+                                          double x, double y, gpointer data);
 static void draw_map_canvas(struct city_dialog *pdialog);
 
 static void buy_callback(GtkWidget * w, gpointer data);
@@ -372,30 +401,29 @@ static struct city_dialog *get_city_dialog(struct city *pcity)
   }
 
   dialog_list_iterate(dialog_list, pdialog) {
-    if (pdialog->pcity == pcity)
+    if (pdialog->pcity == pcity) {
       return pdialog;
-  }
-  dialog_list_iterate_end;
+    }
+  } dialog_list_iterate_end;
+
   return NULL;
 }
 
 /***********************************************************************//**
-  Redraw map canvas on expose.
+  Redraw map canvas.
 ***************************************************************************/
-static gboolean canvas_exposed_cb(GtkWidget *w, cairo_t *cr,
-                                  gpointer data)
+static void canvas_draw_cb(GtkDrawingArea *w, cairo_t *cr,
+                           int width, int height, gpointer data)
 {
   struct city_dialog *pdialog = data;
 
   cairo_scale(cr, CITYMAP_SCALE, CITYMAP_SCALE);
   cairo_set_source_surface(cr, pdialog->map_canvas_store_unscaled, 0, 0);
-  if (!gtk_widget_get_sensitive(pdialog->overview.map_canvas.darea)) {
+  if (cma_is_city_under_agent(pdialog->pcity, NULL)) {
     cairo_paint_with_alpha(cr, 0.5);
   } else {
     cairo_paint(cr);
   }
-
-  return TRUE;
 }
 
 /***********************************************************************//**
@@ -405,24 +433,34 @@ static void city_dialog_map_create(struct city_dialog *pdialog,
                                    struct city_map_canvas *cmap_canvas)
 {
   GtkWidget *sw, *darea;
+  GtkGesture *gesture;
+  GtkEventController *controller;
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(sw),
                                             CITYMAP_WIDTH);
   gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sw),
                                              CITYMAP_HEIGHT);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_NONE);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), FALSE);
 
   darea = gtk_drawing_area_new();
   gtk_widget_set_size_request(darea, CITYMAP_WIDTH, CITYMAP_HEIGHT);
-  g_signal_connect(darea, "button-press-event",
-                   G_CALLBACK(button_down_citymap), pdialog);
-  g_signal_connect(darea, "draw",
-                   G_CALLBACK(canvas_exposed_cb), pdialog);
-  gtk_container_add(GTK_CONTAINER(sw), darea);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(darea),
+                                 canvas_draw_cb, pdialog, NULL);
+
+  controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+  g_signal_connect(controller, "pressed",
+                   G_CALLBACK(left_button_down_citymap), pdialog);
+  gtk_widget_add_controller(darea, controller);
+  gesture = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+  controller = GTK_EVENT_CONTROLLER(gesture);
+  g_signal_connect(controller, "pressed",
+                   G_CALLBACK(right_button_down_citymap), pdialog);
+  gtk_widget_add_controller(darea, controller);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), darea);
 
   /* save all widgets for the city map */
   cmap_canvas->sw = sw;
@@ -501,8 +539,8 @@ void real_city_dialog_refresh(struct city *pcity)
     }
 
     gtk_widget_set_sensitive(pdialog->show_units_command,
-			     can_client_issue_orders() &&
-			     have_present_units);
+                             can_client_issue_orders()
+                             && have_present_units);
   } else {
     /* Set the buttons we do not want live while a Diplomat investigates */
     gtk_widget_set_sensitive(pdialog->show_units_command, FALSE);
@@ -591,16 +629,15 @@ void popdown_all_city_dialogs(void)
 /***********************************************************************//**
   Keyboard handler for city dialog
 ***************************************************************************/
-static gboolean keyboard_handler(GtkWidget *widget, GdkEvent *event,
-                                 struct city_dialog *pdialog)
+static gboolean citydlg_keyboard_handler(GtkEventControllerKey *controller,
+                                         guint keyval,
+                                         guint keycode,
+                                         GdkModifierType state,
+                                         gpointer data)
 {
-  GdkModifierType state;
+  struct city_dialog *pdialog = (struct city_dialog *)data;
 
-  gdk_event_get_state(event, &state);
   if (state & GDK_CONTROL_MASK) {
-    guint keyval;
-
-    gdk_event_get_keyval(event, &keyval);
     switch (keyval) {
     case GDK_KEY_Left:
       gtk_notebook_prev_page(GTK_NOTEBOOK(pdialog->notebook));
@@ -619,102 +656,72 @@ static gboolean keyboard_handler(GtkWidget *widget, GdkEvent *event,
 }
 
 /***********************************************************************//**
-  Destroy info popup dialog when button released
-***************************************************************************/
-static gboolean show_info_button_release(GtkWidget *w, GdkEvent *ev,
-                                         gpointer data)
-{
-  gtk_grab_remove(w);
-  gdk_seat_ungrab(gdk_device_get_seat(gdk_event_get_device(ev)));
-  gtk_widget_destroy(w);
-
-  return FALSE;
-}
-
-enum { FIELD_FOOD, FIELD_SHIELD, FIELD_TRADE, FIELD_GOLD, FIELD_LUXURY,
-       FIELD_SCIENCE, FIELD_GRANARY, FIELD_GROWTH, FIELD_CORRUPTION,
-       FIELD_WASTE, FIELD_CULTURE, FIELD_POLLUTION, FIELD_ILLNESS
-};
-
-/***********************************************************************//**
   Popup info dialog
 ***************************************************************************/
-static gboolean show_info_popup(GtkWidget *w, GdkEvent *ev,
-                                gpointer data)
+static gboolean show_info_popup(GtkGestureClick *gesture, int n_press,
+                                double x, double y, gpointer data)
 {
+  GtkWidget *w = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   struct city_dialog *pdialog = g_object_get_data(G_OBJECT(w), "pdialog");
-  guint button;
+  GtkWidget *p, *label;
+  char buf[1024];
 
-  gdk_event_get_button(ev, &button);
-  if (button == 1) {
-    GtkWidget *p, *label, *frame;
-    char buf[1024];
-
-    switch (GPOINTER_TO_UINT(data)) {
-    case FIELD_FOOD:
-      get_city_dialog_output_text(pdialog->pcity, O_FOOD, buf, sizeof(buf));
-      break;
-    case FIELD_SHIELD:
-      get_city_dialog_output_text(pdialog->pcity, O_SHIELD,
-				  buf, sizeof(buf));
-      break;
-    case FIELD_TRADE:
-      get_city_dialog_output_text(pdialog->pcity, O_TRADE, buf, sizeof(buf));
-      break;
-    case FIELD_GOLD:
-      get_city_dialog_output_text(pdialog->pcity, O_GOLD, buf, sizeof(buf));
-      break;
-    case FIELD_SCIENCE:
-      get_city_dialog_output_text(pdialog->pcity, O_SCIENCE,
-				  buf, sizeof(buf));
-      break;
-    case FIELD_LUXURY:
-      get_city_dialog_output_text(pdialog->pcity, O_LUXURY,
-				  buf, sizeof(buf));
-      break;
-    case FIELD_CULTURE:
-      get_city_dialog_culture_text(pdialog->pcity, buf, sizeof(buf));
-      break;
-    case FIELD_POLLUTION:
-      get_city_dialog_pollution_text(pdialog->pcity, buf, sizeof(buf));
-      break;
-    case FIELD_ILLNESS:
-      get_city_dialog_illness_text(pdialog->pcity, buf, sizeof(buf));
-      break;
-    default:
-      return TRUE;
-    }
-
-    p = gtk_window_new(GTK_WINDOW_POPUP);
-    gtk_widget_set_name(p, "Freeciv");
-    gtk_widget_set_margin_start(p, 2);
-    gtk_widget_set_margin_end(p, 2);
-    gtk_widget_set_margin_top(p, 2);
-    gtk_widget_set_margin_bottom(p, 2);
-    gtk_window_set_transient_for(GTK_WINDOW(p), GTK_WINDOW(pdialog->shell));
-    gtk_window_set_position(GTK_WINDOW(p), GTK_WIN_POS_MOUSE);
-
-    frame = gtk_frame_new(NULL);
-    gtk_container_add(GTK_CONTAINER(p), frame);
-
-    label = gtk_label_new(buf);
-    gtk_widget_set_name(label, "city_info_label");
-    gtk_widget_set_margin_start(label, 4);
-    gtk_widget_set_margin_end(label, 4);
-    gtk_widget_set_margin_top(label, 4);
-    gtk_widget_set_margin_bottom(label, 4);
-    gtk_container_add(GTK_CONTAINER(frame), label);
-    gtk_widget_show(p);
-
-    gdk_seat_grab(gdk_device_get_seat(gdk_event_get_device(ev)),
-                  gtk_widget_get_window(p),
-                  GDK_SEAT_CAPABILITY_ALL_POINTING,
-                  TRUE, NULL, (GdkEvent *)ev, NULL, NULL);
-    gtk_grab_add(p);
-
-    g_signal_connect_after(p, "button_release_event",
-                           G_CALLBACK(show_info_button_release), NULL);
+  switch (GPOINTER_TO_UINT(data)) {
+  case INFO_SIZE:
+    fc_snprintf(buf, sizeof(buf), _("Population: %d, Specialists: %d"),
+                pdialog->pcity->size, city_specialists(pdialog->pcity));
+    break;
+  case INFO_FOOD:
+    get_city_dialog_output_text(pdialog->pcity, O_FOOD, buf, sizeof(buf));
+    break;
+  case INFO_SHIELD:
+    get_city_dialog_output_text(pdialog->pcity, O_SHIELD,
+                                buf, sizeof(buf));
+    break;
+  case INFO_TRADE:
+    get_city_dialog_output_text(pdialog->pcity, O_TRADE, buf, sizeof(buf));
+    break;
+  case INFO_GOLD:
+    get_city_dialog_output_text(pdialog->pcity, O_GOLD, buf, sizeof(buf));
+    break;
+  case INFO_SCIENCE:
+    get_city_dialog_output_text(pdialog->pcity, O_SCIENCE,
+                                buf, sizeof(buf));
+    break;
+  case INFO_LUXURY:
+    get_city_dialog_output_text(pdialog->pcity, O_LUXURY,
+                                buf, sizeof(buf));
+    break;
+  case INFO_CULTURE:
+    get_city_dialog_culture_text(pdialog->pcity, buf, sizeof(buf));
+    break;
+  case INFO_POLLUTION:
+    get_city_dialog_pollution_text(pdialog->pcity, buf, sizeof(buf));
+    break;
+  case INFO_ILLNESS:
+    get_city_dialog_illness_text(pdialog->pcity, buf, sizeof(buf));
+    break;
+  case INFO_AIRLIFT:
+    get_city_dialog_airlift_text(pdialog->pcity, buf, sizeof(buf));
+    break;
+  default:
+    return TRUE;
   }
+
+  p = gtk_popover_new();
+
+  gtk_widget_set_parent(p, w);
+
+  label = gtk_label_new(buf);
+  gtk_widget_set_name(label, "city_label");
+  gtk_widget_set_margin_start(label, 4);
+  gtk_widget_set_margin_end(label, 4);
+  gtk_widget_set_margin_top(label, 4);
+  gtk_widget_set_margin_bottom(label, 4);
+
+  gtk_popover_set_child(GTK_POPOVER(p), label);
+
+  gtk_popover_popup(GTK_POPOVER(p));
 
   return TRUE;
 }
@@ -729,7 +736,9 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
   int i;
   GtkWidget *table, *label;
 
-  static const char *output_label[NUM_INFO_FIELDS] = { N_("Food:"),
+  static const char *output_label[NUM_INFO_FIELDS] = {
+    N_("Size:"),
+    N_("Food:"),
     N_("Prod:"),
     N_("Trade:"),
     N_("Gold:"),
@@ -741,27 +750,35 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
     N_("Waste:"),
     N_("Culture:"),
     N_("Pollution:"),
-    N_("Plague Risk:"),
-    N_("Tech Stolen:")
+    N_("Plague risk:"),
+    N_("Tech Stolen:"),
+    N_("Airlift:"),
   };
   static bool output_label_done;
+  GtkEventController *controller;
 
   table = gtk_grid_new();
-  g_object_set(table, "margin", 4, NULL);
+  gtk_widget_set_margin_bottom(table, 4);
+  gtk_widget_set_margin_end(table, 4);
+  gtk_widget_set_margin_start(table, 4);
+  gtk_widget_set_margin_top(table, 4);
 
   intl_slist(ARRAY_SIZE(output_label), output_label, &output_label_done);
 
   for (i = 0; i < NUM_INFO_FIELDS; i++) {
     label = gtk_label_new(output_label[i]);
     switch (i) {
-      case 2:
-      case 5:
-      case 7:
+    case INFO_SIZE:
+    case INFO_TRADE:
+    case INFO_SCIENCE:
+    case INFO_GROWTH:
         gtk_widget_set_margin_bottom(label, 5);
         break;
-      case 3:
-      case 6:
-      case 8:
+
+    case INFO_FOOD:
+    case INFO_GOLD:
+    case INFO_GRANARY:
+    case INFO_CORRUPTION:
         gtk_widget_set_margin_top(label, 5);
         break;
       default:
@@ -775,22 +792,27 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
 
     label = gtk_label_new("");
     switch (i) {
-      case 2:
-      case 5:
-      case 7:
+    case INFO_TRADE:
+    case INFO_SCIENCE:
+    case INFO_GROWTH:
         gtk_widget_set_margin_bottom(label, 5);
         break;
-      case 3:
-      case 6:
-      case 8:
+
+    case INFO_GOLD:
+    case INFO_GRANARY:
+    case INFO_CORRUPTION:
         gtk_widget_set_margin_top(label, 5);
         break;
       default:
         break;
     }
+
     g_object_set_data(G_OBJECT(label), "pdialog", pdialog);
-    g_signal_connect(label, "button_press_event",
-	G_CALLBACK(show_info_popup), GUINT_TO_POINTER(i));
+
+    controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+    g_signal_connect(controller, "pressed",
+                     G_CALLBACK(show_info_popup), GUINT_TO_POINTER(i));
+    gtk_widget_add_controller(label, controller);
 
     info_label[i] = label;
     gtk_widget_set_name(label, "city_label");	/* ditto */
@@ -800,6 +822,43 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
     gtk_grid_attach(GTK_GRID(table), label, 1, i, 1, 1);
   }
 
+  /*
+   * Allow special highlighting of emergencies for granary etc by
+   * city_dialog_update_information().
+   */
+  {
+    /* This will persist, and can be shared between overview and happiness
+     * pages. */
+    static GtkCssProvider *emergency_provider = NULL;
+
+    if (emergency_provider == NULL) {
+      emergency_provider = gtk_css_provider_new();
+
+      gtk_css_provider_load_from_data(emergency_provider,
+                                      ".emergency {\n"
+                                      "  color: rgba(255, 0.0, 0.0, 255);\n"
+                                      "}",
+                                      -1);
+    }
+
+    /* GRANARY */
+    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[INFO_GRANARY]),
+                                   GTK_STYLE_PROVIDER(emergency_provider),
+                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    /* GROWTH */
+    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[INFO_GROWTH]),
+                                   GTK_STYLE_PROVIDER(emergency_provider),
+                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    /* POLLUTION */
+    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[INFO_POLLUTION]),
+                                   GTK_STYLE_PROVIDER(emergency_provider),
+                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    /* ILLNESS */
+    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[INFO_ILLNESS]),
+                                   GTK_STYLE_PROVIDER(emergency_provider),
+                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  }
+
   gtk_widget_show(table);
 
   return table;
@@ -807,34 +866,38 @@ static GtkWidget *create_city_info_table(struct city_dialog *pdialog,
 
 /***********************************************************************//**
   Create main citydlg map
+
+  Map frame will be placed to top left (col, row) position of the grid.
 ***************************************************************************/
 static void create_citydlg_main_map(struct city_dialog *pdialog,
-                                    GtkWidget *container)
+                                    GtkWidget *grid, int col, int row)
 {
   GtkWidget *frame;
 
   frame = gtk_frame_new(_("City map"));
   gtk_widget_set_size_request(frame, CITY_MAP_MIN_SIZE_X,
                               CITY_MAP_MIN_SIZE_Y);
-  gtk_container_add(GTK_CONTAINER(container), frame);
+  gtk_grid_attach(GTK_GRID(grid), frame, col, row, 1, 1);
 
   city_dialog_map_create(pdialog, &pdialog->overview.map_canvas);
-  gtk_container_add(GTK_CONTAINER(frame), pdialog->overview.map_canvas.sw);
+  gtk_frame_set_child(GTK_FRAME(frame), pdialog->overview.map_canvas.sw);
 }
 
 /***********************************************************************//**
   Create improvements list
 ***************************************************************************/
-static GtkWidget *create_citydlg_improvement_list(struct city_dialog *pdialog,
-                                                  GtkWidget *vbox)
+static GtkWidget *create_citydlg_improvement_list(struct city_dialog *pdialog)
 {
   GtkWidget *view;
   GtkListStore *store;
   GtkCellRenderer *rend;
 
   /* improvements */
-  store = gtk_list_store_new(5, G_TYPE_POINTER, GDK_TYPE_PIXBUF,
-                             G_TYPE_STRING, G_TYPE_INT, G_TYPE_BOOLEAN);
+  /* gtk list store columns: 0 - sell value, 1 - sprite,
+  2 - description, 3 - upkeep, 4 - is redundant, 5 - tooltip */
+  store = gtk_list_store_new(6, G_TYPE_POINTER, GDK_TYPE_PIXBUF,
+                             G_TYPE_STRING, G_TYPE_INT, G_TYPE_BOOLEAN,
+                             G_TYPE_STRING);
 
   view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
   gtk_widget_set_hexpand(view, TRUE);
@@ -843,9 +906,6 @@ static GtkWidget *create_citydlg_improvement_list(struct city_dialog *pdialog,
   gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(view), FALSE);
   gtk_widget_set_name(view, "small_font");
   pdialog->overview.improvement_list = view;
-
-  gtk_widget_set_tooltip_markup(view,
-                                _("Press <b>ENTER</b> or double-click to sell an improvement."));
 
   rend = gtk_cell_renderer_pixbuf_new();
   gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(view), -1, NULL,
@@ -859,6 +919,8 @@ static GtkWidget *create_citydlg_improvement_list(struct city_dialog *pdialog,
   gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(view), -1, NULL,
                                               rend, "text", 3,
                                               "strikethrough", 4, NULL);
+
+  gtk_tree_view_set_tooltip_column(GTK_TREE_VIEW(view), 5);
 
   g_signal_connect(view, "row_activated", G_CALLBACK(impr_callback),
                    pdialog);
@@ -885,13 +947,16 @@ static GtkWidget *create_citydlg_improvement_list(struct city_dialog *pdialog,
 static void create_and_append_overview_page(struct city_dialog *pdialog)
 {
   GtkWidget *page, *bottom;
-  GtkWidget *hbox, *right, *vbox, *frame, *table;
+  GtkWidget *right, *frame, *table;
   GtkWidget *label, *sw, *view, *bar, *production_combo;
   GtkCellRenderer *rend;
   GtkListStore *production_store;
   /* TRANS: Overview tab in city dialog */
   const char *tab_title = _("_Overview");
   int unit_height = tileset_unit_with_upkeep_height(tileset);
+  int page_row = 0;
+  int bottom_col = 0;
+  int right_row = 0;
 
   /* main page */
   page = gtk_grid_new();
@@ -906,40 +971,52 @@ static void create_and_append_overview_page(struct city_dialog *pdialog)
 
   if (!low_citydlg) {
     GtkWidget *middle;
+    GtkWidget *vgrid;
+    GtkWidget *hgrid;
+    int middle_col = 0;
+    int grid_row = 0;
+    int grid_col = 0;
 
     /* middle: city map, improvements */
     middle = gtk_grid_new();
     gtk_grid_set_column_spacing(GTK_GRID(middle), 6);
-    gtk_container_add(GTK_CONTAINER(page), middle);
+    gtk_grid_attach(GTK_GRID(page), middle, 0, page_row++, 1, 1);
 
     /* city map */
-    create_citydlg_main_map(pdialog, middle);
+    create_citydlg_main_map(pdialog, middle, middle_col++, 0);
 
     /* improvements */
-    vbox = gtk_grid_new();
-    gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+    vgrid = gtk_grid_new();
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                    GTK_ORIENTATION_VERTICAL);
-    gtk_container_add(GTK_CONTAINER(middle), vbox);
+    gtk_grid_attach(GTK_GRID(middle), vgrid, middle_col++, 0, 1, 1);
 
-    view = create_citydlg_improvement_list(pdialog, middle);
+    view = create_citydlg_improvement_list(pdialog);
 
     label = g_object_new(GTK_TYPE_LABEL, "label", _("Production:"),
                          "xalign", 0.0, "yalign", 0.5, NULL);
-    gtk_container_add(GTK_CONTAINER(vbox), label);
+    gtk_grid_attach(GTK_GRID(vgrid), label, 0, grid_row++, 1, 1);
 
-    hbox = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(hbox), 10);
-    gtk_container_add(GTK_CONTAINER(vbox), hbox);
+    hgrid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(hgrid), 10);
+    gtk_grid_attach(GTK_GRID(vgrid), hgrid, 0, grid_row++, 1, 1);
 
     production_store = gtk_list_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING,
                                           G_TYPE_INT, G_TYPE_BOOLEAN);
     pdialog->overview.change_production_store = production_store;
 
+    bar = gtk_progress_bar_new();
+    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(bar), TRUE);
+    pdialog->overview.production_bar = bar;
+    gtk_grid_attach(GTK_GRID(hgrid), bar, grid_col++, 0, 1, 1);
+
+    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(bar), _("%d/%d %d turns"));
+
     production_combo =
       gtk_combo_box_new_with_model(GTK_TREE_MODEL(production_store));
     gtk_widget_set_hexpand(production_combo, TRUE);
     pdialog->overview.production_combo = production_combo;
-    gtk_container_add(GTK_CONTAINER(hbox), production_combo);
+    gtk_grid_attach(GTK_GRID(hgrid), production_combo, grid_col++, 0, 1, 1);
     g_object_unref(production_store);
     g_signal_connect(production_combo, "changed",
                      G_CALLBACK(change_production_callback), pdialog);
@@ -956,17 +1033,10 @@ static void create_and_append_overview_page(struct city_dialog *pdialog)
     gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(production_combo),
                                    rend, "text", 1, "strikethrough", 3, NULL);
 
-    bar = gtk_progress_bar_new();
-    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(bar), TRUE);
-    pdialog->overview.production_bar = bar;
-    gtk_container_add(GTK_CONTAINER(production_combo), bar);
-    gtk_combo_box_set_wrap_width(GTK_COMBO_BOX(production_combo), 3);
-
-    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(bar), _("%d/%d %d turns"));
-
     pdialog->overview.buy_command
       = icon_label_button_new("system-run", _("_Buy"));
-    gtk_container_add(GTK_CONTAINER(hbox), GTK_WIDGET(pdialog->overview.buy_command));
+    gtk_grid_attach(GTK_GRID(hgrid), GTK_WIDGET(pdialog->overview.buy_command),
+                    grid_col++, 0, 1, 1);
     g_signal_connect(pdialog->overview.buy_command, "clicked",
                      G_CALLBACK(buy_callback), pdialog);
 
@@ -974,16 +1044,15 @@ static void create_and_append_overview_page(struct city_dialog *pdialog)
                          "mnemonic-widget", view,
                          "label", _("I_mprovements:"),
                          "xalign", 0.0, "yalign", 0.5, NULL);
-    gtk_container_add(GTK_CONTAINER(vbox), label);
+    gtk_grid_attach(GTK_GRID(vgrid), label, 0, grid_row++, 1, 1);
 
-    sw = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                        GTK_SHADOW_ETCHED_IN);
+    sw = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_container_add(GTK_CONTAINER(vbox), sw);
+    gtk_grid_attach(GTK_GRID(vgrid), sw, 0, grid_row++, 1, 1);
 
-    gtk_container_add(GTK_CONTAINER(sw), view);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
   } else {
     pdialog->overview.buy_command = NULL;
     pdialog->overview.production_bar = NULL;
@@ -994,73 +1063,59 @@ static void create_and_append_overview_page(struct city_dialog *pdialog)
   /* bottom: info, units */
   bottom = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(bottom), 6);
-  gtk_container_add(GTK_CONTAINER(page), bottom);
+  gtk_grid_attach(GTK_GRID(page), bottom, 0, page_row++, 1, 1);
 
   /* info */
   frame = gtk_frame_new(_("Info"));
-  gtk_container_add(GTK_CONTAINER(bottom), frame);
+  gtk_grid_attach(GTK_GRID(bottom), frame, bottom_col++, 0, 1, 1);
 
   table = create_city_info_table(pdialog,
                                  pdialog->overview.info_label);
   gtk_widget_set_halign(table, GTK_ALIGN_CENTER);
   gtk_widget_set_valign(table, GTK_ALIGN_CENTER);
-  gtk_container_add(GTK_CONTAINER(frame), table);
+  gtk_frame_set_child(GTK_FRAME(frame), table);
 
   /* right: present and supported units (overview page) */
   right = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(right),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(bottom), right);
+  gtk_grid_attach(GTK_GRID(bottom), right, bottom_col++, 0, 1, 1);
 
   pdialog->overview.supported_units_frame = gtk_frame_new("");
-  gtk_container_add(GTK_CONTAINER(right),
-                    pdialog->overview.supported_units_frame);
+  gtk_grid_attach(GTK_GRID(right), pdialog->overview.supported_units_frame,
+                  0, right_row++, 1, 1);
   pdialog->overview.present_units_frame = gtk_frame_new("");
-  gtk_container_add(GTK_CONTAINER(right),
-                    pdialog->overview.present_units_frame);
+  gtk_grid_attach(GTK_GRID(right), pdialog->overview.present_units_frame,
+                  0, right_row++, 1, 1);
 
   /* supported units */
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_widget_set_hexpand(sw, TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_NONE);
-  gtk_container_add(GTK_CONTAINER(pdialog->overview.supported_units_frame),
-                                  sw);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), FALSE);
+  gtk_frame_set_child(GTK_FRAME(pdialog->overview.supported_units_frame),
+                      sw);
 
 
-  table = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(table), 2);
+  table = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_widget_set_size_request(table, -1, unit_height);
-  gtk_container_add(GTK_CONTAINER(sw), table);
-
-  gtk_container_set_focus_hadjustment(GTK_CONTAINER(table),
-    gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(sw)));
-  gtk_container_set_focus_vadjustment(GTK_CONTAINER(table),
-    gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(sw)));
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), table);
 
   pdialog->overview.supported_unit_table = table;
   unit_node_vector_init(&pdialog->overview.supported_units);
 
   /* present units */
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_widget_set_hexpand(sw, TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_NONE);
-  gtk_container_add(GTK_CONTAINER(pdialog->overview.present_units_frame), sw);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), FALSE);
+  gtk_frame_set_child(GTK_FRAME(pdialog->overview.present_units_frame), sw);
 
-  table = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(table), 2);
+  table = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_widget_set_size_request(table, -1, unit_height);
-  gtk_container_add(GTK_CONTAINER(sw), table);
-
-  gtk_container_set_focus_hadjustment(GTK_CONTAINER(table),
-    gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(sw)));
-  gtk_container_set_focus_vadjustment(GTK_CONTAINER(table),
-    gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(sw)));
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), table);
 
   pdialog->overview.present_unit_table = table;
   unit_node_vector_init(&pdialog->overview.present_units);
@@ -1078,6 +1133,7 @@ static void create_and_append_map_page(struct city_dialog *pdialog)
     GtkWidget *page;
     GtkWidget *label;
     const char *tab_title = _("Citymap");
+    int page_row = 0;
 
     page = gtk_grid_new();
     gtk_orientable_set_orientation(GTK_ORIENTABLE(page),
@@ -1089,7 +1145,7 @@ static void create_and_append_map_page(struct city_dialog *pdialog)
     label = gtk_label_new_with_mnemonic(tab_title);
     gtk_notebook_append_page(GTK_NOTEBOOK(pdialog->notebook), page, label);
 
-    create_citydlg_main_map(pdialog, page);
+    create_citydlg_main_map(pdialog, page, 0, page_row++);
 
     gtk_widget_show(page);
   }
@@ -1098,73 +1154,64 @@ static void create_and_append_map_page(struct city_dialog *pdialog)
 /***********************************************************************//**
   Something dragged to worklist dialog.
 ***************************************************************************/
-static void target_drag_data_received(GtkWidget *w,
-                                      GdkDragContext *context,
-                                      gint x, gint y,
-                                      GtkSelectionData *data,
-                                      guint info, guint time,
-                                      gpointer user_data)
+static gboolean target_drag_data_received(GtkDropTarget *target,
+                                          const GValue *value,
+                                          double x, double y, gpointer data)
 {
-  struct city_dialog *pdialog = (struct city_dialog *) user_data;
-  GtkTreeModel *model;
-  GtkTreePath *path;
+  struct city_dialog *pdialog = (struct city_dialog *) data;
+  cid id;
+  struct universal univ;
 
   if (NULL != client.conn.playing
       && city_owner(pdialog->pcity) != client.conn.playing) {
-    gtk_drag_finish(context, FALSE, FALSE, time);
+    return FALSE;
   }
 
-  if (gtk_tree_get_row_drag_data(data, &model, &path)) {
-    GtkTreeIter it;
+  id = g_value_get_int(value);
+  univ = cid_production(id);
 
-    if (gtk_tree_model_get_iter(model, &it, path)) {
-      cid id;
-      struct universal univ;
+  city_change_production(pdialog->pcity, &univ);
 
-      gtk_tree_model_get(model, &it, 0, &id, -1);
-      univ = cid_production(id);
-      city_change_production(pdialog->pcity, &univ);
-      gtk_drag_finish(context, TRUE, FALSE, time);
-    }
-    gtk_tree_path_free(path);
-  }
-
-  gtk_drag_finish(context, FALSE, FALSE, time);
+  return TRUE;
 }
 
 /***********************************************************************//**
   Create production page header - what tab this actually is,
   depends on screen size and layout.
 ***************************************************************************/
-static void create_production_header(struct city_dialog *pdialog,
-                                     GtkContainer *contain)
+static int create_production_header(struct city_dialog *pdialog,
+                                    GtkWidget *grid, int row)
 {
-  GtkWidget *hbox, *bar;
+  GtkWidget *hgrid, *bar;
+  int grid_col = 0;
 
-  hbox = gtk_grid_new();
-  g_object_set(hbox, "margin", 2, NULL);
-  gtk_grid_set_column_spacing(GTK_GRID(hbox), 10);
-  gtk_container_add(contain, hbox);
+  hgrid = gtk_grid_new();
+  gtk_widget_set_margin_bottom(hgrid, 2);
+  gtk_widget_set_margin_end(hgrid, 2);
+  gtk_widget_set_margin_start(hgrid, 2);
+  gtk_widget_set_margin_top(hgrid, 2);
+  gtk_grid_set_column_spacing(GTK_GRID(hgrid), 10);
+  gtk_grid_attach(GTK_GRID(grid), hgrid, 0, row++, 1, 1);
 
   /* The label is set in city_dialog_update_building() */
   bar = gtk_progress_bar_new();
   gtk_widget_set_hexpand(bar, TRUE);
   gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(bar), TRUE);
   pdialog->production.production_bar = bar;
-  gtk_container_add(GTK_CONTAINER(hbox), bar);
+  gtk_grid_attach(GTK_GRID(hgrid), bar, grid_col++, 0, 1, 1);
   gtk_progress_bar_set_text(GTK_PROGRESS_BAR(bar), _("%d/%d %d turns"));
 
-  add_worklist_dnd_target(bar);
-
-  g_signal_connect(bar, "drag_data_received",
-                   G_CALLBACK(target_drag_data_received), pdialog);
+  add_worklist_dnd_target(bar, target_drag_data_received, pdialog);
 
   pdialog->production.buy_command
     = icon_label_button_new("system-run", _("_Buy"));
-  gtk_container_add(GTK_CONTAINER(hbox), GTK_WIDGET(pdialog->production.buy_command));
+  gtk_grid_attach(GTK_GRID(hgrid), GTK_WIDGET(pdialog->production.buy_command),
+                  grid_col++, 0, 1, 1);
 
   g_signal_connect(pdialog->production.buy_command, "clicked",
                    G_CALLBACK(buy_callback), pdialog);
+
+  return row;
 }
 
 /***********************************************************************//**
@@ -1175,9 +1222,11 @@ static void create_and_append_buildings_page(struct city_dialog *pdialog)
   if (low_citydlg) {
     GtkWidget *page;
     GtkWidget *label;
-    GtkWidget *vbox;
+    GtkWidget *vgrid;
     GtkWidget *view;
     const char *tab_title = _("Buildings");
+    int page_row = 0;
+    int grid_row = 0;
 
     page = gtk_grid_new();
     gtk_orientable_set_orientation(GTK_ORIENTABLE(page),
@@ -1188,30 +1237,31 @@ static void create_and_append_buildings_page(struct city_dialog *pdialog)
     gtk_widget_set_margin_bottom(page, 8);
     label = gtk_label_new_with_mnemonic(tab_title);
 
-    create_production_header(pdialog, GTK_CONTAINER(page));
+    page_row = create_production_header(pdialog, page, page_row);
     gtk_notebook_append_page(GTK_NOTEBOOK(pdialog->notebook), page, label);
 
-    vbox = gtk_grid_new();
-    gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+    vgrid = gtk_grid_new();
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                    GTK_ORIENTATION_VERTICAL);
-    gtk_container_add(GTK_CONTAINER(page), vbox);
+    gtk_grid_attach(GTK_GRID(page), vgrid, 0, page_row++, 1, 1);
 
-    view = create_citydlg_improvement_list(pdialog, vbox);
+    view = create_citydlg_improvement_list(pdialog);
 
-    gtk_container_add(GTK_CONTAINER(vbox), view);
+    gtk_grid_attach(GTK_GRID(vgrid), view, 0, grid_row++, 1, 1);
 
     gtk_widget_show(page);
   }
 }
 
 /***********************************************************************//**
-                    **** Production Page **** 
+                    **** Production Page ****
 ***************************************************************************/
 static void create_and_append_worklist_page(struct city_dialog *pdialog)
 {
   const char *tab_title = _("P_roduction");
   GtkWidget *label = gtk_label_new_with_mnemonic(tab_title);
   GtkWidget *page, *editor;
+  int page_row = 0;
 
   page = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(page),
@@ -1228,17 +1278,20 @@ static void create_and_append_worklist_page(struct city_dialog *pdialog)
                          "label", _("Production:"),
                          "xalign", 0.0, "yalign", 0.5, NULL);
     pdialog->production.production_label = label;
-    gtk_container_add(GTK_CONTAINER(page), label);
+    gtk_grid_attach(GTK_GRID(page), label, 0, page_row++, 1, 1);
 
-    create_production_header(pdialog, GTK_CONTAINER(page));
+    page_row = create_production_header(pdialog, page, page_row);
   } else {
     pdialog->production.production_label = NULL;
   }
 
   editor = create_worklist();
-  g_object_set(editor, "margin", 6, NULL);
+  gtk_widget_set_margin_bottom(editor, 6);
+  gtk_widget_set_margin_end(editor, 6);
+  gtk_widget_set_margin_start(editor, 6);
+  gtk_widget_set_margin_top(editor, 6);
   reset_city_worklist(editor, pdialog->pcity);
-  gtk_container_add(GTK_CONTAINER(page), editor);
+  gtk_grid_attach(GTK_GRID(page), editor, 0, page_row++, 1, 1);
   pdialog->production.worklist = editor;
 
   gtk_widget_show(page);
@@ -1258,6 +1311,9 @@ static void create_and_append_happiness_page(struct city_dialog *pdialog)
 {
   GtkWidget *page, *label, *table, *right, *left, *frame;
   const char *tab_title = _("Happ_iness");
+  int page_col = 0;
+  int left_row = 0;
+  int right_row = 0;
 
   /* main page */
   page = gtk_grid_new();
@@ -1273,54 +1329,50 @@ static void create_and_append_happiness_page(struct city_dialog *pdialog)
   left = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(left),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(page), left);
+  gtk_grid_attach(GTK_GRID(page), left, page_col++, 0, 1, 1);
 
   if (!low_citydlg) {
     /* upper left: info */
     frame = gtk_frame_new(_("Info"));
-    gtk_container_add(GTK_CONTAINER(left), frame);
+    gtk_grid_attach(GTK_GRID(left), frame, 0, left_row++, 1, 1);
 
     table = create_city_info_table(pdialog,
                                    pdialog->happiness.info_label);
     gtk_widget_set_halign(table, GTK_ALIGN_CENTER);
-    gtk_container_add(GTK_CONTAINER(frame), table);
+    gtk_frame_set_child(GTK_FRAME(frame), table);
   }
 
   /* lower left: citizens */
   if (game.info.citizen_nationality) {
-    pdialog->happiness.citizens = gtk_grid_new();
-    gtk_orientable_set_orientation(
-        GTK_ORIENTABLE(pdialog->happiness.citizens),
-        GTK_ORIENTATION_VERTICAL);
-    gtk_container_add(GTK_CONTAINER(left), pdialog->happiness.citizens);
-    gtk_container_add(GTK_CONTAINER(pdialog->happiness.citizens),
-                       citizens_dialog_display(pdialog->pcity));
+    pdialog->happiness.citizens = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_grid_attach(GTK_GRID(left), pdialog->happiness.citizens,
+                    0, left_row++, 1, 1);
+    gtk_box_append(GTK_BOX(pdialog->happiness.citizens),
+                   citizens_dialog_display(pdialog->pcity));
   }
 
   /* right: city map, happiness */
   right = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(right),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(page), right);
+  gtk_grid_attach(GTK_GRID(page), right, page_col++, 0, 1, 1);
 
   if (!low_citydlg) {
     /* upper right: city map */
     frame = gtk_frame_new(_("City map"));
     gtk_widget_set_size_request(frame, CITY_MAP_MIN_SIZE_X,
                                 CITY_MAP_MIN_SIZE_Y);
-    gtk_container_add(GTK_CONTAINER(right), frame);
+    gtk_grid_attach(GTK_GRID(right), frame, 0, right_row++, 1, 1);
 
     city_dialog_map_create(pdialog, &pdialog->happiness.map_canvas);
-    gtk_container_add(GTK_CONTAINER(frame), pdialog->happiness.map_canvas.sw);
+    gtk_frame_set_child(GTK_FRAME(frame), pdialog->happiness.map_canvas.sw);
   }
 
   /* lower right: happiness */
-  pdialog->happiness.widget = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(pdialog->happiness.widget),
-                                 GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(right), pdialog->happiness.widget);
-  gtk_container_add(GTK_CONTAINER(pdialog->happiness.widget),
-                    get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
+  pdialog->happiness.widget = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_grid_attach(GTK_GRID(right), pdialog->happiness.widget, 0, right_row++, 1, 1);
+  gtk_box_append(GTK_BOX(pdialog->happiness.widget),
+                 get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
 
   /* show page */
   gtk_widget_show(page);
@@ -1334,28 +1386,29 @@ static void create_and_append_cma_page(struct city_dialog *pdialog)
   GtkWidget *page, *label;
   const char *tab_title = _("_Governor");
 
-  page = gtk_grid_new();
+  page = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 
   label = gtk_label_new_with_mnemonic(tab_title);
 
   gtk_notebook_append_page(GTK_NOTEBOOK(pdialog->notebook), page, label);
 
   pdialog->cma_editor = create_cma_dialog(pdialog->pcity, low_citydlg);
-  gtk_container_add(GTK_CONTAINER(page), pdialog->cma_editor->shell);
+  gtk_box_append(GTK_BOX(page), pdialog->cma_editor->shell);
 
   gtk_widget_show(page);
 }
 
 /***********************************************************************//**
-                    **** Misc. Settings Page **** 
+                    **** Misc. Settings Page ****
 ***************************************************************************/
 static void create_and_append_settings_page(struct city_dialog *pdialog)
 {
   int i;
-  GtkWidget *vbox2, *page, *frame, *label, *button;
+  GtkWidget *vgrid, *page, *frame, *label, *button;
   GtkSizeGroup *size;
-  GSList *group;
+  GtkWidget *group;
   const char *tab_title = _("_Settings");
+  int grid_row = 0;
 
   static const char *new_citizens_output_label[] = {
     N_("Luxury"),
@@ -1363,7 +1416,8 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
     N_("Gold")
   };
 
-  static const char *disband_label = N_("Disband if build settler at size 1");
+  static const char *disband_label
+    = N_("Allow unit production to disband city");
 
   static const char *misc_whichtab_label[NUM_PAGES] = {
     N_("Overview page"),
@@ -1387,9 +1441,9 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
   gtk_widget_set_margin_end(page, 8);
   gtk_widget_set_margin_top(page, 8);
   gtk_widget_set_margin_bottom(page, 8);
-  
+
   size = gtk_size_group_new(GTK_SIZE_GROUP_BOTH);
-  
+
   label = gtk_label_new_with_mnemonic(tab_title);
 
   gtk_notebook_append_page(GTK_NOTEBOOK(pdialog->notebook), page, label);
@@ -1399,22 +1453,24 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
   gtk_grid_attach(GTK_GRID(page), frame, 0, 0, 1, 1);
   gtk_size_group_add_widget(size, frame);
 
-  vbox2 = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox2),
+  vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(frame), vbox2);
+  gtk_frame_set_child(GTK_FRAME(frame), vgrid);
 
   intl_slist(ARRAY_SIZE(new_citizens_output_label), new_citizens_output_label,
              &new_citizens_label_done);
 
   group = NULL;
   for (i = 0; i < ARRAY_SIZE(new_citizens_output_label); i++) {
-    button = gtk_radio_button_new_with_mnemonic(group, new_citizens_output_label[i]);
+    button = gtk_check_button_new_with_mnemonic(new_citizens_output_label[i]);
+    gtk_check_button_set_group(GTK_CHECK_BUTTON(button),
+                               GTK_CHECK_BUTTON(group));
     pdialog->misc.new_citizens_radio[i] = button;
-    gtk_container_add(GTK_CONTAINER(vbox2), button);
+    gtk_grid_attach(GTK_GRID(vgrid), button, 0, grid_row++, 1, 1);
     g_signal_connect(button, "toggled",
 		     G_CALLBACK(cityopt_callback), pdialog);
-    group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
+    group = button;
   }
 
   /* next is the next-time-open radio group in the right column */
@@ -1422,22 +1478,25 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
   gtk_grid_attach(GTK_GRID(page), frame, 1, 0, 1, 1);
   gtk_size_group_add_widget(size, frame);
 
-  vbox2 = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox2),
+  vgrid = gtk_grid_new();
+  grid_row = 0;
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(frame), vbox2);
+  gtk_frame_set_child(GTK_FRAME(frame), vgrid);
 
   intl_slist(ARRAY_SIZE(misc_whichtab_label), misc_whichtab_label,
              &misc_whichtab_label_done);
-  
+
   group = NULL;
   for (i = 0; i < ARRAY_SIZE(misc_whichtab_label); i++) {
-    button = gtk_radio_button_new_with_mnemonic(group, misc_whichtab_label[i]);
+    button = gtk_check_button_new_with_mnemonic(misc_whichtab_label[i]);
+    gtk_check_button_set_group(GTK_CHECK_BUTTON(button),
+                               GTK_CHECK_BUTTON(group));
     pdialog->misc.whichtab_radio[i] = button;
-    gtk_container_add(GTK_CONTAINER(vbox2), button);
+    gtk_grid_attach(GTK_GRID(vgrid), button, 0, grid_row++, 1, 1);
     g_signal_connect(button, "toggled",
 		     G_CALLBACK(misc_whichtab_callback), GINT_TO_POINTER(i));
-    group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
+    group = button;
   }
 
   /* now we go back and fill the hbox rename */
@@ -1446,31 +1505,32 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
   gtk_widget_set_margin_bottom(frame, 12);
   gtk_grid_attach(GTK_GRID(page), frame, 0, 1, 1, 1);
 
-  vbox2 = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox2),
+  vgrid = gtk_grid_new();
+  grid_row = 0;
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(frame), vbox2);
+  gtk_frame_set_child(GTK_FRAME(frame), vgrid);
 
   button = gtk_button_new_with_mnemonic(_("R_ename..."));
   pdialog->misc.rename_command = button;
-  gtk_container_add(GTK_CONTAINER(vbox2), button);
+  gtk_grid_attach(GTK_GRID(vgrid), button, 0, grid_row++, 1, 1);
   g_signal_connect(button, "clicked",
 		   G_CALLBACK(rename_callback), pdialog);
 
   gtk_widget_set_sensitive(button, can_client_issue_orders());
-  
-  /* the disband-if-size-1 button */
+
+  /* the disband-city-on-unit-production button */
   button = gtk_check_button_new_with_mnemonic(_(disband_label));
   pdialog->misc.disband_on_settler = button;
-  gtk_container_add(GTK_CONTAINER(vbox2), button);
+  gtk_grid_attach(GTK_GRID(vgrid), button, 0, grid_row++, 1, 1);
   g_signal_connect(button, "toggled",
 		   G_CALLBACK(cityopt_callback), pdialog);
 
-  /* we choose which page to popup by default */
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON
-			       (pdialog->
-				misc.whichtab_radio[new_dialog_def_page]),
-			       TRUE);
+  /* We choose which page to popup by default */
+  gtk_check_button_set_active(GTK_CHECK_BUTTON
+                              (pdialog->
+                               misc.whichtab_radio[new_dialog_def_page]),
+                              TRUE);
 
   set_cityopt_values(pdialog);
 
@@ -1490,17 +1550,19 @@ static void create_and_append_settings_page(struct city_dialog *pdialog)
  +----------------------------+-------------------------------+
  | GtkWidget *top: Citizens   | city name                     |
  +----------------------------+-------------------------------+
- | <notebook tab>                                             |
+ | [notebook tab]                                             |
  +------------------------------------------------------------+
 ***************************************************************************/
 static struct city_dialog *create_city_dialog(struct city *pcity)
 {
   struct city_dialog *pdialog;
-
   GtkWidget *close_command;
   GtkWidget *vbox, *hbox, *cbox;
   int citizen_bar_width;
   int citizen_bar_height;
+  int ccol = 0;
+  GtkEventController *controller;
+  struct player *owner;
 
   if (!city_dialogs_have_been_initialised) {
     initialize_city_dialogs();
@@ -1508,37 +1570,33 @@ static struct city_dialog *create_city_dialog(struct city *pcity)
 
   pdialog = fc_malloc(sizeof(struct city_dialog));
   pdialog->pcity = pcity;
-  pdialog->buy_shell = NULL;
   pdialog->sell_shell = NULL;
   pdialog->rename_shell = NULL;
-  pdialog->happiness.map_canvas.sw = NULL;      /* make sure NULL if spy */
-  pdialog->happiness.map_canvas.darea = NULL;   /* ditto */
-  pdialog->happiness.citizens = NULL;           /* ditto */
+  pdialog->happiness.map_canvas.sw = NULL;      /* Make sure NULL if spy */
+  pdialog->happiness.map_canvas.darea = NULL;   /* Ditto */
+  pdialog->happiness.citizens = NULL;           /* Ditto */
+  pdialog->production.buy_command = NULL;
+  pdialog->production.production_label = NULL;
+  pdialog->production.production_bar = NULL;
   pdialog->cma_editor = NULL;
   pdialog->map_canvas_store_unscaled
     = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-            canvas_width, canvas_height);
+                                 canvas_width, canvas_height);
 
   pdialog->shell = gtk_dialog_new();
   gtk_window_set_title(GTK_WINDOW(pdialog->shell), city_name_get(pcity));
   setup_dialog(pdialog->shell, toplevel);
-  gtk_window_set_role(GTK_WINDOW(pdialog->shell), "city");
 
   g_signal_connect(pdialog->shell, "destroy",
-		   G_CALLBACK(city_destroy_callback), pdialog);
-  gtk_window_set_position(GTK_WINDOW(pdialog->shell), GTK_WIN_POS_MOUSE);
+                   G_CALLBACK(city_destroy_callback), pdialog);
   gtk_widget_set_name(pdialog->shell, "Freeciv");
 
   gtk_widget_realize(pdialog->shell);
 
-  /* keep the icon of the executable on Windows (see PR#36491) */
+  /* Keep the icon of the executable on Windows (see PR#36491) */
 #ifndef FREECIV_MSWINDOWS
   {
-    GdkPixbuf *pixbuf = sprite_get_pixbuf(get_icon_sprite(tileset, ICON_CITYDLG));
-
-    /* Only call this after tileset_load_tiles is called. */
-    gtk_window_set_icon(GTK_WINDOW(pdialog->shell), pixbuf);
-    g_object_unref(pixbuf);
+    gtk_window_set_icon_name(GTK_WINDOW(pdialog->shell), "citydlg");
   }
 #endif /* FREECIV_MSWINDOWS */
 
@@ -1547,59 +1605,67 @@ static struct city_dialog *create_city_dialog(struct city *pcity)
                               GUI_GTK_OPTION(citydlg_xsize),
                               GUI_GTK_OPTION(citydlg_ysize));
 
-  pdialog->popup_menu = gtk_menu_new();
+  pdialog->popover = NULL;
 
   vbox = gtk_dialog_get_content_area(GTK_DIALOG(pdialog->shell));
-  hbox = gtk_grid_new();
-  gtk_grid_set_column_homogeneous(GTK_GRID(hbox), TRUE);
-  gtk_container_add(GTK_CONTAINER(vbox), hbox);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_box_set_homogeneous(GTK_BOX(hbox), TRUE);
+  gtk_box_append(GTK_BOX(vbox), hbox);
 
   /**** Citizens bar here ****/
   cbox = gtk_grid_new();
-  gtk_container_add(GTK_CONTAINER(hbox), cbox);
+  gtk_box_append(GTK_BOX(hbox), cbox);
 
   citizen_bar_width = tileset_small_sprite_width(tileset) * NUM_CITIZENS_SHOWN;
   citizen_bar_height = tileset_small_sprite_height(tileset);
 
   pdialog->citizen_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                                        citizen_bar_width, citizen_bar_height);
-  pdialog->citizen_images = gtk_image_new();
+                                                        citizen_bar_width,
+                                                        citizen_bar_height);
+  pdialog->citizen_pics = gtk_picture_new();
 
-  gtk_widget_set_margin_start(pdialog->citizen_images, 2);
-  gtk_widget_set_margin_end(pdialog->citizen_images, 2);
-  gtk_widget_set_margin_top(pdialog->citizen_images, 2);
-  gtk_widget_set_margin_bottom(pdialog->citizen_images, 2);
-  gtk_widget_set_halign(pdialog->citizen_images, GTK_ALIGN_START);
-  gtk_widget_set_valign(pdialog->citizen_images, GTK_ALIGN_CENTER);
-  gtk_container_add(GTK_CONTAINER(cbox), pdialog->citizen_images);
-  g_signal_connect(G_OBJECT(pdialog->citizen_images), "button-press-event",
+  gtk_widget_set_margin_start(pdialog->citizen_pics, 2);
+  gtk_widget_set_margin_end(pdialog->citizen_pics, 2);
+  gtk_widget_set_margin_top(pdialog->citizen_pics, 2);
+  gtk_widget_set_margin_bottom(pdialog->citizen_pics, 2);
+  gtk_widget_set_size_request(pdialog->citizen_pics,
+                              citizen_bar_width, citizen_bar_height);
+  gtk_widget_set_halign(pdialog->citizen_pics, GTK_ALIGN_START);
+  gtk_widget_set_valign(pdialog->citizen_pics, GTK_ALIGN_CENTER);
+  gtk_grid_attach(GTK_GRID(cbox), pdialog->citizen_pics, ccol++, 0, 1, 1);
+
+  controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+  g_signal_connect(controller, "pressed",
                    G_CALLBACK(citizens_callback), pdialog);
+  gtk_widget_add_controller(pdialog->citizen_pics, controller);
 
   /**** City name label here ****/
   pdialog->name_label = gtk_label_new(NULL);
   gtk_widget_set_hexpand(pdialog->name_label, TRUE);
   gtk_widget_set_halign(pdialog->name_label, GTK_ALIGN_START);
   gtk_widget_set_valign(pdialog->name_label, GTK_ALIGN_CENTER);
-  gtk_container_add(GTK_CONTAINER(hbox), pdialog->name_label);
+  gtk_box_append(GTK_BOX(hbox), pdialog->name_label);
 
   /**** -Start of Notebook- ****/
 
   pdialog->notebook = gtk_notebook_new();
   gtk_notebook_set_tab_pos(GTK_NOTEBOOK(pdialog->notebook),
-			   GTK_POS_BOTTOM);
-  gtk_container_add(GTK_CONTAINER(vbox), pdialog->notebook);
+                           GTK_POS_BOTTOM);
+  gtk_box_append(GTK_BOX(vbox), pdialog->notebook);
 
   create_and_append_overview_page(pdialog);
   create_and_append_map_page(pdialog);
   create_and_append_buildings_page(pdialog);
-  create_and_append_worklist_page(pdialog);
 
-  /* only create these tabs if not a spy */
-  if (!client_has_player() || city_owner(pcity) == client_player()) {
+  owner = city_owner(pcity);
+
+  /* Only create these tabs if not a spy */
+  if (owner == client_player() || client_is_global_observer()) {
+    create_and_append_worklist_page(pdialog);
     create_and_append_happiness_page(pdialog);
   }
 
-  if (city_owner(pcity) == client_player()
+  if (owner == client_player()
       && !client_is_observer()) {
     create_and_append_cma_page(pdialog);
     create_and_append_settings_page(pdialog);
@@ -1610,7 +1676,7 @@ static struct city_dialog *create_city_dialog(struct city *pcity)
 
   /**** End of Notebook ****/
 
-  /* bottom buttons */
+  /* Bottom buttons */
 
   pdialog->show_units_command =
     gtk_dialog_add_button(GTK_DIALOG(pdialog->shell), _("_List present units..."), CDLGR_UNITS);
@@ -1618,27 +1684,27 @@ static struct city_dialog *create_city_dialog(struct city *pcity)
   g_signal_connect(GTK_DIALOG(pdialog->shell), "response",
                    G_CALLBACK(citydlg_response_callback), pdialog);
 
-  pdialog->prev_command = gtk_button_new_from_icon_name("go-previous", 0);
+  pdialog->prev_command = gtk_button_new_from_icon_name("go-previous");
   gtk_dialog_add_action_widget(GTK_DIALOG(pdialog->shell),
                                GTK_WIDGET(pdialog->prev_command), 1);
 
-  pdialog->next_command = gtk_button_new_from_icon_name("go-next", 0);
+  pdialog->next_command = gtk_button_new_from_icon_name("go-next");
   gtk_dialog_add_action_widget(GTK_DIALOG(pdialog->shell),
                                GTK_WIDGET(pdialog->next_command), 2);
 
-  if (city_owner(pcity) != client.conn.playing) {
+  if (owner != client_player()) {
     gtk_widget_set_sensitive(GTK_WIDGET(pdialog->prev_command), FALSE);
     gtk_widget_set_sensitive(GTK_WIDGET(pdialog->next_command), FALSE);
   }
 
   close_command = gtk_dialog_add_button(GTK_DIALOG(pdialog->shell),
-                                        _("Close"), GTK_RESPONSE_CLOSE);
+                                        _("_Close"), GTK_RESPONSE_CLOSE);
 
   gtk_dialog_set_default_response(GTK_DIALOG(pdialog->shell),
-	GTK_RESPONSE_CLOSE);
+                                  GTK_RESPONSE_CLOSE);
 
   g_signal_connect(close_command, "clicked",
-		   G_CALLBACK(close_callback), pdialog);
+                   G_CALLBACK(close_callback), pdialog);
 
   g_signal_connect(pdialog->prev_command, "clicked",
                    G_CALLBACK(switch_city_callback), pdialog);
@@ -1646,16 +1712,18 @@ static struct city_dialog *create_city_dialog(struct city *pcity)
   g_signal_connect(pdialog->next_command, "clicked",
                    G_CALLBACK(switch_city_callback), pdialog);
 
-  /* some other things we gotta do */
+  /* Some other things we gotta do */
 
-  g_signal_connect(pdialog->shell, "key_press_event",
-		   G_CALLBACK(keyboard_handler), pdialog);
+  controller = gtk_event_controller_key_new();
+  g_signal_connect(controller, "key-pressed",
+                   G_CALLBACK(citydlg_keyboard_handler), pdialog);
+  gtk_widget_add_controller(pdialog->shell, controller);
 
   dialog_list_prepend(dialog_list, pdialog);
 
   real_city_dialog_refresh(pdialog->pcity);
 
-  /* need to do this every time a new dialog is opened. */
+  /* Need to do this every time a new dialog is opened. */
   city_dialog_update_prev_next();
 
   gtk_widget_show(pdialog->shell);
@@ -1712,8 +1780,8 @@ static void city_dialog_update_title(struct city_dialog *pdialog)
 static void city_dialog_update_citizens(struct city_dialog *pdialog)
 {
   enum citizen_category categories[MAX_CITY_SIZE];
-  int i, width;
-  int citizen_bar_height;
+  int i, width, full_width, total_used_width;
+  int citizen_bar_width, citizen_bar_height;
   struct city *pcity = pdialog->pcity;
   int num_citizens = get_city_citizen_types(pcity, FEELING_FINAL, categories);
   cairo_t *cr;
@@ -1723,16 +1791,18 @@ static void city_dialog_update_citizens(struct city_dialog *pdialog)
   /* last icon is always drawn in full, and so has reserved                */
   /* tileset_small_sprite_width(tileset) pixels.                           */
 
+  full_width = tileset_small_sprite_width(tileset);
   if (num_citizens > 1) {
-    width = MIN(tileset_small_sprite_width(tileset),
-		((NUM_CITIZENS_SHOWN - 1) * tileset_small_sprite_width(tileset)) /
-		(num_citizens - 1));
+    width = MIN(full_width, ((NUM_CITIZENS_SHOWN - 1) * full_width)
+                            / (num_citizens - 1));
   } else {
-    width = tileset_small_sprite_width(tileset);
+    width = full_width;
   }
   pdialog->cwidth = width;
 
   /* overview page */
+  /* keep these values in sync with create_city_dialog */
+  citizen_bar_width  = full_width * NUM_CITIZENS_SHOWN;
   citizen_bar_height = tileset_small_sprite_height(tileset);
 
   cr = cairo_create(pdialog->citizen_surface);
@@ -1741,15 +1811,33 @@ static void city_dialog_update_citizens(struct city_dialog *pdialog)
     cairo_set_source_surface(cr,
                              get_citizen_sprite(tileset, categories[i], i, pcity)->surface,
                              i * width, 0);
-    cairo_rectangle(cr, i * width, 0, width, citizen_bar_height);
+    cairo_rectangle(cr, i * width, 0,
+                    /* Always draw last citizen in full */
+                    i + 1 < num_citizens ? width : full_width,
+                    citizen_bar_height);
+    cairo_fill(cr);
+  }
+
+  total_used_width = (i - 1) * width + full_width;
+
+  if (total_used_width < citizen_bar_width) {
+    /* Clear the rest of the area.
+     * Note that this might still be necessary even in cases where
+     * num_citizens > NUM_CITIZENS_SHOWN, if the available width cannot be
+     * divided perfectly. */
+    cairo_rectangle(cr, total_used_width, 0,
+                    citizen_bar_width - total_used_width,
+                    citizen_bar_height);
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
     cairo_fill(cr);
   }
 
   cairo_destroy(cr);
 
-  image_set_from_surface(GTK_IMAGE(pdialog->citizen_images), pdialog->citizen_surface);
+  picture_set_from_surface(GTK_PICTURE(pdialog->citizen_pics),
+                           pdialog->citizen_surface);
 
-  gtk_widget_queue_draw(pdialog->citizen_images);
+  gtk_widget_queue_draw(pdialog->citizen_pics);
 }
 
 /***********************************************************************//**
@@ -1762,67 +1850,71 @@ static void city_dialog_update_information(GtkWidget **info_label,
   char buf[NUM_INFO_FIELDS][512];
   struct city *pcity = pdialog->pcity;
   int granaryturns;
-  static GtkCssProvider *emergency_provider = NULL;
-
-  enum { FOOD, SHIELD, TRADE, GOLD, LUXURY, SCIENCE,
-         GRANARY, GROWTH, CORRUPTION, WASTE, CULTURE,
-         POLLUTION, ILLNESS, STEAL
-  };
+  int non_workers = city_specialists(pcity);
 
   /* fill the buffers with the necessary info */
-  fc_snprintf(buf[FOOD], sizeof(buf[FOOD]), "%3d (%+4d)",
+  if (non_workers) {
+    fc_snprintf(buf[INFO_SIZE], sizeof(buf[INFO_SIZE]), "%3d (%3d)",
+                pcity->size, non_workers);
+  } else {
+    fc_snprintf(buf[INFO_SIZE], sizeof(buf[INFO_SIZE]), "%3d", pcity->size);
+  }
+  fc_snprintf(buf[INFO_FOOD], sizeof(buf[INFO_FOOD]), "%3d (%+4d)",
               pcity->prod[O_FOOD], pcity->surplus[O_FOOD]);
-  fc_snprintf(buf[SHIELD], sizeof(buf[SHIELD]), "%3d (%+4d)",
+  fc_snprintf(buf[INFO_SHIELD], sizeof(buf[INFO_SHIELD]), "%3d (%+4d)",
               pcity->prod[O_SHIELD] + pcity->waste[O_SHIELD],
               pcity->surplus[O_SHIELD]);
-  fc_snprintf(buf[TRADE], sizeof(buf[TRADE]), "%3d (%+4d)",
+  fc_snprintf(buf[INFO_TRADE], sizeof(buf[INFO_TRADE]), "%3d (%+4d)",
               pcity->surplus[O_TRADE] + pcity->waste[O_TRADE],
               pcity->surplus[O_TRADE]);
-  fc_snprintf(buf[GOLD], sizeof(buf[GOLD]), "%3d (%+4d)",
+  fc_snprintf(buf[INFO_GOLD], sizeof(buf[INFO_GOLD]), "%3d (%+4d)",
               pcity->prod[O_GOLD], pcity->surplus[O_GOLD]);
-  fc_snprintf(buf[LUXURY], sizeof(buf[LUXURY]), "%3d",
+  fc_snprintf(buf[INFO_LUXURY], sizeof(buf[INFO_LUXURY]), "%3d",
               pcity->prod[O_LUXURY]);
-  fc_snprintf(buf[SCIENCE], sizeof(buf[SCIENCE]), "%3d",
+  fc_snprintf(buf[INFO_SCIENCE], sizeof(buf[INFO_SCIENCE]), "%3d",
               pcity->prod[O_SCIENCE]);
-  fc_snprintf(buf[GRANARY], sizeof(buf[GRANARY]), "%4d/%-4d",
+  fc_snprintf(buf[INFO_GRANARY], sizeof(buf[INFO_GRANARY]), "%4d/%-4d",
               pcity->food_stock, city_granary_size(city_size_get(pcity)));
 
   granaryturns = city_turns_to_grow(pcity);
   if (granaryturns == 0) {
     /* TRANS: city growth is blocked.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]), _("blocked"));
+    fc_snprintf(buf[INFO_GROWTH], sizeof(buf[INFO_GROWTH]), _("blocked"));
   } else if (granaryturns == FC_INFINITY) {
     /* TRANS: city is not growing.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]), _("never"));
+    fc_snprintf(buf[INFO_GROWTH], sizeof(buf[INFO_GROWTH]), _("never"));
   } else {
     /* A negative value means we'll have famine in that many turns.
        But that's handled down below. */
     /* TRANS: city growth turns.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]),
+    fc_snprintf(buf[INFO_GROWTH], sizeof(buf[INFO_GROWTH]),
                 PL_("%d turn", "%d turns", abs(granaryturns)),
                 abs(granaryturns));
   }
-  fc_snprintf(buf[CORRUPTION], sizeof(buf[CORRUPTION]), "%4d",
+  fc_snprintf(buf[INFO_CORRUPTION], sizeof(buf[INFO_CORRUPTION]), "%4d",
               pcity->waste[O_TRADE]);
-  fc_snprintf(buf[WASTE], sizeof(buf[WASTE]), "%4d",
+  fc_snprintf(buf[INFO_WASTE], sizeof(buf[INFO_WASTE]), "%4d",
               pcity->waste[O_SHIELD]);
-  fc_snprintf(buf[CULTURE], sizeof(buf[CULTURE]), "%4d",
+  fc_snprintf(buf[INFO_CULTURE], sizeof(buf[INFO_CULTURE]), "%4d",
               pcity->client.culture);
-  fc_snprintf(buf[POLLUTION], sizeof(buf[POLLUTION]), "%4d",
+  fc_snprintf(buf[INFO_POLLUTION], sizeof(buf[INFO_POLLUTION]), "%4d",
               pcity->pollution);
   if (!game.info.illness_on) {
-    fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), " -.-");
+    fc_snprintf(buf[INFO_ILLNESS], sizeof(buf[INFO_ILLNESS]), "  -.-");
   } else {
     illness = city_illness_calc(pcity, NULL, NULL, NULL, NULL);
     /* illness is in tenth of percent */
-    fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), "%4.1f",
+    fc_snprintf(buf[INFO_ILLNESS], sizeof(buf[INFO_ILLNESS]), "%5.1f%%",
                 (float)illness / 10.0);
   }
   if (pcity->steal) {
-    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("%d times"), pcity->steal);
+    fc_snprintf(buf[INFO_STEAL], sizeof(buf[INFO_STEAL]), PL_("%d time", "%d times", pcity->steal),
+                pcity->steal);
   } else {
-    fc_snprintf(buf[STEAL], sizeof(buf[STEAL]), _("Not stolen"));
+    fc_snprintf(buf[INFO_STEAL], sizeof(buf[INFO_STEAL]), _("Not stolen"));
   }
+
+  get_city_dialog_airlift_value(pcity, buf[INFO_AIRLIFT], sizeof(buf[INFO_AIRLIFT]));
 
   /* stick 'em in the labels */
   for (i = 0; i < NUM_INFO_FIELDS; i++) {
@@ -1830,55 +1922,35 @@ static void city_dialog_update_information(GtkWidget **info_label,
   }
 
   /*
-   * Special style stuff for granary, growth and pollution below. The
-   * "4" below is arbitrary. 3 turns should be enough of a warning.
+   * Make use of the emergency-indicating styles set up for certain labels
+   * in create_city_info_table().
    */
-
-  if (emergency_provider == NULL) {
-    emergency_provider = gtk_css_provider_new();
-
-    gtk_css_provider_load_from_data(emergency_provider,
-                                    ".emergency {\n color: rgba(255, 0.0, 0.0, 255);\n}",
-                                    -1);
-
-    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[GRANARY]),
-                                   GTK_STYLE_PROVIDER(emergency_provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[GROWTH]),
-                                   GTK_STYLE_PROVIDER(emergency_provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[POLLUTION]),
-                                   GTK_STYLE_PROVIDER(emergency_provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(info_label[ILLNESS]),
-                                   GTK_STYLE_PROVIDER(emergency_provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  }
-
+  /* For starvation, the "4" below is arbitrary. 3 turns should be enough
+   * of a warning. */
   if (granaryturns > -4 && granaryturns < 0) {
-    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[GRANARY]), "emergency");
+    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[INFO_GRANARY]), "emergency");
   } else {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[GRANARY]), "emergency");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[INFO_GRANARY]), "emergency");
   }
 
   if (granaryturns == 0 || pcity->surplus[O_FOOD] < 0) {
-    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[GROWTH]), "emergency");
+    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[INFO_GROWTH]), "emergency");
   } else {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[GROWTH]), "emergency");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[INFO_GROWTH]), "emergency");
   }
 
   /* someone could add the color &orange for better granularity here */
   if (pcity->pollution >= 10) {
-    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[POLLUTION]), "emergency");
+    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[INFO_POLLUTION]), "emergency");
   } else {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[POLLUTION]), "emergency");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[INFO_POLLUTION]), "emergency");
   }
 
-  /* illness is in tenth of percent, i.e 100 != 10.0% */
+  /* illness is in tenth of percent, i.e 100 == 10.0% */
   if (illness >= 100) {
-    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[ILLNESS]), "emergency");
+    gtk_style_context_add_class(gtk_widget_get_style_context(info_label[INFO_ILLNESS]), "emergency");
   } else {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[ILLNESS]), "emergency");
+    gtk_style_context_remove_class(gtk_widget_get_style_context(info_label[INFO_ILLNESS]), "emergency");
   }
 }
 
@@ -1902,18 +1974,6 @@ static void city_dialog_update_map(struct city_dialog *pdialog)
 
   /* draw to real window */
   draw_map_canvas(pdialog);
-
-  if (cma_is_city_under_agent(pdialog->pcity, NULL)) {
-    gtk_widget_set_sensitive(pdialog->overview.map_canvas.darea, FALSE);
-    if (pdialog->happiness.map_canvas.darea) {
-      gtk_widget_set_sensitive(pdialog->happiness.map_canvas.darea, FALSE);
-    }
-  } else {
-    gtk_widget_set_sensitive(pdialog->overview.map_canvas.darea, TRUE);
-    if (pdialog->happiness.map_canvas.darea) {
-      gtk_widget_set_sensitive(pdialog->happiness.map_canvas.darea, TRUE);
-    }
-  }
 }
 
 /***********************************************************************//**
@@ -1998,12 +2058,12 @@ static void city_dialog_update_building(struct city_dialog *pdialog)
     gtk_list_store_clear(pdialog->overview.change_production_store);
 
     targets_used
-      = collect_eventually_buildable_targets(targets, pdialog->pcity, FALSE);  
+      = collect_eventually_buildable_targets(targets, pdialog->pcity, FALSE);
     name_and_sort_items(targets, targets_used, items, FALSE, pcity);
 
     for (item = 0; item < targets_used; item++) {
       if (can_city_build_now(pcity, &items[item].item)) {
-        const char* name;
+        const char *name;
         struct sprite* sprite;
         GdkPixbuf *pix;
         struct universal target = items[item].item;
@@ -2012,7 +2072,7 @@ static void city_dialog_update_building(struct city_dialog *pdialog)
         if (VUT_UTYPE == target.kind) {
           name = utype_name_translation(target.value.utype);
           sprite = get_unittype_sprite(tileset, target.value.utype,
-                                       direction8_invalid());
+                                       ACTIVITY_LAST, direction8_invalid());
           useless = FALSE;
         } else {
           name = improvement_name_translation(target.value.building);
@@ -2023,13 +2083,13 @@ static void city_dialog_update_building(struct city_dialog *pdialog)
         gtk_list_store_append(store, &iter);
         gtk_list_store_set(store, &iter, 0, pix,
                            1, name, 3, useless,
-                           2, (gint)cid_encode(items[item].item),-1);
+                           2, (gint)cid_encode(items[item].item), -1);
         g_object_unref(G_OBJECT(pix));
       }
     }
   }
 
-  /* work around GTK+ refresh bug. */
+  /* work around GTK refresh bug. */
   if (pdialog->overview.production_bar != NULL) {
     gtk_widget_queue_resize(pdialog->overview.production_bar);
   }
@@ -2043,22 +2103,26 @@ static void city_dialog_update_building(struct city_dialog *pdialog)
 ***************************************************************************/
 static void city_dialog_update_improvement_list(struct city_dialog *pdialog)
 {
-  int total, item, targets_used;
+  int item, targets_used;
   struct universal targets[MAX_NUM_PRODUCTION_TARGETS];
   struct item items[MAX_NUM_PRODUCTION_TARGETS];
   GtkTreeModel *model;
   GtkListStore *store;
 
+  const char *tooltip_sellable = _("Press <b>ENTER</b> or double-click to "
+                                   "sell an improvement.");
+  const char *tooltip_great_wonder = _("Great Wonder - cannot be sold.");
+  const char *tooltip_small_wonder = _("Small Wonder - cannot be sold.");
+
   model =
     gtk_tree_view_get_model(GTK_TREE_VIEW(pdialog->overview.improvement_list));
   store = GTK_LIST_STORE(model);
-  
+
   targets_used = collect_already_built_targets(targets, pdialog->pcity);
   name_and_sort_items(targets, targets_used, items, FALSE, pdialog->pcity);
 
-  gtk_list_store_clear(store);  
+  gtk_list_store_clear(store);
 
-  total = 0;
   for (item = 0; item < targets_used; item++) {
     GdkPixbuf *pix;
     GtkTreeIter it;
@@ -2074,15 +2138,20 @@ static void city_dialog_update_improvement_list(struct city_dialog *pdialog)
     pix = sprite_get_pixbuf(sprite);
     gtk_list_store_append(store, &it);
     gtk_list_store_set(store, &it,
-		       0, target.value.building,
-		       1, pix,
-	2, items[item].descr,
-	3, upkeep,
-        4, is_improvement_redundant(pdialog->pcity, target.value.building),
-	-1);
+                       0, target.value.building,
+                       1, pix,
+                       2, items[item].descr,
+                       3, upkeep,
+                       4,
+                       is_improvement_redundant(pdialog->pcity,
+                                                target.value.building),
+                       5,
+                       is_great_wonder(target.value.building) ?
+                         tooltip_great_wonder :
+                           (is_small_wonder(target.value.building) ?
+                             tooltip_small_wonder : tooltip_sellable),
+                       -1);
     g_object_unref(G_OBJECT(pix));
-
-    total += upkeep;
   }
 }
 
@@ -2113,7 +2182,8 @@ static void city_dialog_update_supported_units(struct city_dialog *pdialog)
     i = 0;
     unit_node_vector_iterate(nodes, elt) {
       if (i++ >= n) {
-	gtk_widget_destroy(elt->cmd);
+        gtk_box_remove(GTK_BOX(pdialog->overview.supported_unit_table),
+                       elt->cmd);
       }
     } unit_node_vector_iterate_end;
 
@@ -2126,16 +2196,21 @@ static void city_dialog_update_supported_units(struct city_dialog *pdialog)
       cmd = gtk_button_new();
       node.cmd = cmd;
 
-      gtk_button_set_relief(GTK_BUTTON(cmd), GTK_RELIEF_NONE);
+      gtk_button_set_has_frame(GTK_BUTTON(cmd), FALSE);
 
-      pix = gtk_image_new();
+      pix = gtk_picture_new();
       node.pix = pix;
       node.height = tileset_unit_with_upkeep_height(tileset);
 
-      gtk_container_add(GTK_CONTAINER(cmd), pix);
+      gtk_button_set_child(GTK_BUTTON(cmd), pix);
 
-      gtk_grid_attach(GTK_GRID(pdialog->overview.supported_unit_table),
-                      cmd, i, 0, 1, 1);
+      gtk_box_append(GTK_BOX(pdialog->overview.supported_unit_table),
+                     cmd);
+
+      node.left = NULL;
+      node.middle = NULL;
+      node.right = NULL;
+
       unit_node_vector_append(nodes, node);
     }
   }
@@ -2148,30 +2223,45 @@ static void city_dialog_update_supported_units(struct city_dialog *pdialog)
     pnode = unit_node_vector_get(nodes, i);
     if (pnode) {
       GtkWidget *cmd, *pix;
+      GtkGesture *gesture;
+      GtkEventController *controller;
 
       cmd = pnode->cmd;
       pix = pnode->pix;
 
-      put_unit_image_city_overlays(punit, GTK_IMAGE(pix), pnode->height,
-                                   punit->upkeep, happy_cost);
+      put_unit_picture_city_overlays(punit, GTK_PICTURE(pix), pnode->height,
+                                     punit->upkeep, happy_cost);
 
-      g_signal_handlers_disconnect_matched(cmd,
-	  G_SIGNAL_MATCH_FUNC,
-	  0, 0, NULL, supported_unit_callback, NULL);
-
-      g_signal_handlers_disconnect_matched(cmd,
-	  G_SIGNAL_MATCH_FUNC,
-	  0, 0, NULL, supported_unit_middle_callback, NULL);
+      if (pnode->left != NULL) {
+        gtk_widget_remove_controller(cmd, pnode->left);
+        gtk_widget_remove_controller(cmd, pnode->middle);
+        gtk_widget_remove_controller(cmd, pnode->right);
+      }
 
       gtk_widget_set_tooltip_text(cmd, unit_description(punit));
 
-      g_signal_connect(cmd, "button_press_event",
-	  G_CALLBACK(supported_unit_callback),
-	  GINT_TO_POINTER(punit->id));
-
-      g_signal_connect(cmd, "button_release_event",
-	  G_CALLBACK(supported_unit_middle_callback),
-	  GINT_TO_POINTER(punit->id));
+      controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+      g_signal_connect(controller, "pressed",
+                       G_CALLBACK(supported_unit_callback),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->left = controller;
+      gesture = gtk_gesture_click_new();
+      gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 2);
+      controller = GTK_EVENT_CONTROLLER(gesture);
+      g_signal_connect(controller, "released",
+                       G_CALLBACK(middle_supported_unit_release),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->middle = controller;
+      gesture = gtk_gesture_click_new();
+      gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+      controller = GTK_EVENT_CONTROLLER(gesture);
+      g_signal_connect(controller, "released",
+                       G_CALLBACK(right_supported_unit_release),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->right = controller;
 
       if (city_owner(pdialog->pcity) != client.conn.playing) {
 	gtk_widget_set_sensitive(cmd, FALSE);
@@ -2216,7 +2306,8 @@ static void city_dialog_update_present_units(struct city_dialog *pdialog)
     i = 0;
     unit_node_vector_iterate(nodes, elt) {
       if (i++ >= n) {
-	gtk_widget_destroy(elt->cmd);
+        gtk_box_remove(GTK_BOX(pdialog->overview.present_unit_table),
+                       elt->cmd);
       }
     } unit_node_vector_iterate_end;
 
@@ -2229,16 +2320,21 @@ static void city_dialog_update_present_units(struct city_dialog *pdialog)
       cmd = gtk_button_new();
       node.cmd = cmd;
 
-      gtk_button_set_relief(GTK_BUTTON(cmd), GTK_RELIEF_NONE);
+      gtk_button_set_has_frame(GTK_BUTTON(cmd), FALSE);
 
-      pix = gtk_image_new();
+      pix = gtk_picture_new();
       node.pix = pix;
       node.height = tileset_full_tile_height(tileset);
 
-      gtk_container_add(GTK_CONTAINER(cmd), pix);
+      gtk_button_set_child(GTK_BUTTON(cmd), pix);
 
-      gtk_grid_attach(GTK_GRID(pdialog->overview.present_unit_table),
-                      cmd, i, 0, 1, 1);
+      gtk_box_append(GTK_BOX(pdialog->overview.present_unit_table),
+                     cmd);
+
+      node.left = NULL;
+      node.middle = NULL;
+      node.right = NULL;
+
       unit_node_vector_append(nodes, node);
     }
   }
@@ -2246,33 +2342,48 @@ static void city_dialog_update_present_units(struct city_dialog *pdialog)
   i = 0;
   unit_list_iterate(units, punit) {
     struct unit_node *pnode;
-    
+
     pnode = unit_node_vector_get(nodes, i);
     if (pnode) {
       GtkWidget *cmd, *pix;
+      GtkEventController *controller;
+      GtkGesture *gesture;
 
       cmd = pnode->cmd;
       pix = pnode->pix;
 
-      put_unit_image(punit, GTK_IMAGE(pix), pnode->height);
+      put_unit_picture(punit, GTK_PICTURE(pix), pnode->height);
 
-      g_signal_handlers_disconnect_matched(cmd,
-	  G_SIGNAL_MATCH_FUNC,
-	  0, 0, NULL, present_unit_callback, NULL);
-
-      g_signal_handlers_disconnect_matched(cmd,
-	  G_SIGNAL_MATCH_FUNC,
-	  0, 0, NULL, present_unit_middle_callback, NULL);
+      if (pnode->left != NULL) {
+        gtk_widget_remove_controller(cmd, pnode->left);
+        gtk_widget_remove_controller(cmd, pnode->middle);
+        gtk_widget_remove_controller(cmd, pnode->right);
+      }
 
       gtk_widget_set_tooltip_text(cmd, unit_description(punit));
 
-      g_signal_connect(cmd, "button_press_event",
-	  G_CALLBACK(present_unit_callback),
-	  GINT_TO_POINTER(punit->id));
-
-      g_signal_connect(cmd, "button_release_event",
-	  G_CALLBACK(present_unit_middle_callback),
-	  GINT_TO_POINTER(punit->id));
+      controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+      g_signal_connect(controller, "pressed",
+                       G_CALLBACK(present_unit_callback),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->left = controller;
+      gesture = gtk_gesture_click_new();
+      gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 2);
+      controller = GTK_EVENT_CONTROLLER(gesture);
+      g_signal_connect(controller, "released",
+                       G_CALLBACK(middle_present_unit_release),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->middle = controller;
+      gesture = gtk_gesture_click_new();
+      gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+      controller = GTK_EVENT_CONTROLLER(gesture);
+      g_signal_connect(controller, "released",
+                       G_CALLBACK(right_present_unit_release),
+                       GINT_TO_POINTER(punit->id));
+      gtk_widget_add_controller(cmd, controller);
+      pnode->right = controller;
 
       if (city_owner(pdialog->pcity) != client.conn.playing) {
 	gtk_widget_set_sensitive(cmd, FALSE);
@@ -2309,28 +2420,25 @@ static void city_dialog_update_prev_next(void)
     city_number = FC_INFINITY; /* ? */
   }
 
-  /* the first time, we see if all the city dialogs are open */
-
+  /* The first time, we see if all the city dialogs are open */
   dialog_list_iterate(dialog_list, pdialog) {
-    if (city_owner(pdialog->pcity) == client.conn.playing)
+    if (city_owner(pdialog->pcity) == client.conn.playing) {
       count++;
-  }
-  dialog_list_iterate_end;
+    }
+  } dialog_list_iterate_end;
 
-  if (count == city_number) {	/* all are open, shouldn't prev/next */
+  if (count == city_number) {   /* All are open, shouldn't prev/next */
     dialog_list_iterate(dialog_list, pdialog) {
       gtk_widget_set_sensitive(GTK_WIDGET(pdialog->prev_command), FALSE);
       gtk_widget_set_sensitive(GTK_WIDGET(pdialog->next_command), FALSE);
-    }
-    dialog_list_iterate_end;
+    } dialog_list_iterate_end;
   } else {
     dialog_list_iterate(dialog_list, pdialog) {
       if (city_owner(pdialog->pcity) == client.conn.playing) {
 	gtk_widget_set_sensitive(GTK_WIDGET(pdialog->prev_command), TRUE);
 	gtk_widget_set_sensitive(GTK_WIDGET(pdialog->next_command), TRUE);
       }
-    }
-    dialog_list_iterate_end;
+    } dialog_list_iterate_end;
   }
 }
 
@@ -2361,20 +2469,170 @@ static void show_units_response(void *data)
 }
 
 /***********************************************************************//**
-  Destroy widget -callback
+  Create menu for the unit in citydlg
+
+  @param pdialog   Dialog to create menu to
+  @param punit     Unit to create menu for
+  @param wdg       Widget to attach menu to
+  @param supported Is this supported units menu (not present units)
+
+  @return whether menu was really created
 ***************************************************************************/
-static void destroy_func(GtkWidget *w, gpointer data)
+static bool create_unit_menu(struct city_dialog *pdialog, struct unit *punit,
+                             GtkWidget *wdg, bool supported)
 {
-  gtk_widget_destroy(w);
+  GMenu *menu;
+  GActionGroup *group;
+  GSimpleAction *act;
+
+  if (!can_client_issue_orders()) {
+    return FALSE;
+  }
+
+  if (pdialog->popover != NULL) {
+    close_citydlg_unit_popover(pdialog);
+  }
+
+  group = G_ACTION_GROUP(g_simple_action_group_new());
+  menu = g_menu_new();
+
+  if (supported) {
+    act = g_simple_action_new("center", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_center_callback),
+                     GINT_TO_POINTER(punit->id));
+    menu_item_append_unref(menu, g_menu_item_new(_("Cen_ter"), "win.center"));
+  }
+
+  act = g_simple_action_new("activate", NULL);
+  g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+  g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+  g_signal_connect(act, "activate", G_CALLBACK(unit_activate_callback),
+                   GINT_TO_POINTER(punit->id));
+  menu_item_append_unref(menu, g_menu_item_new(_("_Activate unit"),
+                                               "win.activate"));
+
+  act = g_simple_action_new("activate_close", NULL);
+  g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+  g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+
+  if (supported) {
+    g_signal_connect(act, "activate",
+                     G_CALLBACK(supported_unit_activate_close_callback),
+                     GINT_TO_POINTER(punit->id));
+  } else {
+    g_signal_connect(act, "activate",
+                     G_CALLBACK(present_unit_activate_close_callback),
+                     GINT_TO_POINTER(punit->id));
+  }
+
+  menu_item_append_unref(menu,
+                         g_menu_item_new(_("Activate unit, _close dialog"),
+                                         "win.activate_close"));
+
+  if (!supported) {
+    act = g_simple_action_new("load", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_load_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act), unit_can_load(punit));
+    menu_item_append_unref(menu, g_menu_item_new(_("_Load unit"), "win.load"));
+
+    act = g_simple_action_new("unload", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_unload_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                can_unit_unload(punit,
+                                                unit_transport_get(punit))
+                                && can_unit_exist_at_tile(&(wld.map), punit,
+                                                          unit_tile(punit)));
+    menu_item_append_unref(menu, g_menu_item_new(_("_Unload unit"),
+                                                 "win.unload"));
+
+    act = g_simple_action_new("sentry", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_sentry_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                punit->activity != ACTIVITY_SENTRY
+                                && can_unit_do_activity(punit,
+                                                        ACTIVITY_SENTRY));
+    menu_item_append_unref(menu, g_menu_item_new(_("_Sentry unit"),
+                                                 "win.sentry"));
+
+    act = g_simple_action_new("fortify", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_fortify_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                punit->activity != ACTIVITY_FORTIFYING
+                                && can_unit_do_activity(punit,
+                                                        ACTIVITY_FORTIFYING));
+    menu_item_append_unref(menu, g_menu_item_new(_("_Fortify unit"),
+                                                 "win.fortify"));
+  }
+
+  act = g_simple_action_new("disband", NULL);
+  g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+  g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+  g_signal_connect(act, "activate", G_CALLBACK(unit_disband_callback),
+                   GINT_TO_POINTER(punit->id));
+  g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                              unit_can_do_action(punit, ACTION_DISBAND_UNIT));
+  menu_item_append_unref(menu, g_menu_item_new(_("_Disband unit"),
+                                               "win.disband"));
+
+  if (!supported) {
+    act = g_simple_action_new("rehome", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_homecity_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                can_unit_change_homecity_to(punit,
+                                                            pdialog->pcity));
+    menu_item_append_unref(menu,
+                           g_menu_item_new(action_id_name_translation(ACTION_HOME_CITY),
+                                           "win.rehome"));
+
+    act = g_simple_action_new("upgrade", NULL);
+    g_object_set_data(G_OBJECT(act), "dlg", pdialog);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(unit_upgrade_callback),
+                     GINT_TO_POINTER(punit->id));
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                action_ever_possible(ACTION_UPGRADE_UNIT)
+                                && can_client_issue_orders()
+                                && can_upgrade_unittype(client_player(),
+                                                        unit_type_get(punit))
+                                   != NULL);
+    menu_item_append_unref(menu, g_menu_item_new(_("U_pgrade unit"),
+                                                 "win.upgrade"));
+  }
+
+  pdialog->popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+  g_object_ref(pdialog->popover);
+  gtk_widget_insert_action_group(pdialog->popover, "win", group);
+  gtk_widget_set_parent(pdialog->popover, wdg);
+
+
+  gtk_popover_popup(GTK_POPOVER(pdialog->popover));
+
+  return TRUE;
 }
 
 /***********************************************************************//**
   Pop-up menu to change attributes of supported units
 ***************************************************************************/
-static gboolean supported_unit_callback(GtkWidget *w, GdkEvent *ev,
-                                        gpointer data)
+static gboolean supported_unit_callback(GtkGestureClick *gesture, int n_press,
+                                        double x, double y, gpointer data)
 {
-  GtkWidget *menu, *item;
   struct city_dialog *pdialog;
   struct city *pcity;
   struct unit *punit =
@@ -2383,53 +2641,10 @@ static gboolean supported_unit_callback(GtkWidget *w, GdkEvent *ev,
   if (NULL != punit
       && NULL != (pcity = game_city_by_number(punit->homecity))
       && NULL != (pdialog = get_city_dialog(pcity))) {
-    guint button;
 
-    if (gdk_event_get_event_type(ev) != GDK_BUTTON_PRESS) {
-      return FALSE;
-    }
-
-    gdk_event_get_button(ev, &button);
-    if (button == 2 || button == 3 || !can_client_issue_orders()) {
-      return FALSE;
-    }
-
-    menu = pdialog->popup_menu;
-
-    gtk_menu_popdown(GTK_MENU(menu));
-    gtk_container_foreach(GTK_CONTAINER(menu), destroy_func, NULL);
-
-    item = gtk_menu_item_new_with_mnemonic(_("Cen_ter"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_center_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    
-    item = gtk_menu_item_new_with_mnemonic(_("_Activate unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_activate_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    item = gtk_menu_item_new_with_mnemonic(_("Activate unit, _close dialog"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(supported_unit_activate_close_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Disband unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_disband_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (!unit_can_do_action(punit, ACTION_DISBAND_UNIT)) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    gtk_widget_show(menu);
-
-    gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
+    return create_unit_menu(pdialog, punit,
+                            gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)),
+                            TRUE);
   }
 
   return TRUE;
@@ -2438,10 +2653,9 @@ static gboolean supported_unit_callback(GtkWidget *w, GdkEvent *ev,
 /***********************************************************************//**
   Pop-up menu to change attributes of units, ex. change homecity.
 ***************************************************************************/
-static gboolean present_unit_callback(GtkWidget *w, GdkEvent *ev,
-                                      gpointer data)
+static gboolean present_unit_callback(GtkGestureClick *gesture, int n_press,
+                                      double x, double y, gpointer data)
 {
-  GtkWidget *menu, *item;
   struct city_dialog *pdialog;
   struct city *pcity;
   struct unit *punit =
@@ -2450,110 +2664,10 @@ static gboolean present_unit_callback(GtkWidget *w, GdkEvent *ev,
   if (NULL != punit
       && NULL != (pcity = tile_city(unit_tile(punit)))
       && NULL != (pdialog = get_city_dialog(pcity))) {
-    guint button;
 
-    if (gdk_event_get_event_type(ev) != GDK_BUTTON_PRESS) {
-      return FALSE;
-    }
-
-    gdk_event_get_button(ev, &button);
-    if (button == 2 || button == 3 || !can_client_issue_orders()) {
-      return FALSE;
-    }
-
-    menu = pdialog->popup_menu;
-
-    gtk_menu_popdown(GTK_MENU(menu));
-    gtk_container_foreach(GTK_CONTAINER(menu), destroy_func, NULL);
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Activate unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_activate_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    item = gtk_menu_item_new_with_mnemonic(_("Activate unit, _close dialog"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(present_unit_activate_close_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Load unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_load_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (!unit_can_load(punit)) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Unload unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_unload_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (!can_unit_unload(punit, unit_transport_get(punit))
-        || !can_unit_exist_at_tile(&(wld.map), punit, unit_tile(punit))) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Sentry unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_sentry_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (punit->activity == ACTIVITY_SENTRY
-	|| !can_unit_do_activity(punit, ACTIVITY_SENTRY)) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Fortify unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_fortify_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (punit->activity == ACTIVITY_FORTIFYING
-	|| !can_unit_do_activity(punit, ACTIVITY_FORTIFYING)) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    item = gtk_menu_item_new_with_mnemonic(_("_Disband unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_disband_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (!unit_can_do_action(punit, ACTION_DISBAND_UNIT)) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    item = gtk_menu_item_new_with_mnemonic(
-          action_id_name_translation(ACTION_HOME_CITY));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_homecity_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    gtk_widget_set_sensitive(item, can_unit_change_homecity_to(punit, pcity));
-
-    item = gtk_menu_item_new_with_mnemonic(_("U_pgrade unit"));
-    g_signal_connect(item, "activate",
-      G_CALLBACK(unit_upgrade_callback),
-      GINT_TO_POINTER(punit->id));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (!can_client_issue_orders()
-	|| NULL == can_upgrade_unittype(client.conn.playing,
-                                        unit_type_get(punit))) {
-      gtk_widget_set_sensitive(item, FALSE);
-    }
-
-    gtk_widget_show(menu);
-
-    gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
+    return create_unit_menu(pdialog, punit,
+                            gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)),
+                            FALSE);
   }
 
   return TRUE;
@@ -2562,9 +2676,9 @@ static gboolean present_unit_callback(GtkWidget *w, GdkEvent *ev,
 /***********************************************************************//**
   If user middle-clicked on a unit, activate it and close dialog
 ***************************************************************************/
-static gboolean present_unit_middle_callback(GtkWidget *w,
-                                             GdkEvent *ev,
-                                             gpointer data)
+static gboolean middle_present_unit_release(GtkGestureClick *gesture,
+                                            int n_press, double x, double y,
+                                            gpointer data)
 {
   struct city_dialog *pdialog;
   struct city *pcity;
@@ -2572,18 +2686,28 @@ static gboolean present_unit_middle_callback(GtkWidget *w,
     player_unit_by_number(client_player(), (size_t) data);
 
   if (NULL != punit
-   && NULL != (pcity = tile_city(unit_tile(punit)))
-   && NULL != (pdialog = get_city_dialog(pcity))
-   && can_client_issue_orders()) {
-    guint button;
+      && NULL != (pcity = tile_city(unit_tile(punit)))
+      && NULL != (pdialog = get_city_dialog(pcity))
+      && can_client_issue_orders()) {
+    unit_focus_set(punit);
+    close_city_dialog(pdialog);
+  }
 
-    gdk_event_get_button(ev, &button);
-    if (button == 3) {
-      unit_focus_set(punit);
-    } else if (button == 2) {
-      unit_focus_set(punit);
-      close_city_dialog(pdialog);
-    }
+  return TRUE;
+}
+
+/***********************************************************************//**
+  If user right-clicked on a unit, activate it
+***************************************************************************/
+static gboolean right_present_unit_release(GtkGestureClick *gesture, int n_press,
+                                           double x, double y, gpointer data)
+{
+  struct unit *punit =
+    player_unit_by_number(client_player(), (size_t) data);
+
+  if (NULL != punit
+      && can_client_issue_orders()) {
+    unit_focus_set(punit);
   }
 
   return TRUE;
@@ -2592,9 +2716,8 @@ static gboolean present_unit_middle_callback(GtkWidget *w,
 /***********************************************************************//**
   If user middle-clicked on a unit, activate it and close dialog
 ***************************************************************************/
-static gboolean supported_unit_middle_callback(GtkWidget *w,
-                                               GdkEvent *ev,
-                                               gpointer data)
+static gboolean middle_supported_unit_release(GtkGestureClick *gesture, int n_press,
+                                              double x, double y, gpointer data)
 {
   struct city_dialog *pdialog;
   struct city *pcity;
@@ -2605,55 +2728,86 @@ static gboolean supported_unit_middle_callback(GtkWidget *w,
       && NULL != (pcity = game_city_by_number(punit->homecity))
       && NULL != (pdialog = get_city_dialog(pcity))
       && can_client_issue_orders()) {
-    guint button;
-
-    gdk_event_get_button(ev, &button);
-    if (button == 3) {
-      unit_focus_set(punit);
-    } else if (button == 2) {
-      unit_focus_set(punit);
-      close_city_dialog(pdialog);
-    }
+    unit_focus_set(punit);
+    close_city_dialog(pdialog);
   }
 
   return TRUE;
 }
 
 /***********************************************************************//**
-  User has requested centering to unit
+  If user right-clicked on a unit, activate it
 ***************************************************************************/
-static void unit_center_callback(GtkWidget *w, gpointer data)
+static gboolean right_supported_unit_release(GtkGestureClick *gesture, int n_press,
+                                             double x, double y, gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), (size_t) data);
+
+  if (NULL != punit
+      && can_client_issue_orders()) {
+    unit_focus_set(punit);
+  }
+
+  return TRUE;
+}
+
+/***********************************************************************//**
+  Close unit menu
+
+  @param pdialog Dialog where the menu should be closed from
+***************************************************************************/
+static void close_citydlg_unit_popover(struct city_dialog *pdialog)
+{
+  if (pdialog->popover != NULL) {
+    gtk_widget_unparent(pdialog->popover);
+    g_object_unref(pdialog->popover);
+    pdialog->popover = NULL;
+  }
+}
+
+/***********************************************************************//**
+  User has requested centering to unit
+***************************************************************************/
+static void unit_center_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data)
+{
+  struct unit *punit =
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     center_tile_mapcanvas(unit_tile(punit));
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit activation
 ***************************************************************************/
-static void unit_activate_callback(GtkWidget *w, gpointer data)
+static void unit_activate_callback(GSimpleAction *action, GVariant *parameter,
+                                   gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     unit_focus_set(punit);
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested some supported unit to be activated and
   city dialog to be closed
 ***************************************************************************/
-static void supported_unit_activate_close_callback(GtkWidget *w,
+static void supported_unit_activate_close_callback(GSimpleAction *action,
+                                                   GVariant *parameter,
                                                    gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     struct city *pcity =
@@ -2668,17 +2822,20 @@ static void supported_unit_activate_close_callback(GtkWidget *w,
       }
     }
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested some present unit to be activated and
   city dialog to be closed
 ***************************************************************************/
-static void present_unit_activate_close_callback(GtkWidget *w,
+static void present_unit_activate_close_callback(GSimpleAction *action,
+                                                 GVariant *parameter,
                                                  gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     struct city *pcity = tile_city(unit_tile(punit));
@@ -2692,68 +2849,83 @@ static void present_unit_activate_close_callback(GtkWidget *w,
       }
     }
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be loaded to transport
 ***************************************************************************/
-static void unit_load_callback(GtkWidget *w, gpointer data)
+static void unit_load_callback(GSimpleAction *action, GVariant *parameter,
+                               gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     request_transport(punit, unit_tile(punit));
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be unloaded from transport
 ***************************************************************************/
-static void unit_unload_callback(GtkWidget *w, gpointer data)
+static void unit_unload_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     request_unit_unload(punit);
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be sentried
 ***************************************************************************/
-static void unit_sentry_callback(GtkWidget *w, gpointer data)
+static void unit_sentry_callback(GSimpleAction *action, GVariant *parameter,
+                                 gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     request_unit_sentry(punit);
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be fortified
 ***************************************************************************/
-static void unit_fortify_callback(GtkWidget *w, gpointer data)
+static void unit_fortify_callback(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     request_unit_fortify(punit);
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be disbanded
 ***************************************************************************/
-static void unit_disband_callback(GtkWidget *w, gpointer data)
+static void unit_disband_callback(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct unit_list *punits;
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL == punit) {
     return;
@@ -2763,30 +2935,36 @@ static void unit_disband_callback(GtkWidget *w, gpointer data)
   unit_list_append(punits, punit);
   popup_disband_dialog(punits);
   unit_list_destroy(punits);
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to change homecity to city where it
   currently is
 ***************************************************************************/
-static void unit_homecity_callback(GtkWidget *w, gpointer data)
+static void unit_homecity_callback(GSimpleAction *action, GVariant *parameter,
+                                   gpointer data)
 {
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL != punit) {
     request_unit_change_homecity(punit);
   }
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /***********************************************************************//**
   User has requested unit to be upgraded
 ***************************************************************************/
-static void unit_upgrade_callback(GtkWidget *w, gpointer data)
+static void unit_upgrade_callback(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct unit_list *punits;
   struct unit *punit =
-    player_unit_by_number(client_player(), (size_t)data);
+    player_unit_by_number(client_player(), GPOINTER_TO_INT(data));
 
   if (NULL == punit) {
     return;
@@ -2796,21 +2974,22 @@ static void unit_upgrade_callback(GtkWidget *w, gpointer data)
   unit_list_append(punits, punit);
   popup_upgrade_dialog(punits);
   unit_list_destroy(punits);
+
+  close_citydlg_unit_popover(g_object_get_data(G_OBJECT(action), "dlg"));
 }
 
 /******** Callbacks for citizen bar, map funcs that are not update ********/
 
 /***********************************************************************//**
-  Somebody clicked our list of citizens. If they clicked a specialist
-  then change the type of him, else do nothing.
+  User clicked the list of citizens. If they clicked a specialist
+  then change its type, else do nothing.
 ***************************************************************************/
-static gboolean citizens_callback(GtkWidget *w, GdkEvent *ev,
-                                  gpointer data)
+static gboolean citizens_callback(GtkGestureClick *gesture, int n_press,
+                                  double x, double y, gpointer data)
 {
   struct city_dialog *pdialog = data;
   struct city *pcity = pdialog->pcity;
   int citnum, tlen, len;
-  gdouble e_x, e_y;
 
   if (!can_client_issue_orders()) {
     return FALSE;
@@ -2819,12 +2998,11 @@ static gboolean citizens_callback(GtkWidget *w, GdkEvent *ev,
   tlen = tileset_small_sprite_width(tileset);
   len = (city_size_get(pcity) - 1) * pdialog->cwidth + tlen;
 
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  if (e_x > len) {
+  if (x > len) {
     /* no citizen that far to the right */
     return FALSE;
   }
-  citnum = MIN(city_size_get(pcity) - 1, e_x / pdialog->cwidth);
+  citnum = MIN(city_size_get(pcity) - 1, x / pdialog->cwidth);
 
   city_rotate_specialist(pcity, citnum);
 
@@ -2864,10 +3042,8 @@ static void set_city_workertask(GtkWidget *w, gpointer data)
 
       if ((act != ACTIVITY_TRANSFORM
            || pterr->transform_result == NULL || pterr->transform_result == pterr)
-          && (act != ACTIVITY_IRRIGATE
-              || pterr->irrigation_result == NULL || pterr->irrigation_result == pterr)
-          && (act != ACTIVITY_MINE
-              || pterr->mining_result == NULL || pterr->mining_result == pterr)) {
+          && (act != ACTIVITY_CULTIVATE || pterr->cultivate_result == NULL)
+          && (act != ACTIVITY_PLANT || pterr->plant_result == NULL)) {
         /* No extra to order */
         output_window_append(ftc_client, _("There's no suitable extra to order."));
 
@@ -2923,21 +3099,29 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
                         GINT_TO_POINTER(ACTIVITY_LAST), FALSE, NULL);
     }
 
-    if ((pterr->mining_result == pterr
-         && univs_have_action_enabler(ACTION_MINE, NULL, &for_terr))
-        || (pterr->mining_result != pterr && pterr->mining_result != NULL
-            && univs_have_action_enabler(ACTION_MINE_TF, NULL, &for_terr))) {
-      choice_dialog_add(shl, _("Mine"),
+    if (action_id_univs_not_blocking(ACTION_MINE, NULL, &for_terr)) {
+      choice_dialog_add(shl, Q_("?act:Mine"),
                         G_CALLBACK(set_city_workertask),
                         GINT_TO_POINTER(ACTIVITY_MINE), FALSE, NULL);
     }
-    if ((pterr->irrigation_result == pterr
-         && univs_have_action_enabler(ACTION_IRRIGATE, NULL, &for_terr))
-        || (pterr->irrigation_result != pterr && pterr->irrigation_result != NULL
-            && univs_have_action_enabler(ACTION_IRRIGATE_TF, NULL, &for_terr))) {
+    if (pterr->plant_result != NULL
+        && action_id_univs_not_blocking(ACTION_PLANT,
+                                        NULL, &for_terr)) {
+      choice_dialog_add(shl, _("Plant"),
+                        G_CALLBACK(set_city_workertask),
+                        GINT_TO_POINTER(ACTIVITY_PLANT), FALSE, NULL);
+    }
+    if (action_id_univs_not_blocking(ACTION_IRRIGATE, NULL, &for_terr)) {
       choice_dialog_add(shl, _("Irrigate"),
                         G_CALLBACK(set_city_workertask),
                         GINT_TO_POINTER(ACTIVITY_IRRIGATE), FALSE, NULL);
+    }
+    if (pterr->cultivate_result != NULL
+        && action_id_univs_not_blocking(ACTION_CULTIVATE,
+                                        NULL, &for_terr)) {
+      choice_dialog_add(shl, _("Cultivate"),
+                        G_CALLBACK(set_city_workertask),
+                        GINT_TO_POINTER(ACTIVITY_CULTIVATE), FALSE, NULL);
     }
     if (next_extra_for_tile(ptile, EC_ROAD, city_owner(pcity), NULL) != NULL) {
       choice_dialog_add(shl, _("Road"),
@@ -2945,7 +3129,8 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
                         GINT_TO_POINTER(ACTIVITY_GEN_ROAD), FALSE, NULL);
     }
     if (pterr->transform_result != pterr && pterr->transform_result != NULL
-        && univs_have_action_enabler(ACTION_TRANSFORM_TERRAIN, NULL, &for_terr)) {
+        && action_id_univs_not_blocking(ACTION_TRANSFORM_TERRAIN,
+                                        NULL, &for_terr)) {
       choice_dialog_add(shl, _("Transform"),
                         G_CALLBACK(set_city_workertask),
                         GINT_TO_POINTER(ACTIVITY_TRANSFORM), FALSE, NULL);
@@ -2963,7 +3148,7 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
                         GINT_TO_POINTER(ACTIVITY_FALLOUT), FALSE, NULL);
     }
 
-    choice_dialog_add(shl, _("Cancel"), 0, 0, FALSE, NULL);
+    choice_dialog_add(shl, _("_Cancel"), 0, 0, FALSE, NULL);
     choice_dialog_end(shl);
 
     g_signal_connect(shl, "destroy", G_CALLBACK(workertask_dlg_destroy),
@@ -2972,38 +3157,58 @@ static void popup_workertask_dlg(struct city *pcity, struct tile *ptile)
 }
 
 /***********************************************************************//**
-  User has pressed button on citymap
+  User has pressed left button on citymap
 ***************************************************************************/
-static gboolean button_down_citymap(GtkWidget *w, GdkEvent *ev,
-                                    gpointer data)
+static gboolean left_button_down_citymap(GtkGestureClick *gesture, int n_press,
+                                         double x, double y, gpointer data)
 {
   struct city_dialog *pdialog = data;
   int canvas_x, canvas_y, city_x, city_y;
-  gdouble e_x, e_y;
 
   if (!can_client_issue_orders()) {
     return FALSE;
   }
 
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  canvas_x = e_x * (double)canvas_width / (double)CITYMAP_WIDTH;
-  canvas_y = e_y * (double)canvas_height / (double)CITYMAP_HEIGHT;
+  if (cma_is_city_under_agent(pdialog->pcity, NULL)) {
+    return FALSE;
+  }
+
+  canvas_x = x * (double)canvas_width / (double)CITYMAP_WIDTH;
+  canvas_y = y * (double)canvas_height / (double)CITYMAP_HEIGHT;
 
   if (canvas_to_city_pos(&city_x, &city_y,
                          city_map_radius_sq_get(pdialog->pcity),
                          canvas_x, canvas_y)) {
-    guint button;
+    city_toggle_worker(pdialog->pcity, city_x, city_y);
+  }
 
-    gdk_event_get_button(ev, &button);
-    if (button == 1) {
-      city_toggle_worker(pdialog->pcity, city_x, city_y);
-    } else if (button == 3) {
-      struct city *pcity = pdialog->pcity;
+  return TRUE;
+}
 
-      popup_workertask_dlg(pdialog->pcity,
-                           city_map_to_tile(pcity->tile, city_map_radius_sq_get(pcity),
-                                            city_x, city_y));
-    }
+/***********************************************************************//**
+  User has pressed right button on citymap
+***************************************************************************/
+static gboolean right_button_down_citymap(GtkGestureClick *gesture, int n_press,
+                                          double x, double y, gpointer data)
+{
+  struct city_dialog *pdialog = data;
+  int canvas_x, canvas_y, city_x, city_y;
+
+  if (!can_client_issue_orders()) {
+    return FALSE;
+  }
+
+  canvas_x = x * (double)canvas_width / (double)CITYMAP_WIDTH;
+  canvas_y = y * (double)canvas_height / (double)CITYMAP_HEIGHT;
+
+  if (canvas_to_city_pos(&city_x, &city_y,
+                         city_map_radius_sq_get(pdialog->pcity),
+                         canvas_x, canvas_y)) {
+    struct city *pcity = pdialog->pcity;
+
+    popup_workertask_dlg(pdialog->pcity,
+                         city_map_to_tile(pcity->tile, city_map_radius_sq_get(pcity),
+                                          city_x, city_y));
   }
 
   return TRUE;
@@ -3032,7 +3237,8 @@ static void buy_callback_response(GtkWidget *w, gint response, gpointer data)
   if (response == GTK_RESPONSE_YES) {
     city_buy_production(pdialog->pcity);
   }
-  gtk_widget_destroy(w);
+
+  gtk_window_destroy(GTK_WINDOW(w));
 }
 
 /***********************************************************************//**
@@ -3079,7 +3285,7 @@ static void buy_callback(GtkWidget *w, gpointer data)
         name, value, buf);
     setup_dialog(shell, pdialog->shell);
     gtk_window_set_title(GTK_WINDOW(shell), _("Buy It!"));
-    g_signal_connect(shell, "response", G_CALLBACK(gtk_widget_destroy),
+    g_signal_connect(shell, "response", G_CALLBACK(gtk_window_destroy),
       NULL);
     gtk_window_present(GTK_WINDOW(shell));
   }
@@ -3113,7 +3319,7 @@ static void sell_callback(struct impr_type *pimprove, gpointer data)
   struct city_dialog *pdialog = (struct city_dialog *) data;
   pdialog->sell_id = improvement_number(pimprove);
   int price;
-  
+
   if (!can_client_issue_orders()) {
     return;
   }
@@ -3133,13 +3339,12 @@ static void sell_callback(struct impr_type *pimprove, gpointer data)
     city_improvement_name_translation(pdialog->pcity, pimprove), price);
   setup_dialog(shl, pdialog->shell);
   pdialog->sell_shell = shl;
-  
+
   gtk_window_set_title(GTK_WINDOW(shl), _("Sell It!"));
-  gtk_window_set_position(GTK_WINDOW(shl), GTK_WIN_POS_CENTER_ON_PARENT);
 
   g_signal_connect(shl, "response",
 		   G_CALLBACK(sell_callback_response), pdialog);
-  
+
   gtk_window_present(GTK_WINDOW(shl));
 }
 
@@ -3153,8 +3358,8 @@ static void sell_callback_response(GtkWidget *w, gint response, gpointer data)
   if (response == GTK_RESPONSE_YES) {
     city_sell_improvement(pdialog->pcity, pdialog->sell_id);
   }
-  gtk_widget_destroy(w);
-  
+  gtk_window_destroy(GTK_WINDOW(w));
+
   pdialog->sell_shell = NULL;
 }
 
@@ -3166,7 +3371,6 @@ static void impr_callback(GtkTreeView *view, GtkTreePath *path,
 {
   GtkTreeModel *model;
   GtkTreeIter it;
-  GdkWindow *win;
   GdkSeat *seat;
   GdkModifierType mask;
   struct impr_type *pimprove;
@@ -3179,11 +3383,8 @@ static void impr_callback(GtkTreeView *view, GtkTreePath *path,
 
   gtk_tree_model_get(model, &it, 0, &pimprove, -1);
 
-  win = gtk_widget_get_window(GTK_WIDGET(view));
-  seat = gdk_display_get_default_seat(gdk_window_get_display(win));
-
-  gdk_window_get_device_position(win, gdk_seat_get_pointer(seat),
-                                 NULL, NULL, &mask);
+  seat = gdk_display_get_default_seat(gtk_widget_get_display(GTK_WIDGET(view)));
+  mask = gdk_device_get_modifier_state(gdk_seat_get_keyboard(seat));
 
   if (!(mask & GDK_CONTROL_MASK)) {
     sell_callback(pimprove, data);
@@ -3251,20 +3452,20 @@ static void cityopt_callback(GtkWidget *w, gpointer data)
     return;
   }
 
-  if (!pdialog->misc.block_signal){
+  if (!pdialog->misc.block_signal) {
     struct city *pcity = pdialog->pcity;
     bv_city_options new_options;
 
     fc_assert(CITYO_LAST == 3);
 
     BV_CLR_ALL(new_options);
-    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pdialog->misc.disband_on_settler))) {
+    if (gtk_check_button_get_active(GTK_CHECK_BUTTON(pdialog->misc.disband_on_settler))) {
       BV_SET(new_options, CITYO_DISBAND);
     }
-    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pdialog->misc.new_citizens_radio[1]))) {
+    if (gtk_check_button_get_active(GTK_CHECK_BUTTON(pdialog->misc.new_citizens_radio[1]))) {
       BV_SET(new_options, CITYO_SCIENCE_SPECIALISTS);
     }
-    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pdialog->misc.new_citizens_radio[2]))) {
+    if (gtk_check_button_get_active(GTK_CHECK_BUTTON(pdialog->misc.new_citizens_radio[2]))) {
       BV_SET(new_options, CITYO_GOLD_SPECIALISTS);
     }
 
@@ -3282,18 +3483,18 @@ static void set_cityopt_values(struct city_dialog *pdialog)
 
   pdialog->misc.block_signal = 1;
 
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(pdialog->misc.disband_on_settler),
-                               is_city_option_set(pcity, CITYO_DISBAND));
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(pdialog->misc.disband_on_settler),
+                              is_city_option_set(pcity, CITYO_DISBAND));
 
   if (is_city_option_set(pcity, CITYO_SCIENCE_SPECIALISTS)) {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON
-                                 (pdialog->misc.new_citizens_radio[1]), TRUE);
+    gtk_check_button_set_active(GTK_CHECK_BUTTON
+                                (pdialog->misc.new_citizens_radio[1]), TRUE);
   } else if (is_city_option_set(pcity, CITYO_GOLD_SPECIALISTS)) {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON
-                                 (pdialog->misc.new_citizens_radio[2]), TRUE);
+    gtk_check_button_set_active(GTK_CHECK_BUTTON
+                                (pdialog->misc.new_citizens_radio[2]), TRUE);
   } else {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON
-                                 (pdialog->misc.new_citizens_radio[0]), TRUE);
+    gtk_check_button_set_active(GTK_CHECK_BUTTON
+                                (pdialog->misc.new_citizens_radio[0]), TRUE);
   }
   pdialog->misc.block_signal = 0;
 }
@@ -3338,23 +3539,17 @@ static void city_destroy_callback(GtkWidget *w, gpointer data)
   last_page
     = gtk_notebook_get_current_page(GTK_NOTEBOOK(pdialog->notebook));
 
-  if (pdialog->popup_menu) {
-    gtk_widget_destroy(pdialog->popup_menu);
-  }
-
+  close_citydlg_unit_popover(pdialog);
   dialog_list_remove(dialog_list, pdialog);
 
   unit_node_vector_free(&pdialog->overview.supported_units);
   unit_node_vector_free(&pdialog->overview.present_units);
 
-  if (pdialog->buy_shell) {
-    gtk_widget_destroy(pdialog->buy_shell);
-  }
   if (pdialog->sell_shell) {
-    gtk_widget_destroy(pdialog->sell_shell);
+    gtk_window_destroy(GTK_WINDOW(pdialog->sell_shell));
   }
   if (pdialog->rename_shell) {
-    gtk_widget_destroy(pdialog->rename_shell);
+    gtk_window_destroy(GTK_WINDOW(pdialog->rename_shell));
   }
 
   cairo_surface_destroy(pdialog->map_canvas_store_unscaled);
@@ -3371,7 +3566,7 @@ static void city_destroy_callback(GtkWidget *w, gpointer data)
 ***************************************************************************/
 static void close_city_dialog(struct city_dialog *pdialog)
 {
-  gtk_widget_destroy(pdialog->shell);
+  gtk_window_destroy(GTK_WINDOW(pdialog->shell));
 }
 
 /***********************************************************************//**
@@ -3445,11 +3640,11 @@ static void switch_city_callback(GtkWidget *w, gpointer data)
 
   /* reinitialize happiness, and cma dialogs */
   if (game.info.citizen_nationality) {
-    gtk_container_add(GTK_CONTAINER(pdialog->happiness.citizens),
-                      citizens_dialog_display(pdialog->pcity));
+    gtk_box_append(GTK_BOX(pdialog->happiness.citizens),
+                   citizens_dialog_display(pdialog->pcity));
   }
-  gtk_container_add(GTK_CONTAINER(pdialog->happiness.widget),
-                    get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
+  gtk_box_append(GTK_BOX(pdialog->happiness.widget),
+                 get_top_happiness_display(pdialog->pcity, low_citydlg, pdialog->shell));
   if (!client_is_observer()) {
     fc_assert(pdialog->cma_editor != NULL);
     pdialog->cma_editor->pcity = new_pcity;
@@ -3461,14 +3656,24 @@ static void switch_city_callback(GtkWidget *w, gpointer data)
   center_tile_mapcanvas(pdialog->pcity->tile);
   can_slide = TRUE;
   if (!client_is_observer()) {
-    set_cityopt_values(pdialog);  /* need not be in real_city_dialog_refresh */
+    set_cityopt_values(pdialog);  /* Need not be in real_city_dialog_refresh */
   }
 
   real_city_dialog_refresh(pdialog->pcity);
 
-  /* recenter the city map(s) */
+  /* Recenter the city map(s) */
   city_dialog_map_recenter(pdialog->overview.map_canvas.sw);
   if (pdialog->happiness.map_canvas.sw) {
     city_dialog_map_recenter(pdialog->happiness.map_canvas.sw);
   }
+}
+
+/***********************************************************************//**
+  Refresh worklist editor for all city dialogs.
+***************************************************************************/
+void refresh_all_city_worklists(void)
+{
+  dialog_list_iterate(dialog_list, pdialog) {
+    refresh_worklist(pdialog->production.worklist);
+  } dialog_list_iterate_end;
 }

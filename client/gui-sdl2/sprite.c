@@ -35,7 +35,7 @@
 
 #include "sprite.h"
 
-static struct sprite *ctor_sprite(SDL_Surface *pSurface);
+static struct sprite *ctor_sprite(SDL_Surface *surf);
 
 /************************************************************************//**
   Return a NULL-terminated, permanently allocated array of possible
@@ -109,16 +109,16 @@ struct sprite *crop_sprite(struct sprite *source,
                            float scale, bool smooth)
 {
   SDL_Rect src_rect = {(Sint16) x, (Sint16) y, (Uint16) width, (Uint16) height};
-  SDL_Surface *pSrc = crop_rect_from_surface(GET_SURF(source), &src_rect);
-  SDL_Surface *pDest = NULL;
+  SDL_Surface *psrc = crop_rect_from_surface(GET_SURF(source), &src_rect);
+  SDL_Surface *pdest = NULL;
 
   if (mask) {
-    pDest = mask_surface(pSrc, mask->psurface, x - mask_offset_x, y - mask_offset_y);
-    FREESURFACE(pSrc);
-    return ctor_sprite(pDest);
+    pdest = mask_surface(psrc, mask->psurface, x - mask_offset_x, y - mask_offset_y);
+    FREESURFACE(psrc);
+    return ctor_sprite(pdest);
   }
 
-  return ctor_sprite(pSrc);
+  return ctor_sprite(psrc);
 }
 
 /************************************************************************//**
@@ -174,11 +174,20 @@ void free_sprite(struct sprite *s)
 /************************************************************************//**
   Create a sprite struct and fill it with SDL_Surface pointer
 ****************************************************************************/
-static struct sprite *ctor_sprite(SDL_Surface *pSurface)
+static struct sprite *ctor_sprite(SDL_Surface *surf)
 {
   struct sprite *result = fc_malloc(sizeof(struct sprite));
 
-  result->psurface = pSurface;
+  result->psurface = surf;
 
   return result;
+}
+
+/************************************************************************//**
+  Return a sprite image of a number.
+****************************************************************************/
+struct sprite *load_gfxnumber(int num)
+{
+  /* Not supported in sdl2-client */
+  return NULL;
 }

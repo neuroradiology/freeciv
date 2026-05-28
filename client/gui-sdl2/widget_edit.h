@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 2006 - The Freeciv Project
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,24 +14,24 @@
 #ifndef FC__WIDGET_EDIT_H
 #define FC__WIDGET_EDIT_H
 
-enum Edit_Return_Codes {
+enum edit_return_codes {
   ED_RETURN = 1,
   ED_ESC = 2,
   ED_MOUSE = 3,
   ED_FORCE_EXIT = 4
 };
 
-#define create_edit_from_chars(pBackground, pDest, pCharString, iPtsize, length, flags) \
-	create_edit(pBackground, pDest,                                                 \
-		    create_utf8_from_char(pCharString, iPtsize),                        \
+#define create_edit_from_chars(background, pdest, char_string, ptsize, length, flags) \
+	create_edit(background, pdest,                                                \
+		    create_utf8_from_char(char_string, ptsize),                       \
 		    length, flags)
 
-#define edit(pEdit) edit_field(pEdit)
+#define edit(pedit) edit_field(pedit)
 
-struct widget *create_edit(SDL_Surface *pBackground, struct gui_layer *pDest,
+struct widget *create_edit(SDL_Surface *background, struct gui_layer *pdest,
                            utf8_str *pstr, int length,
                            Uint32 flags);
-enum Edit_Return_Codes edit_field(struct widget *pEdit_Widget);
-int draw_edit(struct widget *pEdit, Sint16 start_x, Sint16 start_y);
+enum edit_return_codes edit_field(struct widget *edit_widget);
+int draw_edit(struct widget *pedit, Sint16 start_x, Sint16 start_y);
 
 #endif /* FC__WIDGET_EDIT_H */

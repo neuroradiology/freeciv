@@ -28,15 +28,28 @@
 /* common */
 #include "actions.h"
 #include "effects.h"
+#include "fc_types.h"
 #include "game.h"
+#include "movement.h"
 #include "requirements.h"
 #include "unittype.h"
 
 /* server */
 #include "rssanity.h"
 #include "ruleset.h"
+#include "settings.h"
 
 #include "rscompat.h"
+
+#define enough_new_user_flags(_new_flags_, _name_,                        \
+                              _LAST_USER_FLAG_, _LAST_USER_FLAG_PREV_)    \
+FC_STATIC_ASSERT((ARRAY_SIZE(_new_flags_)                                 \
+                  <= _LAST_USER_FLAG_ - _LAST_USER_FLAG_PREV_),           \
+                 not_enough_new_##_name_##_user_flags)
+
+#define UTYF_LAST_USER_FLAG_3_0 UTYF_USER_FLAG_40
+#define UCF_LAST_USER_FLAG_3_0 UCF_USER_FLAG_8
+#define TER_LAST_USER_FLAG_3_0 TER_USER_8
 
 /**********************************************************************//**
   Initialize rscompat information structure
@@ -52,14 +65,15 @@ void rscompat_init_info(struct rscompat_info *info)
 **************************************************************************/
 int rscompat_check_capabilities(struct section_file *file,
                                 const char *filename,
-                                struct rscompat_info *info)
+                                const struct rscompat_info *info)
 {
   const char *datafile_options;
   bool ok = FALSE;
+  int format;
 
   if (!(datafile_options = secfile_lookup_str(file, "datafile.options"))) {
     log_fatal("\"%s\": ruleset capability problem:", filename);
-    ruleset_error(LOG_ERROR, "%s", secfile_error());
+    ruleset_error(NULL, LOG_ERROR, "%s", secfile_error());
 
     return 0;
   }
@@ -80,7 +94,7 @@ int rscompat_check_capabilities(struct section_file *file,
       log_fatal("\"%s\": ruleset datafile appears incompatible:", filename);
       log_fatal("  datafile options: %s", datafile_options);
       log_fatal("  supported options: %s", RULESET_CAPABILITIES);
-      ruleset_error(LOG_ERROR, "Capability problem");
+      ruleset_error(NULL, LOG_ERROR, "Capability problem");
 
       return 0;
     }
@@ -89,32 +103,217 @@ int rscompat_check_capabilities(struct section_file *file,
                 " that we don't support:", filename);
       log_fatal("  datafile options: %s", datafile_options);
       log_fatal("  supported options: %s", RULESET_CAPABILITIES);
-      ruleset_error(LOG_ERROR, "Capability problem");
+      ruleset_error(NULL, LOG_ERROR, "Capability problem");
 
       return 0;
     }
   }
 
-  return secfile_lookup_int_default(file, 1, "datafile.format_version");
+  if (!secfile_lookup_int(file, &format, "datafile.format_version")) {
+    log_error("\"%s\": lacking legal format_version field", filename);
+    ruleset_error(NULL, LOG_ERROR, "%s", secfile_error());
+
+    return 0;
+  } else if (format == 0) {
+    log_error("\"%s\": Illegal format_version value", filename);
+    ruleset_error(NULL, LOG_ERROR, "Format version error");
+  }
+
+  return format;
+}
+/**********************************************************************//**
+  Different ruleset files within a ruleset directory should all have
+  identical datafile.format_version
+  This checks the file version against the expected version.
+
+  See also rscompat_check_capabilities
+**************************************************************************/
+bool rscompat_check_cap_and_version(struct section_file *file,
+                                    const char *filename,
+                                    const struct rscompat_info *info)
+{
+  int format_version;
+
+  fc_assert_ret_val(info->version > 0, FALSE);
+
+  format_version = rscompat_check_capabilities(file, filename, info);
+  if (format_version <= 0) {
+    /* Already logged in rscompat_check_capabilities */
+    return FALSE;
+  }
+
+  if (format_version != info->version) {
+    log_fatal("\"%s\": ruleset datafile format version differs from"
+              " other ruleset datafile(s):", filename);
+    log_fatal("  datafile format version: %d", format_version);
+    log_fatal("  expected format version: %d", info->version);
+    ruleset_error(NULL, LOG_ERROR, "Inconsistent format versions");
+
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 /**********************************************************************//**
-  Find and return the first unused unit type user flag. If all unit type
-  user flags are taken MAX_NUM_USER_UNIT_FLAGS is returned.
+  Add all hard obligatory requirements to an action enabler or disable it.
+  @param ae the action enabler to add requirements to.
+  @return TRUE iff adding obligatory hard reqs for the enabler's action
+               needs to restart - say if an enabler was added or removed.
 **************************************************************************/
-static int first_free_unit_type_user_flag(void)
+static bool
+rscompat_enabler_add_obligatory_hard_reqs(struct action_enabler *ae)
 {
-  int flag;
+  struct req_vec_problem *problem;
 
-  /* Find the first unused user defined unit type flag. */
-  for (flag = 0; flag < MAX_NUM_USER_UNIT_FLAGS; flag++) {
-    if (unit_type_flag_id_name_cb(flag + UTYF_USER_FLAG_1) == NULL) {
-      return flag;
+  struct action *paction = action_by_number(ae->action);
+  /* Some changes requires starting to process an action's enablers from
+   * the beginning. */
+  bool needs_restart = FALSE;
+
+  while ((problem = action_enabler_suggest_repair(ae)) != NULL) {
+    /* A hard obligatory requirement is missing. */
+
+    int i;
+
+    if (problem->num_suggested_solutions == 0) {
+      /* Didn't get any suggestions about how to solve this. */
+
+      log_error("While adding hard obligatory reqs to action enabler"
+                 " for %s: %s"
+                 " Don't know how to fix it."
+                 " Dropping it.",
+                action_rule_name(paction), problem->description);
+      ae->ruledit_disabled = TRUE;
+
+      req_vec_problem_free(problem);
+      return TRUE;
+    }
+
+    /* Sanity check. */
+    fc_assert_ret_val(problem->num_suggested_solutions > 0,
+                      needs_restart);
+
+    /* Only append is supported for upgrade */
+    for (i = 0; i < problem->num_suggested_solutions; i++) {
+      if (problem->suggested_solutions[i].operation != RVCO_APPEND) {
+        /* A problem that isn't caused by missing obligatory hard
+         * requirements has been detected.
+         *
+         * Probably an old requirement that contradicted a hard requirement
+         * that wasn't documented by making it obligatory. In that case all
+         * suggested solutions has been applied to the enabler creating a
+         * new copy for each possible fulfillment of the new obligatory hard
+         * requirement.
+         *
+         * If another copy of the original enabler has survived this isn't
+         * an error. It probably isn't event an indication of a potential
+         * problem.
+         *
+         * If no possible solution survives the enabler was never in use
+         * because the action it self would have blocked it. In that case
+         * this is an error. */
+
+        log_warn("While adding hard obligatory reqs to action enabler"
+                 " for %s: %s"
+                 " Dropping it.",
+                 action_rule_name(paction), problem->description);
+        ae->ruledit_disabled = TRUE;
+        req_vec_problem_free(problem);
+        return TRUE;
+      }
+    }
+
+    for (i = 0; i < problem->num_suggested_solutions; i++) {
+      struct action_enabler *new_enabler;
+
+      /* There can be more than one suggestion to apply. In that case both
+       * are applied to their own copy. The original should therefore be
+       * kept for now. */
+      new_enabler = action_enabler_copy(ae);
+
+      /* Apply the solution. */
+      if (!req_vec_change_apply(&problem->suggested_solutions[i],
+                                action_enabler_vector_by_number,
+                                new_enabler)) {
+        log_error("While adding hard obligatory reqs to action enabler"
+                  " for %s: %s"
+                  "Failed to apply solution %s."
+                  " Dropping it.",
+                  action_rule_name(paction), problem->description,
+                  req_vec_change_translation(
+                    &problem->suggested_solutions[i],
+                    action_enabler_vector_by_number_name));
+        new_enabler->ruledit_disabled = TRUE;
+        req_vec_problem_free(problem);
+        return TRUE;
+      }
+
+      if (problem->num_suggested_solutions - 1 == i) {
+        /* The last modification is to the original enabler. */
+        ae->action = new_enabler->action;
+        ae->ruledit_disabled = new_enabler->ruledit_disabled;
+        requirement_vector_copy(&ae->actor_reqs,
+                                &new_enabler->actor_reqs);
+        requirement_vector_copy(&ae->target_reqs,
+                                &new_enabler->target_reqs);
+        FC_FREE(new_enabler);
+      } else {
+        /* Register the new enabler */
+        action_enabler_add(new_enabler);
+
+        /* This changes the number of action enablers. */
+        needs_restart = TRUE;
+      }
+    }
+
+    req_vec_problem_free(problem);
+
+    if (needs_restart) {
+      /* May need to apply future upgrades to the copies too. */
+      return TRUE;
     }
   }
 
-  /* All unit type user flags are taken. */
-  return MAX_NUM_USER_UNIT_FLAGS;
+  return needs_restart;
+}
+
+/**********************************************************************//**
+  Update existing action enablers for new hard obligatory requirements.
+  Disable those that can't be upgraded.
+**************************************************************************/
+void rscompat_enablers_add_obligatory_hard_reqs(void)
+{
+  log_normal("action enablers: adding obligatory hard requirements.");
+  log_warn("More than one way to fulfill a new obligatory hard requirement"
+           " may exist."
+           " In that case the enabler is copied so each alternative"
+           " solution is applied to a copy of the enabler."
+           " If an action enabler becomes self contradicting after applying"
+           " a solution it is dropped."
+           " Note that other copies of the original enabler may have"
+           " survived even if one copy is dropped.");
+
+  action_iterate(act_id) {
+    bool restart_enablers_for_action;
+
+    do {
+      restart_enablers_for_action = FALSE;
+      action_enabler_list_iterate(action_enablers_for_action(act_id), ae) {
+        if (ae->ruledit_disabled) {
+          /* Ignore disabled enablers */
+          continue;
+        }
+        if (rscompat_enabler_add_obligatory_hard_reqs(ae)) {
+          /* Something important, probably the number of action enablers
+           * for this action, changed. Start over again on this action's
+           * enablers. */
+          restart_enablers_for_action = TRUE;
+          break;
+        }
+      } action_enabler_list_iterate_end;
+    } while (restart_enablers_for_action);
+  } action_iterate_end;
 }
 
 /**********************************************************************//**
@@ -129,78 +328,8 @@ static int first_free_unit_type_user_flag(void)
 **************************************************************************/
 bool rscompat_names(struct rscompat_info *info)
 {
-  if (info->ver_units < 20) {
-    /* Some unit type flags moved to the ruleset between 3.0 and 3.1.
-     * Add them back as user flags.
-     * XXX: ruleset might not need all of these, and may have enough
-     * flags of its own that these additional ones prevent conversion. */
-    const struct {
-      const char *name;
-      const char *helptxt;
-    } new_flags_31[] = {
-      { N_("Infra"), N_("Can build infrastructure.") },
-    };
-
-    int first_free;
-    int i;
-
-    /* Unit type flags. */
-    first_free = first_free_unit_type_user_flag() + UTYF_USER_FLAG_1;
-
-    for (i = 0; i < ARRAY_SIZE(new_flags_31); i++) {
-      if (UTYF_USER_FLAG_1 + MAX_NUM_USER_UNIT_FLAGS <= first_free + i) {
-        /* Can't add the user unit type flags. */
-        ruleset_error(LOG_ERROR,
-                      "Can't upgrade the ruleset. Not enough free unit type "
-                      "user flags to add user flags for the unit type flags "
-                      "that used to be hardcoded.");
-        return FALSE;
-      }
-      /* Shouldn't be possible for valid old ruleset to have flag names that
-       * clash with these ones */
-      if (unit_type_flag_id_by_name(new_flags_31[i].name, fc_strcasecmp)
-          != unit_type_flag_id_invalid()) {
-        ruleset_error(LOG_ERROR,
-                      "Ruleset had illegal user unit type flag '%s'",
-                      new_flags_31[i].name);
-        return FALSE;
-      }
-      set_user_unit_type_flag_name(first_free + i,
-                                   new_flags_31[i].name,
-                                   new_flags_31[i].helptxt);
-    }
-  }
-
   /* No errors encountered. */
   return TRUE;
-}
-
-/**********************************************************************//**
-  Handle a universal being separated from an original universal.
-
-  A universal may be split into two new universals. An effect may mention
-  the universal that now has been split in its requirement list. In that
-  case two effect - one for the original and one for the universal being
-  separated from it - are needed.
-
-  Check if the original universal is mentioned in the requirement list of
-  peffect. Handle creating one effect for the original and one for the
-  universal that has been separated out if it is.
-**************************************************************************/
-static bool effect_handle_split_universal(struct effect *peffect,
-                                          struct universal original,
-                                          struct universal separated)
-{
-  if (universal_is_mentioned_by_requirements(&peffect->reqs, &original)) {
-    /* Copy the old effect. */
-    effect_copy(peffect);
-
-    /* Replace the original requirement with the separated requirement. */
-    return universal_replace_in_req_vec(&peffect->reqs,
-                                        &original, &separated);
-  }
-
-  return FALSE;
 }
 
 /**********************************************************************//**
@@ -210,97 +339,15 @@ static bool effect_list_compat_cb(struct effect *peffect, void *data)
 {
   struct rscompat_info *info = (struct rscompat_info *)data;
 
-  if (info->ver_effects < 20) {
-    /* Attack has been split in regular "Attack" and "Suicide Attack". */
-    effect_handle_split_universal(peffect,
-        universal_by_number(VUT_ACTION, ACTION_ATTACK),
-        universal_by_number(VUT_ACTION, ACTION_SUICIDE_ATTACK));
+  if (info->version < RSFORMAT_3_2) {
+    if (peffect->type == EFT_GROWTH_FOOD) {
+      /* Equivalent Shrink_Food effect for each old Growth_Food */
+      effect_copy(peffect, EFT_SHRINK_FOOD);
+    }
   }
 
   /* Go to the next effect. */
   return TRUE;
-}
-
-/**********************************************************************//**
-  Turn old effect to an action enabler.
-**************************************************************************/
-static void effect_to_enabler(action_id action, struct section_file *file,
-                              const char *sec_name, struct rscompat_info *compat,
-                              const char *type)
-{
-  int value = secfile_lookup_int_default(file, 1, "%s.value", sec_name);
-  char buf[1024];
-
-  if (value > 0) {
-    /* It was an enabling effect. Add enabler */
-    struct action_enabler *enabler;
-    struct requirement_vector *reqs;
-    struct requirement settler_req;
-
-    enabler = action_enabler_new();
-    enabler->action = action;
-
-    reqs = lookup_req_list(file, compat, sec_name, "reqs", "old effect");
-
-    /* TODO: Divide requirements to actor_reqs and target_reqs depending
-     *       their type. */
-    requirement_vector_copy(&enabler->actor_reqs, reqs);
-
-    settler_req = req_from_values(VUT_UTFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
-                                  UTYF_SETTLERS);
-    requirement_vector_append(&enabler->actor_reqs, settler_req);
-
-    /* Add the enabler to the ruleset. */
-    action_enabler_add(enabler);
-
-    if (compat->log_cb != NULL) {
-      fc_snprintf(buf, sizeof(buf),
-                  "Converted effect %s to an action enabler. Make sure requirements "
-                  "are correctly divided to actor and target requirements.",
-                  type);
-      compat->log_cb(buf);
-    }
-  } else if (value < 0) {
-    if (compat->log_cb != NULL) {
-      fc_snprintf(buf, sizeof(buf),
-                  "%s effect with negative value can't be automatically converted "
-                  "to an action enabler. Do that manually.", type);
-      compat->log_cb(buf);
-    }
-  }
-}
-
-/**********************************************************************//**
-  Check if effect name refers to one of the removed effects, and handle it
-  if it does. Returns TRUE iff name was a valid old name.
-**************************************************************************/
-bool rscompat_old_effect_3_1(const char *type, struct section_file *file,
-                             const char *sec_name, struct rscompat_info *compat)
-{
-  if (compat->ver_effects < 20) {
-    if (!fc_strcasecmp(type, "Transform_Possible")) {
-      effect_to_enabler(ACTION_TRANSFORM_TERRAIN, file, sec_name, compat, type);
-      return TRUE;
-    }
-    if (!fc_strcasecmp(type, "Irrig_TF_Possible")) {
-      effect_to_enabler(ACTION_IRRIGATE_TF, file, sec_name, compat, type);
-      return TRUE;
-    }
-    if (!fc_strcasecmp(type, "Mining_TF_Possible")) {
-      effect_to_enabler(ACTION_MINE_TF, file, sec_name, compat, type);
-      return TRUE;
-    }
-    if (!fc_strcasecmp(type, "Mining_Possible")) {
-      effect_to_enabler(ACTION_MINE, file, sec_name, compat, type);
-      return TRUE;
-    }
-    if (!fc_strcasecmp(type, "Irrig_Possible")) {
-      effect_to_enabler(ACTION_IRRIGATE, file, sec_name, compat, type);
-      return TRUE;
-    }
-  }
-
-  return FALSE;
 }
 
 /**********************************************************************//**
@@ -318,97 +365,68 @@ void rscompat_postprocess(struct rscompat_info *info)
    * the new effects from being upgraded by accident. */
   iterate_effect_cache(effect_list_compat_cb, info);
 
-  if (info->ver_units < 20) {
-    unit_type_iterate(ptype) {
-      if (utype_has_flag(ptype, UTYF_SETTLERS)) {
-        int flag;
+  if (info->version < RSFORMAT_3_2) {
+    struct effect *peffect;
 
-        flag = unit_type_flag_id_by_name("Infra", fc_strcasecmp);
-        fc_assert(unit_type_flag_id_is_valid(flag));
-        BV_SET(ptype->flags, flag);
+    /* Nuke blast radius has moved to the ruleset. */
+    action_iterate(act_id) {
+      const struct action *paction = action_by_number(act_id);
+
+      if (!(action_has_result(paction, ACTRES_NUKE)
+            || action_has_result(paction, ACTRES_NUKE_UNITS)
+            || action_has_result(paction, ACTRES_SPY_NUKE))) {
+        /* Not relevant. */
+        continue;
       }
-    } unit_type_iterate_end;
-  }
 
-  if (info->ver_game < 20) {
-    /* New enablers */
-    struct action_enabler *enabler;
-    struct requirement e_req;
+      peffect = effect_new(EFT_NUKE_BLAST_RADIUS_1_SQ, 2, NULL);
+      effect_req_append(peffect, req_from_str("Action", "Local",
+                                              FALSE, TRUE, FALSE,
+                                              action_rule_name(paction)));
+    } action_iterate_end;
 
-    enabler = action_enabler_new();
-    enabler->action = ACTION_PILLAGE;
-    e_req = req_from_values(VUT_UCFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
-                            UCF_CAN_PILLAGE);
-    requirement_vector_append(&enabler->actor_reqs, e_req);
-    action_enabler_add(enabler);
-
-    enabler = action_enabler_new();
-    enabler->action = ACTION_FORTIFY;
-    e_req = req_from_values(VUT_UCFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
-                            UCF_CAN_FORTIFY);
-    requirement_vector_append(&enabler->actor_reqs, e_req);
-    action_enabler_add(enabler);
-
-    enabler = action_enabler_new();
-    enabler->action = ACTION_ROAD;
-    e_req = req_from_values(VUT_UTFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
-                            UTYF_SETTLERS);
-    requirement_vector_append(&enabler->actor_reqs, e_req);
-    action_enabler_add(enabler);
-
-    enabler = action_enabler_new();
-    enabler->action = ACTION_CONVERT;
-    action_enabler_add(enabler);
-
-    enabler = action_enabler_new();
-    enabler->action = ACTION_BASE;
-    e_req = req_from_values(VUT_UTFLAG, REQ_RANGE_LOCAL, FALSE, TRUE, FALSE,
-                            UTYF_SETTLERS);
-    requirement_vector_append(&enabler->actor_reqs, e_req);
-    action_enabler_add(enabler);
-
-    /* Update action enablers. */
     action_enablers_iterate(ae) {
-      if (action_enabler_obligatory_reqs_missing(ae)) {
-        /* Add previously implicit obligatory hard requirement(s). */
-        action_enabler_obligatory_reqs_add(ae);
-      }
+      if (ae->action == ACTION_CLEAN_POLLUTION) {
+        /* TODO: Stop making the copy to preserve enabler for
+         * the original action. */
+        struct action_enabler *copy = action_enabler_copy(ae);
 
-      /* "Attack" is split in a unit consuming and a non unit consuming
-       * version. */
-      if (ae->action == ACTION_ATTACK) {
-        /* The old rule is represented with two action enablers. */
-        enabler = action_enabler_copy(ae);
-
-        /* One allows regular attacks. */
-        requirement_vector_append(&ae->actor_reqs,
-                                  req_from_str("UnitClassFlag", "Local",
-                                               FALSE, FALSE, TRUE,
-                                               "Missile"));
-
-        /* The other allows suicide attacks. */
-        enabler->action = ACTION_SUICIDE_ATTACK;
-        requirement_vector_append(&enabler->actor_reqs,
-                                  req_from_str("UnitClassFlag", "Local",
+        copy->action = ACTION_CLEAN;
+        requirement_vector_append(&copy->target_reqs,
+                                  req_from_str("ExtraFlag", "Local",
                                                FALSE, TRUE, TRUE,
-                                               "Missile"));
+                                               "CleanAsPollution"));
 
-        /* Add after the action was changed. */
-        action_enabler_add(enabler);
+        action_enabler_add(copy);
+      }
+      if (ae->action == ACTION_CLEAN_FALLOUT) {
+        /* TODO: Stop making the copy to preserve enabler for
+         * the original action. */
+        struct action_enabler *copy = action_enabler_copy(ae);
+
+        copy->action = ACTION_CLEAN;
+        requirement_vector_append(&copy->target_reqs,
+                                  req_from_str("ExtraFlag", "Local",
+                                               FALSE, TRUE, TRUE,
+                                               "CleanAsFallout"));
+
+        action_enabler_add(copy);
       }
     } action_enablers_iterate_end;
 
-    /* Enable all clause types */
-    {
-      int i;
-
-      for (i = 0; i < CLAUSE_COUNT; i++) {
-        struct clause_info *cinfo = clause_info_get(i);
-
-        cinfo->enabled = TRUE;
-      }
-    }
+    /* That Attack and Bombard can't destroy a city
+     * has moved to the ruleset. */
+    peffect = effect_new(EFT_UNIT_NO_LOSE_POP,
+                         effect_value_will_make_positive(
+                             EFT_UNIT_NO_LOSE_POP),
+                         NULL);
+    effect_req_append(peffect, req_from_str("MinSize", "City", FALSE, FALSE,
+                                            FALSE, "2"));
   }
+
+  /* Make sure that all action enablers added or modified by the
+   * compatibility post processing fulfills all hard action requirements. */
+  rscompat_enablers_add_obligatory_hard_reqs();
 
   /* The ruleset may need adjustments it didn't need before compatibility
    * post processing.
@@ -420,45 +438,300 @@ void rscompat_postprocess(struct rscompat_info *info)
 }
 
 /**********************************************************************//**
-  Replace deprecated requirement type names with currently valid ones.
-
-  The extra arguments are for situation where some, but not all, instances
-  of a requirement type should become something else.
+  Update improvement genus for coinage improvements.
 **************************************************************************/
-const char *rscompat_req_type_name_3_1(const char *old_type,
-                                       const char *old_range,
-                                       bool old_survives, bool old_present,
-                                       bool old_quiet,
-                                       const char *old_value)
+enum impr_genus_id rscompat_genus_3_2(struct rscompat_info *compat,
+                                      const bv_impr_flags flags,
+                                      enum impr_genus_id old_genus)
 {
-  return old_type;
+  if (compat->compat_mode && compat->version < RSFORMAT_3_2) {
+    if (BV_ISSET(flags, IF_GOLD) && IG_SPECIAL == old_genus) {
+      return IG_CONVERT;
+    }
+  }
+
+  return old_genus;
 }
 
 /**********************************************************************//**
-  Replace deprecated requirement type names with currently valid ones.
-
-  The extra arguments are for situation where some, but not all, instances
-  of a requirement type should become something else.
+  Update requirement range for certain requirement types.
 **************************************************************************/
-const char *rscompat_req_name_3_1(const char *type,
-                                  const char *old_name)
+const char *rscompat_req_range_3_2(struct rscompat_info *compat,
+                                   const char *type,
+                                   const char *old_range)
 {
-  if (!fc_strcasecmp("DiplRel", type)
-      && !fc_strcasecmp("Is foreign", old_name)) {
-    return "Foreign";
+  if (compat->compat_mode && compat->version < RSFORMAT_3_2) {
+    /* Requirement types that refer to the target tile and now use the
+     * "Tile" range instead of the "Local" range */
+    if (!fc_strcasecmp(req_range_name(REQ_RANGE_LOCAL), old_range)
+        && (!fc_strcasecmp(universals_n_name(VUT_TERRAIN), type)
+            || !fc_strcasecmp(universals_n_name(VUT_TERRAINCLASS), type)
+            || !fc_strcasecmp(universals_n_name(VUT_TERRAINALTER), type)
+            || !fc_strcasecmp(universals_n_name(VUT_CITYTILE), type)
+            || !fc_strcasecmp(universals_n_name(VUT_TERRFLAG), type)
+            || !fc_strcasecmp(universals_n_name(VUT_ROADFLAG), type)
+            || !fc_strcasecmp(universals_n_name(VUT_EXTRA), type)
+            || !fc_strcasecmp(universals_n_name(VUT_MAXTILEUNITS), type)
+            || !fc_strcasecmp(universals_n_name(VUT_EXTRAFLAG), type))) {
+      return req_range_name(REQ_RANGE_TILE);
+    }
   }
 
-  return old_name;
+  return old_range;
 }
 
 /**********************************************************************//**
-  Replace deprecated unit type flag names with currently valid ones.
+  Update individual requirements.
 **************************************************************************/
-const char *rscompat_utype_flag_name_3_1(struct rscompat_info *compat,
-                                         const char *old_type)
+void rscompat_req_adjust_3_2(const struct rscompat_info *compat,
+                             const char **ptype, const char **pname,
+                             bool *ppresent, const char *sec_name)
 {
-  if (compat->compat_mode) {
+  char buf[1024];
+
+  if (compat->compat_mode && compat->version < RSFORMAT_3_2) {
+    /* Recreate old "alltemperate" and "singlepole" ServerSetting
+     * requirements with MinLatitude and MaxLatitude. */
+    if (!fc_strcasecmp(universals_n_name(VUT_SERVERSETTING), *ptype)) {
+      if (!fc_strcasecmp("alltemperate", *pname)) {
+        /* alltemperate implies no latitudes != 500
+         * !alltemperate implies latitudes 0 to 1000
+         * ~> alltemperate enabled iff no latitude >= 750
+         * (other numbers in [501,1000] would work as well)
+         * (no latitude <= some number in [0, 499] would work as well) */
+        *ptype = universals_n_name(VUT_MINLATITUDE);
+        *pname = "750";
+        *ppresent = !(*ppresent);
+
+        if (compat->log_cb != NULL) {
+          /* Inform the user that there are different solutions */
+          fc_snprintf(buf, sizeof(buf),
+                      "Replaced 'alltemperate' server setting requirement "
+                      "in %s with a MinLatitude requirement. Other "
+                      "equivalent requirements are possible; make sure it "
+                      "makes sense.", sec_name);
+          compat->log_cb(buf);
+        }
+      } else if (!fc_strcasecmp("singlepole", *pname)) {
+        /* Assume we're updating a sane ruleset, i.e. singlepole reqs only
+         * possible/relevant when alltemperate is already disabled.
+         * singlepole implies no latitudes < 0
+         * !singlepole implies latitudes -1000 to -1 (given !alltemperate)
+         * ~> singlepole enabled iff no latitude <= -500
+         * (other numbers in [-1000,-1] would work as well) */
+        *ptype = universals_n_name(VUT_MAXLATITUDE);
+        *pname = "-500";
+        *ppresent = !(*ppresent);
+
+        if (compat->log_cb != NULL) {
+          /* Inform the user that there are different solutions */
+          fc_snprintf(buf, sizeof(buf),
+                      "Replaced 'singlepole' server setting requirement "
+                      "in %s with a MaxLatitude requirement. Other "
+                      "equivalent requirements are possible; make sure it "
+                      "makes sense.", sec_name);
+          compat->log_cb(buf);
+        }
+      }
+    }
+  }
+}
+
+/**********************************************************************//**
+  Add user extra flags needed in ruleset update from 3.1 to 3.2
+
+  @return Number of flags added
+**************************************************************************/
+int add_user_extra_flags_3_2(int start)
+{
+  int i = 0;
+
+  /* TODO: Do we need "CleanAsPollution", or can we treat
+   *       it as the default while "CleanAsFallout" is special case? */
+  set_user_extra_flag_name(EF_USER_FLAG_1 + start + i++,
+                           "CleanAsPollution", NULL);
+  set_user_extra_flag_name(EF_USER_FLAG_1 + start + i++,
+                           "CleanAsFallout", NULL);
+
+  return i;
+}
+
+/**********************************************************************//**
+  Adjust values of an extra loaded from a 3.1 ruleset.
+**************************************************************************/
+void rscompat_extra_adjust_3_2(struct extra_type *pextra)
+{
+  /* Huts were not allowed on polar regions
+   * (defined as "Frozen" - but that was just workaround we don't want to reproduce) */
+  if (is_extra_caused_by(pextra, EC_HUT)) {
+    requirement_vector_append(&pextra->reqs,
+                              req_from_str("MaxLatitude", "Tile",
+                                           FALSE, TRUE, FALSE,
+                                           "980"));
+    requirement_vector_append(&pextra->reqs,
+                              req_from_str("MinLatitude", "Tile",
+                                           FALSE, TRUE, FALSE,
+                                           "-980"));
   }
 
-  return old_type;
+  /* Don't give these flags to extras that have been using
+   * removal time not tied to terrain, so it won't get
+   * overridden by "ActivityTime" effects we also add. */
+  if (is_extra_removed_by(pextra, ERM_CLEANPOLLUTION)
+      && pextra->removal_time == 0) {
+    BV_SET(pextra->flags,
+           extra_flag_id_by_name("CleanAsPollution", fc_strcasecmp));
+  }
+
+  if (is_extra_removed_by(pextra, ERM_CLEANFALLOUT)
+      && pextra->removal_time == 0) {
+    BV_SET(pextra->flags,
+           extra_flag_id_by_name("CleanAsFallout", fc_strcasecmp));
+  }
+}
+
+/**********************************************************************//**
+  Determine whether the given setting should be skipped and
+  rscompat_settings_do_special_handling should be called.
+**************************************************************************/
+bool rscompat_setting_needs_special_handling(const char *name)
+{
+  /* Replaced by 'northlatitude' and 'southlatitude' */
+  if (!fc_strcasecmp("alltemperate", name)
+      || !fc_strcasecmp("singlepole", name)) {
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Special handling for complex server setting changes.
+**************************************************************************/
+void rscompat_settings_do_special_handling(struct section_file *file,
+                  const char *section, void (*setdef)(struct setting *pset))
+{
+  /* Replace 'alltemperate' and 'singlepole' with appropriate
+   * 'northlatitude' and 'southlatitude' settings */
+  {
+    bool has_either = FALSE, locks_either = FALSE;
+    bool alltemperate = FALSE, singlepole = FALSE;
+    const char *name;
+    int j;
+
+    for (j = 0; (name = secfile_lookup_str_default(file, NULL,
+                                                   "%s.set%d.name",
+                                                   section, j)); j++) {
+      bool *pval;
+
+      if (!fc_strcasecmp("alltemperate", name)) {
+        pval = &alltemperate;
+      } else if (!fc_strcasecmp("singlepole", name)) {
+        pval = &singlepole;
+      } else {
+        /* neither of the settings we care for */
+        continue;
+      }
+
+      has_either = TRUE;
+
+      if (!secfile_lookup_bool(file, pval, "%s.set%d.value", section, j)) {
+        log_error("Can't read value for setting '%s': %s", name,
+                  secfile_error());
+      }
+
+      if (secfile_lookup_bool_default(file, FALSE,
+                                      "%s.set%d.lock", section, j)) {
+        locks_either = TRUE;
+      }
+    }
+
+    if (has_either) {
+      int north_latitude = alltemperate ? 500 : 1000;
+      int south_latitude = alltemperate ? 500 : (singlepole ? 0 : -1000);
+      struct setting *pset;
+      char reject_msg[256], buf[256];
+
+#define SET_INT_SETTING(name, value, lock)                                 \
+      pset = setting_by_name(name);                                        \
+      fc_assert(pset != NULL && setting_type(pset) == SST_INT);            \
+                                                                           \
+      if (setting_int_set(pset, value, NULL, reject_msg,                   \
+                          sizeof(reject_msg))) {                           \
+        log_normal(_("Ruleset: '%s' has been set to %s."),                 \
+                   setting_name(pset),                                     \
+                   setting_value_name(pset, TRUE, buf, sizeof(buf)));      \
+      } else {                                                             \
+        log_error("%s", reject_msg);                                       \
+      }                                                                    \
+                                                                           \
+      setdef(pset);                                                        \
+                                                                           \
+      if (lock) {                                                          \
+        setting_ruleset_lock_set(pset);                                    \
+        log_normal(_("Ruleset: '%s' has been locked by the ruleset."),     \
+                   setting_name(pset));                                    \
+      }
+
+      SET_INT_SETTING("northlatitude", north_latitude, locks_either);
+      SET_INT_SETTING("southlatitude", south_latitude, locks_either);
+
+#undef SET_INT_SETTING
+    }
+  }
+}
+
+/**********************************************************************//**
+  Migrate pollution and fallout time to extra specific removal times.
+**************************************************************************/
+bool rscompat_terrain_extra_rmtime_3_2(struct section_file *file,
+                                       const char *tsection,
+                                       struct terrain *pterrain)
+{
+  int pol_time = 3; /* Old default */
+  int fal_time = 3; /* Old default */
+  const char *filename = secfile_name(file);
+  bool ok = TRUE;
+
+  lookup_time(file, &pol_time,
+              tsection, "clean_pollution_time", filename, NULL, &ok);
+  lookup_time(file, &fal_time,
+              tsection, "clean_fallout_time", filename, NULL, &ok);
+
+  if (pol_time == fal_time) {
+    extra_type_iterate(pextra) {
+      pterrain->extra_removal_times[extra_index(pextra)] = pol_time;
+    } extra_type_iterate_end;
+  } else {
+    struct effect *peffect;
+
+    extra_type_iterate(pextra) {
+      pterrain->extra_removal_times[extra_index(pextra)] = pol_time;
+    } extra_type_iterate_end;
+
+    peffect = effect_new(EFT_ACTIVITY_TIME, fal_time, NULL);
+    effect_req_append(peffect, req_from_str("ExtraFlag", "Local",
+                                            FALSE, TRUE, TRUE,
+                                            "CleanAsFallout"));
+    effect_req_append(peffect, req_from_str("Terrain", "Tile",
+                                            FALSE, TRUE, TRUE,
+                                            terrain_rule_name(pterrain)));
+  }
+
+  return ok;
+}
+
+/**********************************************************************//**
+  Adjust freeciv-3.1 ruleset action ui_name to freeciv-3.2
+**************************************************************************/
+const char *rscompat_action_ui_name_S3_2(struct rscompat_info *compat,
+                                         int act_id)
+{
+  if (compat->compat_mode && compat->version < RSFORMAT_3_2) {
+    if (act_id == ACTION_TRANSPORT_DEBOARD) {
+      return "ui_name_transport_alight";
+    }
+  }
+
+  return NULL;
 }

@@ -28,6 +28,7 @@
 
 /* common */
 #include "citizens.h"
+#include "culture.h"
 #include "diptreaty.h"
 #include "government.h"
 #include "map.h"
@@ -38,6 +39,7 @@
 #include "player.h"
 #include "research.h"
 #include "rgbcolor.h"
+#include "specialist.h"
 #include "tech.h"
 #include "unitlist.h"
 
@@ -168,9 +170,10 @@ void kill_player(struct player *pplayer)
   /* Transfer back all cities not originally owned by player to their
      rightful owners, if they are still around */
   save_palace = game.server.savepalace;
-  game.server.savepalace = FALSE; /* moving it around is dumb */
+  game.server.savepalace = FALSE; /* Moving it around is dumb */
   city_list_iterate_safe(pplayer->cities, pcity) {
-    if (pcity->original != pplayer && pcity->original->is_alive) {
+    if (pcity->original != pplayer && pcity->original != NULL
+        && pcity->original->is_alive) {
       /* Transfer city to original owner, kill all its units outside of
          a radius of 3, give verbose messages of every unit transferred,
          and raze buildings according to raze chance (also removes palace) */
@@ -189,7 +192,7 @@ void kill_player(struct player *pplayer)
       log_verbose("Civil war strikes the remaining empire of %s",
                   pplayer->name);
       /* out of sheer cruelty we reanimate the player 
-       * so he can behold what happens to his empire */
+       * so they can behold what happens to their empire */
       pplayer->is_alive = TRUE;
       (void) civil_war(pplayer);
     } else {
@@ -399,11 +402,92 @@ void government_change(struct player *pplayer, struct government *gov,
 }
 
 /**********************************************************************//**
+  pvictor gets parts of treasury, map and cities of pvictim.
+  Normally happens when pvictim's gameloss unit is killed.
+  FIXME: any control over types of the loot?
+**************************************************************************/
+void player_loot_player(struct player *pvictor, struct player *pvictim)
+{
+  int ransom = fc_rand(1 + pvictim->economic.gold);
+  int n = 1 + fc_rand(3);
+
+  /* give map */
+  give_distorted_map(pvictim, pvictor, 50, TRUE);
+
+  log_debug("victim has money: %d", pvictim->economic.gold);
+  pvictor->economic.gold += ransom;
+  pvictim->economic.gold -= ransom;
+
+  while (n > 0) {
+    Tech_type_id ttid = steal_a_tech(pvictor, pvictim, A_UNSET);
+
+    if (ttid == A_NONE) {
+      log_debug("Worthless enemy doesn't have more techs to steal.");
+      break;
+    } else {
+      log_debug("Pressed tech %s from captured enemy",
+                research_advance_rule_name(research_get(pvictor), ttid));
+      if (!fc_rand(3)) {
+        break; /* out of luck */
+      }
+      n--;
+    }
+  }
+
+  { /* try to submit some cities */
+    int vcsize = city_list_size(pvictim->cities);
+    int evcsize = vcsize;
+    int conqsize = evcsize;
+
+    if (evcsize < 3) {
+      evcsize = 0;
+    } else {
+      evcsize -=3;
+    }
+    /* about a quarter on average with high numbers less probable */
+    conqsize = fc_rand(fc_rand(evcsize));
+
+    log_debug("conqsize=%d", conqsize);
+
+    if (conqsize > 0) {
+      bool palace = game.server.savepalace;
+      bool submit = FALSE;
+
+      game.server.savepalace = FALSE; /* moving it around is dumb */
+
+      city_list_iterate_safe(pvictim->cities, pcity) {
+        /* kindly ask the citizens to submit */
+        if (fc_rand(vcsize) < conqsize) {
+          submit = TRUE;
+        }
+        vcsize--;
+        if (submit) {
+          conqsize--;
+          /* Transfer city to the victorious player
+           * kill all its units outside of a radius of 7,
+           * give verbose messages of every unit transferred,
+           * and raze buildings according to raze chance
+           * (also removes palace) */
+          (void) transfer_city(pvictor, pcity, 7, TRUE, TRUE, TRUE,
+                               !is_barbarian(pvictor));
+          submit = FALSE;
+        }
+        if (conqsize <= 0) {
+          break;
+        }
+      } city_list_iterate_safe_end;
+      game.server.savepalace = palace;
+    }
+  }
+}
+
+/**********************************************************************//**
   Get length of a revolution.
 **************************************************************************/
 int revolution_length(struct government *gov, struct player *plr)
 {
   int turns;
+  int change_speed;
 
   if (!untargeted_revolution_allowed()
       && gov == game.government_during_revolution) {
@@ -423,7 +507,12 @@ int revolution_length(struct government *gov, struct player *plr)
     break;
   case REVOLEN_QUICKENING:
   case REVOLEN_RANDQUICK:
-    turns = game.server.revolution_length - gov->changed_to_times;
+    /* If everyone changes to this government once, the last 50% of players doing so
+     * will get the minimum time (1 turn) */
+    change_speed = (player_count() / 2) / (game.server.revolution_length - 1);
+    /* It never takes zero players to make revlen shorter */
+    change_speed = MAX(change_speed, 1);
+    turns = game.server.revolution_length - gov->changed_to_times / change_speed;
     turns = MAX(1, turns);
     if (game.info.revolentype == REVOLEN_RANDQUICK) {
       turns = fc_rand(turns) + 1;
@@ -465,8 +554,9 @@ void handle_player_change_government(struct player *pplayer,
      * a government). */
     turns = pplayer->revolution_finishes - game.info.turn;
   } else if ((is_ai(pplayer) && !has_handicap(pplayer, H_REVOLUTION))
-	     || !anarchy) {
+             || !anarchy) {
     /* AI players without the H_REVOLUTION handicap can skip anarchy */
+    anarchy = FALSE;
     turns = 0;
   } else {
     turns = revolution_length(gov, pplayer);
@@ -478,7 +568,8 @@ void handle_player_change_government(struct player *pplayer,
   if (anarchy && turns <= 0
       && pplayer->government != game.government_during_revolution) {
     /* Multiple changes attempted after single anarchy period */
-    if (game.info.revolentype == REVOLEN_QUICKENING) {
+    if (game.info.revolentype == REVOLEN_QUICKENING
+        || game.info.revolentype == REVOLEN_RANDQUICK) {
       notify_player(pplayer, NULL, E_REVOLT_DONE, ftc_server,
                     _("You can't revolt the same turn you finished previous revolution."));
       return;
@@ -497,7 +588,11 @@ void handle_player_change_government(struct player *pplayer,
   /* Now see if the revolution is instantaneous. */
   if (turns <= 0
       && pplayer->target_government != game.government_during_revolution) {
-    government_change(pplayer, pplayer->target_government, TRUE);
+    notify_player(pplayer, NULL, E_REVOLT_START, ftc_server,
+                  _("The %s will switch to %s in the end of "
+                    "the player phase."),
+                  nation_plural_for_player(pplayer),
+                  government_name_translation(pplayer->target_government));
     return;
   } else if (turns > 0) {
     notify_player(pplayer, NULL, E_REVOLT_START, ftc_server,
@@ -591,6 +686,49 @@ void update_revolution(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Recalculate what city is the named capital
+**************************************************************************/
+void update_capital(struct player *pplayer)
+{
+  int max_value = 0;
+  struct city *primary_capital = NULL;
+  int same_value_count = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    int value = get_city_bonus(pcity, EFT_CAPITAL_CITY);
+
+    if (value > max_value) {
+      max_value = value;
+      primary_capital = pcity;
+      same_value_count = 1;
+      /* Mark it at least some kind of capital, might turn to named capital
+       * after all have been processed. */
+      pcity->capital = CAPITAL_SECONDARY;
+    } else if (value > 0) {
+      /* Mark it at least some kind of capital. */
+      pcity->capital = CAPITAL_SECONDARY;
+      if (value == max_value) {
+        fc_assert(same_value_count >= 1);
+        same_value_count++;
+        if (fc_rand(same_value_count) == 1) {
+          primary_capital = pcity;
+        }
+      }
+    } else {
+      /* Not capital at all */
+      pcity->capital = CAPITAL_NOT;
+    }
+  } city_list_iterate_end;
+
+  if (primary_capital != NULL) {
+    primary_capital->capital = CAPITAL_PRIMARY;
+    pplayer->primary_capital_id = primary_capital->id;
+  } else {
+    pplayer->primary_capital_id = 0;
+  }
+}
+
+/**********************************************************************//**
   The following checks that government rates are acceptable for the present
   form of government. Has to be called when switching governments or when
   toggling from AI to human.
@@ -599,7 +737,7 @@ void check_player_max_rates(struct player *pplayer)
 {
   struct player_economic old_econ = pplayer->economic;
 
-  pplayer->economic = player_limit_to_max_rates(pplayer);
+  player_limit_to_max_rates(pplayer);
   if (old_econ.tax > pplayer->economic.tax) {
     notify_player(pplayer, NULL, E_NEW_GOVERNMENT, ftc_server,
                   _("Tax rate exceeded the max rate; adjusted."));
@@ -728,6 +866,26 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
     return;
   }
 
+  if (clause == CLAUSE_SHARED_TILES) {
+    if (!gives_shared_tiles(pplayer, pplayer2)) {
+      return;
+    }
+    BV_CLR(pplayer->gives_shared_tiles, player_index(pplayer2));
+    whole_map_iterate(&(wld.map), ptile) {
+      if (tile_owner(ptile) == pplayer && ptile->worked != NULL
+          && city_owner(ptile->worked) == pplayer2) {
+        struct city *pcity = ptile->worked;
+
+        city_map_update_empty(pcity, ptile);
+        pcity->specialists[DEFAULT_SPECIALIST]++;
+      }
+    } whole_map_iterate_end;
+    notify_player(pplayer2, NULL, E_TREATY_BROKEN, ftc_server,
+                  _("%s no longer shares tiles with us!"),
+                  player_name(pplayer));
+    return;
+  }
+
   diplcheck = pplayer_can_cancel_treaty(pplayer, pplayer2);
 
   /* The senate may not allow you to break the treaty.  In this case you
@@ -751,6 +909,11 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
 
   /* check what the new status will be */
   new_type = cancel_pact_result(old_type);
+
+  if (new_type == old_type) {
+    /* No change */
+    return;
+  }
 
   ds_plrplr2 = player_diplstate_get(pplayer, pplayer2);
   ds_plr2plr = player_diplstate_get(pplayer2, pplayer);
@@ -788,7 +951,7 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
 
   /* if there's a reason to cancel the pact, do it without penalty */
   /* FIXME: in the current implementation if you break more than one
-   * treaty simultaneously it may partially succed: the first treaty-breaking
+   * treaty simultaneously it may success partially: the first treaty-breaking
    * will happen but the second one will fail. */
   if (get_player_bonus(pplayer, EFT_HAS_SENATE) > 0 && !repeat) {
     if (ds_plrplr2->has_reason_to_cancel > 0) {
@@ -804,7 +967,7 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
     }
   }
   if (new_type == DS_WAR) {
-    call_incident(INCIDENT_WAR, pplayer, pplayer2);
+    call_incident(INCIDENT_WAR, CBR_VICTIM_ONLY, NULL, pplayer, pplayer2);
 
     enter_war(pplayer, pplayer2);
   }
@@ -856,7 +1019,7 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
                                      CLAUSE_ALLIANCE);
       } else {
         /* We are in the same team as the agressor; we cannot break 
-         * alliance with him. We trust our team mate and break alliance
+         * alliance with them. We trust our team mate and break alliance
          * with the attacked player */
         notify_player(other, NULL, E_TREATY_BROKEN, ftc_server,
                       _("Your team mate %s declared war on %s. "
@@ -963,6 +1126,7 @@ static void send_player_info_c_real(struct player *src,
 {
   struct packet_player_info info;
   struct packet_web_player_info_addition web_info;
+  struct packet_web_player_info_addition *webp_ptr;
 
   fc_assert_ret(src != NULL);
 
@@ -970,21 +1134,27 @@ static void send_player_info_c_real(struct player *src,
     dest = game.est_connections;
   }
 
-  package_player_common(src, &info, &web_info);
+  if (any_web_conns()) {
+    webp_ptr = &web_info;
+  } else {
+    webp_ptr = NULL;
+  }
+
+  package_player_common(src, &info, webp_ptr);
 
   conn_list_iterate(dest, pconn) {
     if (NULL == pconn->playing && pconn->observer) {
       /* Global observer. */
-      package_player_info(src, &info, &web_info, pconn->playing, INFO_FULL);
+      package_player_info(src, &info, webp_ptr, pconn->playing, INFO_FULL);
     } else if (NULL != pconn->playing) {
       /* Players (including regular observers) */
-      package_player_info(src, &info, &web_info,
+      package_player_info(src, &info, webp_ptr,
                           pconn->playing, INFO_MINIMUM);
     } else {
-      package_player_info(src, &info, &web_info, NULL, INFO_MINIMUM);
+      package_player_info(src, &info, webp_ptr, NULL, INFO_MINIMUM);
     }
     send_packet_player_info(pconn, &info);
-    web_send_packet(player_info_addition, pconn, &web_info);
+    web_send_packet(player_info_addition, pconn, webp_ptr);
   } conn_list_iterate_end;
 }
 
@@ -1069,7 +1239,7 @@ static void package_player_common(struct player *plr,
    * client side to not have it burden server side. Client could
    * actually avoid it completely when music disabled from the client options.
    * Client has no use for music styles of other players, and there should
-   * be no such information about the player him/herself needed to determine
+   * be no such information about the player themself needed to determine
    * the music style that client does not know. */
   music = player_music_style(plr);
   if (music != NULL) {
@@ -1090,15 +1260,13 @@ static void package_player_common(struct player *plr,
   packet->barbarian_type = plr->ai_common.barbarian_type;
 
   packet->phase_done = plr->phase_done;
-  packet->nturns_idle=plr->nturns_idle;
-
-  for (i = 0; i < B_LAST/*improvement_count()*/; i++) {
-    packet->wonders[i] = plr->wonders[i];
-  }
+  packet->nturns_idle = plr->nturns_idle;
   packet->science_cost = plr->ai_common.science_cost;
 
 #ifdef FREECIV_WEB
-  web_packet->playerno = player_number(plr);
+  if (web_packet != NULL) {
+    web_packet->playerno = player_number(plr);
+  }
 #endif /* FREECIV_WEB */
 }
 
@@ -1121,6 +1289,7 @@ static void package_player_info(struct player *plr,
   enum plr_info_level info_level;
   enum plr_info_level highest_team_level;
   struct government *pgov = NULL;
+  Impr_type_id imp;
 
   if (receiver) {
     info_level = player_info_level(plr, receiver);
@@ -1133,15 +1302,19 @@ static void package_player_info(struct player *plr,
   packet->multip_count = multiplier_count();
   if (info_level >= INFO_FULL) {
     multipliers_iterate(pmul) {
-      packet->multiplier[multiplier_index(pmul)] =
-        plr->multipliers[multiplier_index(pmul)];
-      packet->multiplier_target[multiplier_index(pmul)] =
-        plr->multipliers_target[multiplier_index(pmul)];
+      int idx = multiplier_index(pmul);
+
+      packet->multiplier[idx] = plr->multipliers[idx].value;
+      packet->multiplier_target[idx] = plr->multipliers[idx].target;
+      packet->multiplier_changed[idx] = plr->multipliers[idx].changed;
     } multipliers_iterate_end;
   } else {
     multipliers_iterate(pmul) {
-      packet->multiplier[multiplier_index(pmul)] = 0;
-      packet->multiplier_target[multiplier_index(pmul)] = 0;
+      int idx = multiplier_index(pmul);
+
+      packet->multiplier[idx] = 0;
+      packet->multiplier_target[idx] = 0;
+      packet->multiplier_changed[idx] = 0;
     } multipliers_iterate_end;
   }
 
@@ -1165,6 +1338,7 @@ static void package_player_info(struct player *plr,
     /* In pregame, send the color we expect to use, for consistency with
      * '/list colors' etc. */
     const struct rgbcolor *preferred = player_preferred_color(plr);
+
     if (preferred != NULL) {
       packet->color_valid = TRUE;
       packet->color_red = preferred->r;
@@ -1185,8 +1359,10 @@ static void package_player_info(struct player *plr,
   if (info_level >= INFO_MEETING) {
     packet->score = plr->score.game;
   } else {
-    packet->score = 0;
+    packet->score = -1;
   }
+
+  packet->autoselect_weight = plr->autoselect_weight;
 
   if (info_level >= INFO_MEETING) {
     packet->gold = plr->economic.gold;
@@ -1240,11 +1416,13 @@ static void package_player_info(struct player *plr,
     packet->science         = plr->economic.science;
     packet->luxury          = plr->economic.luxury;
     packet->revolution_finishes = plr->revolution_finishes;
+    packet->culture         = player_culture(plr);
   } else {
     packet->tax             = 0;
     packet->science         = 0;
     packet->luxury          = 0;
     packet->revolution_finishes = -1;
+    packet->culture         = 0;
   }
 
   if (info_level >= INFO_FULL
@@ -1256,16 +1434,34 @@ static void package_player_info(struct player *plr,
   }
 
   if (info_level >= INFO_FULL) {
-    packet->culture         = plr->culture;
+    packet->history         = plr->history;
+    packet->infrapoints     = plr->economic.infra_points;
   } else {
-    packet->culture         = 0;
+    packet->history         = 0;
+    packet->infrapoints     = 0;
+  }
+
+  for (imp = 0; imp < B_LAST; imp++) {
+    if (plr->wonders[imp] != WONDER_NOT_BUILT) {
+      if (wonder_visible_to_player(improvement_by_number(imp),
+                                   receiver, plr,
+                                   info_level >= INFO_EMBASSY ? TRI_YES : TRI_NO)) {
+        packet->wonders[imp] = plr->wonders[imp];
+      } else {
+        packet->wonders[imp] = WONDER_NOT_BUILT;
+      }
+    } else {
+      packet->wonders[imp] = WONDER_NOT_BUILT;
+    }
   }
 
 #ifdef FREECIV_WEB
-  if (info_level >= INFO_FULL) {
-    web_packet->expected_income = player_get_expected_income(plr);
-  } else {
-    web_packet->expected_income = 0;
+  if (web_packet != NULL) {
+    if (info_level >= INFO_FULL) {
+      web_packet->expected_income = player_get_expected_income(plr);
+    } else {
+      web_packet->expected_income = 0;
+    }
   }
 #endif /* FREECIV_WEB */
 }
@@ -1331,7 +1527,7 @@ static enum plr_info_level player_info_level(struct player *plr,
   if (plr == receiver) {
     return INFO_FULL;
   }
-  if (receiver && player_has_embassy(receiver, plr)) {
+  if (receiver && team_has_embassy(receiver->team, plr)) {
     return INFO_EMBASSY;
   }
   if (receiver && could_intel_with_player(receiver, plr)) {
@@ -1399,7 +1595,7 @@ void server_player_init(struct player *pplayer, bool initmap,
    * to always have one server_player_init() call with
    * needs_team TRUE. */
   if (needs_team) {
-    pplayer->economic = player_limit_to_max_rates(pplayer);
+    player_limit_to_max_rates(pplayer);
   }
 
   adv_data_default(pplayer);
@@ -1409,6 +1605,7 @@ void server_player_init(struct player *pplayer, bool initmap,
   pplayer->score.units_built = 0;
   pplayer->score.units_killed = 0;
   pplayer->score.units_lost = 0;
+  pplayer->score.units_used = 0;
 
   /* No delegation. */
   pplayer->server.delegate_to[0] = '\0';
@@ -1438,6 +1635,7 @@ const struct rgbcolor *player_preferred_color(struct player *pplayer)
   } else {
     /* Modes indexing into game-defined player colors */
     int colorid;
+
     switch (game.server.plrcolormode) {
     case PLRCOL_PLR_SET: /* player color (set) */
     case PLRCOL_PLR_RANDOM: /* player color (random) */
@@ -1446,7 +1644,7 @@ const struct rgbcolor *player_preferred_color(struct player *pplayer)
     default:
       log_error("Invalid value for 'game.server.plrcolormode' (%d)!",
                 game.server.plrcolormode);
-      /* no break - using 'PLRCOL_PLR_ORDER' as fallback */
+      fc__fallthrough; /* no break - using 'PLRCOL_PLR_ORDER' as fallback */
     case PLRCOL_PLR_ORDER: /* player color (ordered) */
       colorid = player_number(pplayer) % playercolor_count();
       break;
@@ -1454,6 +1652,7 @@ const struct rgbcolor *player_preferred_color(struct player *pplayer)
       colorid = team_number(pplayer->team) % playercolor_count();
       break;
     }
+
     return playercolor_get(colorid);
   }
 }
@@ -1724,6 +1923,10 @@ void server_remove_player(struct player *pplayer)
     if (gives_shared_vision(aplayer, pplayer)) {
       remove_shared_vision(aplayer, pplayer);
     }
+    /* Also remove vision provided for the other players */
+    if (gives_shared_vision(pplayer, aplayer)) {
+      remove_shared_vision(pplayer, aplayer);
+    }
   } players_iterate_end;
 
   /* Remove citizens of this player from the cities of all other players. */
@@ -1748,7 +1951,9 @@ void server_remove_player(struct player *pplayer)
   }
 
   /* AI type lost control of this player */
-  CALL_PLR_AI_FUNC(lost_control, pplayer, pplayer);
+  if (is_ai(pplayer)) {
+    CALL_PLR_AI_FUNC(lost_control, pplayer, pplayer);
+  }
 
   /* Clear all trade routes. This is needed for the other end not
    * to point to a city removed by player_clear() */
@@ -1788,59 +1993,58 @@ void server_remove_player(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  The following limits a player's rates to those that are acceptable for the
-  present form of government.  If a rate exceeds maxrate for this government,
-  it adjusts rates automatically adding the extra to the 2nd highest rate,
+  The following limits a player's rates to those that are presently
+  acceptable. If a rate exceeds current maxrate, it adjusts rates
+  automatically adding the extra to the 2nd highest rate,
   preferring science to taxes and taxes to luxuries.
-  (It assumes that for any government maxrate>=50)
+  (It assumes that for maxrate * 3 >= 100 in any situation)
 
   Returns actual max rate used. This function should be called after team
   information are defined.
 **************************************************************************/
-struct player_economic player_limit_to_max_rates(struct player *pplayer)
+void player_limit_to_max_rates(struct player *pplayer)
 {
   int maxrate, surplus;
-  struct player_economic economic;
+  struct player_economic *economic;
 
-  /* ai players allowed to cheat */
-  if (is_ai(pplayer)) {
-    return pplayer->economic;
+  /* AI players allowed to cheat */
+  if (is_ai(pplayer) && !has_handicap(pplayer, H_RATES)) {
+    return;
   }
 
-  economic = pplayer->economic;
+  economic = &(pplayer->economic);
 
   maxrate = get_player_maxrate(pplayer);
 
   surplus = 0;
-  if (economic.luxury > maxrate) {
-    surplus += economic.luxury - maxrate;
-    economic.luxury = maxrate;
+  if (economic->luxury > maxrate) {
+    surplus += economic->luxury - maxrate;
+    economic->luxury = maxrate;
   }
-  if (economic.tax > maxrate) {
-    surplus += economic.tax - maxrate;
-    economic.tax = maxrate;
+  if (economic->tax > maxrate) {
+    surplus += economic->tax - maxrate;
+    economic->tax = maxrate;
   }
-  if (economic.science > maxrate) {
-    surplus += economic.science - maxrate;
-    economic.science = maxrate;
+  if (economic->science > maxrate) {
+    surplus += economic->science - maxrate;
+    economic->science = maxrate;
   }
 
   fc_assert(surplus % 10 == 0);
+
   while (surplus > 0) {
-    if (economic.science < maxrate) {
-      economic.science += 10;
-    } else if (economic.tax < maxrate) {
-      economic.tax += 10;
-    } else if (economic.luxury < maxrate) {
-      economic.luxury += 10;
+    if (economic->science < maxrate) {
+      economic->science += 10;
+    } else if (economic->tax < maxrate) {
+      economic->tax += 10;
+    } else if (economic->luxury < maxrate) {
+      economic->luxury += 10;
     } else {
       fc_assert_msg(FALSE, "Failed to distribute the surplus. "
                     "maxrate = %d.", maxrate);
     }
     surplus -= 10;
   }
-
-  return economic;
 }
 
 /**********************************************************************//**
@@ -2011,10 +2215,12 @@ bool server_player_set_name_full(const struct connection *caller,
 **************************************************************************/
 void server_player_set_name(struct player *pplayer, const char *name)
 {
-  bool ret;
+#ifndef FREECIV_NDEBUG
+  bool ret =
+#endif
+    server_player_set_name_full(NULL, pplayer, NULL, name, NULL, 0);
 
-  ret = server_player_set_name_full(NULL, pplayer, NULL, name, NULL, 0);
-  fc_assert(TRUE == ret);
+  fc_assert(ret);
 }
 
 /**********************************************************************//**
@@ -2065,8 +2271,7 @@ void make_contact(struct player *pplayer1, struct player *pplayer2,
     enum diplstate_type new_state = get_default_diplstate(pplayer1,
                                                           pplayer2);
 
-    ds_plr1plr2->type = new_state;
-    ds_plr2plr1->type = new_state;
+    set_diplstate_type(ds_plr1plr2, ds_plr2plr1, new_state);
     ds_plr1plr2->first_contact_turn = game.info.turn;
     ds_plr2plr1->first_contact_turn = game.info.turn;
     notify_player(pplayer1, ptile, E_FIRST_CONTACT, ftc_server,
@@ -2091,8 +2296,8 @@ void make_contact(struct player *pplayer1, struct player *pplayer2,
   } else {
     fc_assert(ds_plr2plr1->type != DS_NO_CONTACT);
   }
-  if (player_has_embassy(pplayer1, pplayer2)
-      || player_has_embassy(pplayer2, pplayer1)) {
+  if (team_has_embassy(pplayer1->team, pplayer2)
+      || team_has_embassy(pplayer2->team, pplayer1)) {
     return; /* Avoid sending too much info over the network */
   }
   send_player_all_c(pplayer1, pplayer1->connections);
@@ -2508,6 +2713,10 @@ static struct player *split_player(struct player *pplayer)
   if (!cplayer) {
     return NULL;
   }
+
+  /* While this sets player->economic according to max rates as know at this point,
+   * we redo that later, so that MaxRates effect requirements will be evaluated
+   * with more completely set up player (e.g. correct government) */
   server_player_init(cplayer, TRUE, TRUE);
 
   /* Rebel will always be an AI player */
@@ -2537,11 +2746,10 @@ static struct player *split_player(struct player *pplayer)
       = player_diplstate_get(other_player, cplayer);
 
     if (get_player_bonus(other_player, EFT_NO_DIPLOMACY) > 0) {
-      ds_co->type = DS_WAR;
-      ds_oc->type = DS_WAR;
+      /* FIXME: What about No-contact war? */
+      set_diplstate_type(ds_co, ds_oc, DS_WAR);
     } else {
-      ds_co->type = DS_NO_CONTACT;
-      ds_oc->type = DS_NO_CONTACT;
+      set_diplstate_type(ds_co, ds_oc, DS_NO_CONTACT);
     }
 
     ds_co->has_reason_to_cancel = 0;
@@ -2571,6 +2779,7 @@ static struct player *split_player(struct player *pplayer)
   new_research->bulbs_researched = 0;
   new_research->techs_researched = old_research->techs_researched;
   new_research->researching = old_research->researching;
+  new_research->future_tech = old_research->future_tech;
   new_research->tech_goal = old_research->tech_goal;
 
   advance_index_iterate(A_NONE, i) {
@@ -2602,7 +2811,7 @@ static struct player *split_player(struct player *pplayer)
   old_research->researching_saved = A_UNKNOWN;
   BV_CLR_ALL(pplayer->real_embassy);   /* all embassies destroyed */
 
-  /* give splitted player the embassies to his team mates back, if any */
+  /* give splitted player the embassies to their team mates back, if any */
   if (pplayer->team) {
     players_iterate(pdest) {
       if (pplayer->team == pdest->team
@@ -2613,9 +2822,9 @@ static struct player *split_player(struct player *pplayer)
   }
   research_update(old_research);
 
-  pplayer->economic = player_limit_to_max_rates(pplayer);
+  player_limit_to_max_rates(pplayer);
 
-  /* copy the maps */
+  /* Copy the maps */
 
   give_map_from_player_to_player(pplayer, cplayer);
 
@@ -2628,6 +2837,8 @@ static struct player *split_player(struct player *pplayer)
   CALL_PLR_AI_FUNC(gained_control, cplayer, cplayer);
   CALL_PLR_AI_FUNC(split_by_civil_war, pplayer, pplayer, cplayer);
   CALL_PLR_AI_FUNC(created_by_civil_war, cplayer, pplayer, cplayer);
+
+  player_limit_to_max_rates(cplayer);
 
   return cplayer;
 }
@@ -2664,7 +2875,7 @@ bool civil_war_possible(struct player *pplayer, bool conquering_city,
 
 /**********************************************************************//**
   civil_war_triggered:
-   * The capture of a capital is not a sure fire way to throw
+   * The capture of a primary capital is not a sure fire way to throw
   and empire into civil war.  Some governments are more susceptible
   than others, here are the base probabilities:
   Anarchy   	90%
@@ -2674,8 +2885,8 @@ bool civil_war_possible(struct player *pplayer, bool conquering_city,
   Communism 	50%
   Republic  	40%
   Democracy 	30%
-   * In addition each city in disorder adds 5%, each celebrating city
-  subtracts 5% from the probability of a civil war.
+   * In addition each city in disorder adds and each celebrating city
+  subtracts from the probability of a civil war.
    * If you have at least 1 turns notice of the impending loss of
   your capital, you can hike luxuries up to the hightest value,
   and by this reduce the chance of a civil war.  In fact by
@@ -2696,10 +2907,10 @@ bool civil_war_triggered(struct player *pplayer)
   /* Now compute the contribution of the cities. */
   city_list_iterate(pplayer->cities, pcity) {
     if (city_unhappy(pcity)) {
-      prob += 5;
+      prob += game.info.civil_war_bonus_unhappy;
     }
     if (city_celebrating(pcity)) {
-      prob -= 5;
+      prob += game.info.civil_war_bonus_celebrating;
     }
   } city_list_iterate_end;
 
@@ -2710,10 +2921,10 @@ bool civil_war_triggered(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Capturing a nation's capital is a devastating blow.  This function
+  Capturing a nation's primary capital is a devastating blow. This function
   creates a new AI player, and randomly splits the original players
   city list into two.  Of course this results in a real mix up of
-  teritory - but since when have civil wars ever been tidy, or civil.
+  territory - but since when have civil wars ever been tidy, or civil.
 
   Embassies:  All embassies with other players are lost.  Other players
               retain their embassies with pplayer.
@@ -3149,7 +3360,7 @@ void handle_player_multiplier(struct player *pplayer, int count,
                     multipliers[i], multiplier_rule_name(pmul),
                     player_name(pplayer));
         } else {
-          pplayer->multipliers_target[i] = multipliers[i];
+          pplayer->multipliers[i].target = multipliers[i];
         }
       }
     }
@@ -3198,4 +3409,73 @@ void player_set_under_human_control(struct player *pplayer)
     check_player_max_rates(pplayer);
   }
   cancel_all_meetings(pplayer);
+}
+
+/**********************************************************************//**
+  National level turn change activities.
+**************************************************************************/
+void update_national_activities(struct player *pplayer, int old_gold)
+{
+  char buf[200 + MAX_LEN_NAME];
+
+  /* gold_upkeep_style check currently redundant, but something we need
+   * once homeless_gold_upkeep retired. */
+  if (game.info.gold_upkeep_style != GOLD_UPKEEP_CITY
+      && game.info.homeless_gold_upkeep) {
+    int free_uk[O_LAST];
+
+    memset(free_uk, 0, sizeof(free_uk));
+    unit_list_iterate(pplayer->units, punit) {
+      if (is_unit_homeless(punit)) {
+        int gold = utype_upkeep_cost(unit_type_get(punit), pplayer, O_GOLD);
+
+        punit->upkeep[O_GOLD] = gold;
+        punit->server.upkeep_paid[O_GOLD] = gold;
+
+        pplayer->economic.gold -= gold;
+      }
+    } unit_list_iterate_end;
+  }
+
+  if (pplayer->economic.gold < 0) {
+    switch (game.info.gold_upkeep_style) {
+    case GOLD_UPKEEP_CITY:
+      break;
+    case GOLD_UPKEEP_MIXED:
+      /* Nation pays for units. */
+      player_balance_treasury_units(pplayer);
+      break;
+    case GOLD_UPKEEP_NATION:
+      /* Nation pays for units and buildings. */
+      player_balance_treasury_units_and_buildings(pplayer);
+      break;
+    }
+  }
+
+  /* This test includes the cost of the units because
+   * units are paid for in update_city_activity() or
+   * player_balance_treasury_units(). */
+  if (old_gold - (old_gold - pplayer->economic.gold) * 3 < 0) {
+    notify_player(pplayer, NULL, E_LOW_ON_FUNDS, ftc_server,
+                  _("WARNING, we're LOW on FUNDS %s."),
+                  ruler_title_for_player(pplayer, buf, sizeof(buf)));
+  }
+
+#if 0
+  /* Uncomment to unbalance the game, like in civ1 (CLG). */
+  if (pplayer->got_tech && pplayer->research->researched > 0) {
+    pplayer->research->researched = 0;
+  }
+#endif
+
+  if (pplayer->economic.infra_points < 0) {
+    pplayer->economic.infra_points = 0;
+  }
+
+  pplayer->history += nation_history_gain(pplayer);
+
+  research_get(pplayer)->researching_saved = A_UNKNOWN;
+  /* Reduce the number of bulbs by the amount needed for tech upkeep and
+   * check for finished research */
+  update_bulbs(pplayer, -player_tech_upkeep(pplayer), TRUE, FALSE);
 }

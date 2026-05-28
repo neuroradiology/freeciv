@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -388,7 +388,13 @@ size_t secfile_insert_enum_vec_data_full(struct section_file *secfile,
                                     ## __VA_ARGS__)
 
 struct entry *secfile_insert_filereference(struct section_file *secfile,
-                                           char *filename, char *path, ...)
+                                           const char *filename,
+                                           const char *path, ...)
+                              fc__attribute((__format__ (__printf__, 3, 4)));
+
+struct entry *secfile_insert_comment(struct section_file *secfile,
+                                     const char *str,
+                                     const char *path, ...)
                               fc__attribute((__format__ (__printf__, 3, 4)));
 
 /* Deletion function. */
@@ -582,11 +588,13 @@ secfile_sections(const struct section_file *secfile);
 struct section_list *
 secfile_sections_by_name_prefix(const struct section_file *secfile,
                                 const char *prefix);
+bool secfile_section_prefix_present(const struct section_file *secfile,
+                                    const char *prefix);
 struct section *secfile_section_new(struct section_file *secfile,
                                     const char *section_name);
 
 
-/* Independant section functions. */
+/* Independent section functions. */
 void section_destroy(struct section *psection);
 void section_clear_all(struct section *psection);
 
@@ -612,19 +620,21 @@ struct entry *section_entry_str_new(struct section *psection,
                                     const char *entry_name,
                                     const char *value, bool escaped);
 
-/* Independant entry functions. */
+/* Independent entry functions. */
 enum entry_type {
   ENTRY_BOOL,
   ENTRY_INT,
   ENTRY_FLOAT,
   ENTRY_STR,
-  ENTRY_FILEREFERENCE
+  ENTRY_FILEREFERENCE,
+  ENTRY_LONG_COMMENT,
+  ENTRY_ILLEGAL
 };
 
 void entry_destroy(struct entry *pentry);
 
 struct section *entry_section(const struct entry *pentry);
-enum entry_type entry_type(const struct entry *pentry);
+enum entry_type entry_type_get(const struct entry *pentry);
 int entry_path(const struct entry *pentry, char *buf, size_t buf_len);
 
 const char *entry_name(const struct entry *pentry);
@@ -652,4 +662,4 @@ bool entry_str_set_gt_marking(struct entry *pentry, bool gt_marking);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__REGISTRY_INI_H */
+#endif /* FC__REGISTRY_INI_H */

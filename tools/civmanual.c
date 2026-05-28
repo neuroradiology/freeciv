@@ -15,7 +15,6 @@
 #include <fc_config.h>
 #endif
 
-#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,6 +100,7 @@ struct tag_types {
   const char *subitem_begin;
   const char *subitem_end;
   const char *tail;
+  const char *hline;
 };
 
 struct tag_types html_tags = {
@@ -143,7 +143,10 @@ struct tag_types html_tags = {
   "</pre>\n",
 
   /* tail */
-  "</body></html>"
+  "</body></html>",
+
+  /* horizontal line */
+  "<hr/>"
 };
 
 struct tag_types wiki_tags = {
@@ -184,7 +187,10 @@ struct tag_types wiki_tags = {
   "\n",
 
   /* tail */
-  " "
+  " ",
+
+  /* horizontal line */
+  "----"
 };
 
 
@@ -264,11 +270,17 @@ const char *tileset_description(struct tileset *t)
   return NULL;
 }
 
+/**********************************************************************//**
+  Mostly a client stub.
+**************************************************************************/
 enum client_states client_state(void)
 {
   return C_S_INITIAL;
 }
 
+/**********************************************************************//**
+  Mostly a client stub.
+**************************************************************************/
 bool client_nation_is_in_current_set(const struct nation_type *pnation)
 {
   /* Currently, there is no way to select a nation set for freeciv-manual.
@@ -293,7 +305,7 @@ static bool manual_command(struct tag_types *tag_info)
   /* Reset aifill to zero */
   game.info.aifill = 0;
 
-  if (!load_rulesets(NULL, FALSE, NULL, FALSE, FALSE)) {
+  if (!load_rulesets(NULL, NULL, FALSE, NULL, FALSE, FALSE, FALSE)) {
     /* Failed to load correct ruleset */
     return FALSE;
   }
@@ -317,9 +329,9 @@ static bool manual_command(struct tag_types *tag_info)
 
     switch (manuals) {
     case MANUAL_SETTINGS:
-      /* TRANS: markup ... Freeciv version ... ruleset name ... markup */
-      fprintf(doc, _("%sFreeciv %s server options (%s)%s\n\n"), tag_info->title_begin,
-              VERSION_STRING, game.control.name, tag_info->title_end);
+      /* TRANS: markup ... Freeciv version ... markup */
+      fprintf(doc, _("%sFreeciv %s server options%s\n\n"), tag_info->title_begin,
+              VERSION_STRING, tag_info->title_end);
       settings_iterate(SSET_ALL, pset) {
         char buf[256];
         const char *sethelp;
@@ -344,9 +356,9 @@ static bool manual_command(struct tag_types *tag_info)
         fprintf(doc, _("Category: %s.<br>"),
                 _(sset_category_name(setting_category(pset))));
 
-        /* first check if the setting is locked because this is included in
+        /* First check if the setting is locked because this is included in
          * the function setting_is_changeable() */
-        if (setting_locked(pset)) {
+        if (setting_ruleset_locked(pset)) {
           fprintf(doc, _("Is locked by the ruleset."));
         } else if (!setting_is_changeable(pset, &my_conn, NULL, 0)) {
           fprintf(doc, _("Can only be used in server console."));
@@ -453,12 +465,10 @@ static bool manual_command(struct tag_types *tag_info)
       fprintf(doc, "<table><tr bgcolor=#9bc3d1><th colspan=2>%s</th>", _("Terrain"));
       fprintf(doc, "<th>F/P/T</th><th>%s</th>", _("Resources"));
       fprintf(doc, "<th>%s<br/>%s</th>", _("Move cost"), _("Defense bonus"));
-      fprintf(doc, "<th>%s<br/>%s<br/>%s<br/>%s<br/>(%s)</th>",
-              _("Irrigation"), _("Mining"), _("Transform"),
+      fprintf(doc, "<th>%s<br/>%s<br/>%s<br/>%s<br/>%s<br/>%s<br/>(%s)</th>",
+              _("Irrigation"), _("Cultivate"), _("Mining"), _("Plant"), _("Transform"),
               /* xgettext:no-c-format */
               _("% of Road bonus"), _("turns"));
-      fprintf(doc, "<th>%s<br/>%s</th>",
-              _("Clean pollution"), _("Clean fallout"));
       ri = 0;
       if (game.control.num_road_types > 0) {
         fprintf(doc, "<th>");
@@ -474,6 +484,8 @@ static bool manual_command(struct tag_types *tag_info)
       fprintf(doc, "</tr>\n\n");
       terrain_type_iterate(pterrain) {
         struct extra_type **r;
+        struct universal for_terr
+            = { .kind = VUT_TERRAIN, .value = { .terrain = pterrain }};
 
         if (0 == strlen(terrain_rule_name(pterrain))) {
           /* Must be a disabled piece of terrain */
@@ -487,6 +499,7 @@ static bool manual_command(struct tag_types *tag_info)
                 pterrain->output[O_FOOD], pterrain->output[O_SHIELD],
                 pterrain->output[O_TRADE]);
 
+        /* TODO: include resource frequency information */
         fprintf(doc, "<td><table width=\"100%%\">\n");
         for (r = pterrain->resources; *r; r++) {
           fprintf(doc, "<tr><td>%s%s%s</td><td>%s</td>"
@@ -503,28 +516,41 @@ static bool manual_command(struct tag_types *tag_info)
                 pterrain->movement_cost, pterrain->defense_bonus);
 
         fprintf(doc, "<td><table width=\"100%%\">\n");
-        if (pterrain->irrigation_result == pterrain) {
+        if (action_id_univs_not_blocking(ACTION_IRRIGATE,
+                                         NULL, &for_terr)) {
           fprintf(doc, "<tr><td>+%d F</td><td align=\"right\">(%d)</td></tr>\n",
                   pterrain->irrigation_food_incr, pterrain->irrigation_time);
-        } else if (pterrain->irrigation_result == T_NONE) {
-          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
         } else {
-          fprintf(doc, "<tr><td>%s</td><td align=\"right\">(%d)</td></tr>\n",
-                  terrain_name_translation(pterrain->irrigation_result),
-                  pterrain->irrigation_time);
+          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
         }
-        if (pterrain->mining_result == pterrain) {
+        if (pterrain->cultivate_result != NULL
+            && action_id_univs_not_blocking(ACTION_CULTIVATE,
+                                            NULL, &for_terr)) {
+          fprintf(doc, "<tr><td>%s</td><td align=\"right\">(%d)</td></tr>\n",
+                  terrain_name_translation(pterrain->cultivate_result),
+                  pterrain->cultivate_time);
+        } else {
+          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
+        }
+        if (action_id_univs_not_blocking(ACTION_MINE, NULL, &for_terr)) {
           fprintf(doc, "<tr><td>+%d P</td><td align=\"right\">(%d)</td></tr>\n",
                   pterrain->mining_shield_incr, pterrain->mining_time);
-        } else if (pterrain->mining_result == T_NONE) {
-          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
         } else {
+          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
+        }
+        if (pterrain->plant_result != NULL
+            && action_id_univs_not_blocking(ACTION_PLANT,
+                                            NULL, &for_terr)) {
           fprintf(doc, "<tr><td>%s</td><td align=\"right\">(%d)</td></tr>\n",
-                  terrain_name_translation(pterrain->mining_result),
-                  pterrain->mining_time);
+                  terrain_name_translation(pterrain->plant_result),
+                  pterrain->plant_time);
+        } else {
+          fprintf(doc, "<tr><td>%s</td></tr>\n", _("impossible"));
         }
 
-        if (pterrain->transform_result) {
+        if (pterrain->transform_result
+            && action_id_univs_not_blocking(ACTION_TRANSFORM_TERRAIN,
+                                            NULL, &for_terr)) {
           fprintf(doc, "<tr><td>%s</td><td align=\"right\">(%d)</td></tr>\n",
                   terrain_name_translation(pterrain->transform_result),
                   pterrain->transform_time);
@@ -535,9 +561,6 @@ static bool manual_command(struct tag_types *tag_info)
                 pterrain->road_output_incr_pct[O_FOOD],
                 pterrain->road_output_incr_pct[O_SHIELD],
                 pterrain->road_output_incr_pct[O_TRADE]);
-
-        fprintf(doc, "<td align=\"center\">%d / %d</td>",
-                pterrain->clean_pollution_time, pterrain->clean_fallout_time);
 
         ri = 0;
         if (game.control.num_road_types > 0) {
@@ -578,7 +601,6 @@ static bool manual_command(struct tag_types *tag_info)
 
       improvement_iterate(pimprove) {
         char buf[64000];
-        struct advance *obs_tech = NULL;
 
         if (!valid_improvement(pimprove)
             || is_great_wonder(pimprove) == (manuals == MANUAL_BUILDINGS)) {
@@ -594,31 +616,47 @@ static bool manual_command(struct tag_types *tag_info)
                 pimprove->build_cost,
                 pimprove->upkeep);
 
-        requirement_vector_iterate(&pimprove->reqs, req) {
-          char text[512], text2[512];
-          fc_snprintf(text2, sizeof(text2),
-                      /* TRANS: improvement requires a feature to be absent. */
-                      req->present ? "%s" : _("no %s"),
-                      VUT_NONE != req->source.kind
-                      ? universal_name_translation(&req->source,
-                                                   text, sizeof(text))
-                      : Q_("?req:None"));
-          fprintf(doc, "%s<br/>", text2);
-        } requirement_vector_iterate_end;
+        if (requirement_vector_size(&pimprove->reqs) == 0) {
+          char text[512];
 
-        requirement_vector_iterate(&pimprove->obsolete_by, pobs) {
-          if (pobs->source.kind == VUT_ADVANCE) {
-            obs_tech = pobs->source.value.advance;
-            break;
-          }
-        } requirement_vector_iterate_end;
+          strncpy(text, Q_("?req:None"), sizeof(text) - 1);
+          fprintf(doc, "%s<br/>", text);
+        } else {
+          requirement_vector_iterate(&pimprove->reqs, req) {
+            char text[512], text2[512];
 
-        fprintf(doc, "<em>%s</em></td>\n",
-                obs_tech != NULL
-                ? advance_name_translation(obs_tech)
-                : Q_("?tech:None"));
-        fprintf(doc, "<td>%s</td>\n</tr>\n\n", buf);
+            fc_snprintf(text2, sizeof(text2),
+                        /* TRANS: Feature required to be absent. */
+                        req->present ? "%s" : _("no %s"),
+                        universal_name_translation(&req->source,
+                                                   text, sizeof(text)));
+            fprintf(doc, "%s<br/>", text2);
+          } requirement_vector_iterate_end;
+        }
+
+        fprintf(doc, "\n%s\n", tag_info->hline);
+
+        if (requirement_vector_size(&pimprove->obsolete_by) == 0) {
+          char text[512];
+
+          strncpy(text, Q_("?req:None"), sizeof(text) - 1);
+          fprintf(doc, "<em>%s</em><br/>", text);
+        } else {
+          requirement_vector_iterate(&pimprove->obsolete_by, pobs) {
+            char text[512], text2[512];
+
+            fc_snprintf(text2, sizeof(text2),
+                        /* TRANS: Feature required to be absent. */
+                        pobs->present ? "%s" : _("no %s"),
+                        universal_name_translation(&pobs->source,
+                                                   text, sizeof(text)));
+            fprintf(doc, "<em>%s</em><br/>", text2);
+          } requirement_vector_iterate_end;
+        }
+
+        fprintf(doc, "</td>\n<td>%s</td>\n</tr>\n\n", buf);
       } improvement_iterate_end;
+
       fprintf(doc, "</table>");
       break;
 
@@ -711,7 +749,7 @@ static bool manual_command(struct tag_types *tag_info)
       fprintf(doc, _("%sFreeciv %s tech help (%s)%s\n\n"),
               tag_info->title_begin, VERSION_STRING, game.control.name,
               tag_info->title_end);
-      advance_iterate(A_FIRST, ptech) {
+      advance_iterate(ptech) {
         if (valid_advance(ptech)) {
           char buf[64000];
 
@@ -754,7 +792,13 @@ int main(int argc, char **argv)
   int retval = EXIT_SUCCESS;
   struct tag_types *tag_info = &html_tags;
 
-  init_nls();
+  /* Initialize the fc_interface functions needed to generate the help
+   * text.
+   * fc_interface_init_tool() includes low level support like
+   * guaranteeing that fc_vsnprintf() will work after it,
+   * so this need to be early. */
+  fc_interface_init_tool();
+
   registry_module_init();
   init_character_encodings(FC_DEFAULT_DATA_ENCODING, FALSE);
 
@@ -817,10 +861,6 @@ int main(int argc, char **argv)
   /* Get common code to treat us as a tool. */
   i_am_tool();
 
-  /* Initialize the fc_interface functions needed to generate the help
-   * text. */
-  fc_interface_init_tool();
-
   /* Initialize game with default values */
   game_init(FALSE);
 
@@ -839,20 +879,19 @@ int main(int argc, char **argv)
 
 #ifdef FREECIV_DEBUG
     cmdhelp_add(help, "d",
-                  /* TRANS: "debug" is exactly what user must type, do not translate. */
-                _("debug NUM"),
-                _("Set debug log level (%d to %d, or %d:file1,min,max:...)"),
-                LOG_FATAL, LOG_DEBUG, LOG_DEBUG);
+                /* TRANS: "debug" is exactly what user must type, do not translate. */
+                _("debug LEVEL"),
+                _("Set debug log level (one of f,e,w,n,v,d, or "
+                  "d:file1,min,max:...)"));
 #else  /* FREECIV_DEBUG */
     cmdhelp_add(help, "d",
-                  /* TRANS: "debug" is exactly what user must type, do not translate. */
-                _("debug NUM"),
-                _("Set debug log level (%d to %d)"),
-                LOG_FATAL, LOG_VERBOSE);
+                /* TRANS: "debug" is exactly what user must type, do not translate. */
+                _("debug LEVEL"),
+                _("Set debug log level (one of f,e,w,n,v)"));
 #endif /* FREECIV_DEBUG */
 #ifndef FREECIV_NDEBUG
     cmdhelp_add(help, "F",
-                  /* TRANS: "Fatal" is exactly what user must type, do not translate. */
+                /* TRANS: "Fatal" is exactly what user must type, do not translate. */
                 _("Fatal [SIGNAL]"),
                 _("Raise a signal on failed assertion"));
 #endif /* FREECIV_NDEBUG */
@@ -885,8 +924,7 @@ int main(int argc, char **argv)
 
   con_log_close();
   registry_module_close();
-  free_libfreeciv();
-  free_nls();
+  libfreeciv_free();
   cmdline_option_values_free();
 
   return retval;

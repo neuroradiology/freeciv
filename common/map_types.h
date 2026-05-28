@@ -17,10 +17,13 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/* utility */
+#include "randseed.h"
+
 /* common */
 #include "fc_types.h"
 
-/****************************************************************
+/*****************************************************************
   Miscellaneous terrain information
 *****************************************************************/
 #define terrain_misc packet_ruleset_terrain_control
@@ -67,11 +70,14 @@ enum map_startpos {
 
 struct civ_map {
   int topology_id;
+  int wrap_id;
   enum direction8 valid_dirs[8], cardinal_dirs[8];
   int num_valid_dirs, num_cardinal_dirs;
   struct iter_index *iterate_outwards_indices;
   int num_iterate_outwards_indices;
   int xsize, ysize; /* native dimensions */
+  int north_latitude;
+  int south_latitude;
   int num_continents;
   int num_oceans;               /* not updated at the client */
   struct tile *tiles;
@@ -82,8 +88,8 @@ struct civ_map {
       enum mapsize_type mapsize; /* how the map size is defined */
       int size; /* used to calculate [xy]size */
       int tilesperplayer; /* tiles per player; used to calculate size */
-      int seed_setting;
-      int seed;
+      randseed seed_setting;
+      randseed seed;
       int riches;
       int huts;
       int huts_absolute; /* For compatibility conversion from pre-2.6 savegames */
@@ -94,8 +100,6 @@ struct civ_map {
       bool tinyisles;
       bool separatepoles;
       int flatpoles;
-      bool single_pole;
-      bool alltemperate;
       int temperature;
       int wetness;
       int steepness;
@@ -113,4 +117,4 @@ struct civ_map {
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__MAP_H */
+#endif /* FC__MAP_H */

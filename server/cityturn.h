@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,8 +14,10 @@
 #ifndef FC__CITYTURN_H
 #define FC__CITYTURN_H
 
+/* utility */
 #include "support.h"            /* bool type */
 
+/* common */
 #include "fc_types.h"
 
 struct conn_list;
@@ -37,6 +39,8 @@ bool city_reduce_size(struct city *pcity, citizens pop_loss,
 void city_repair_size(struct city *pcity, int change);
 
 bool city_empty_food_stock(struct city *pcity);
+int city_growth_granary_savings(const struct city *pcity);
+int city_shrink_granary_savings(const struct city *pcity);
 
 void send_city_turn_notifications(struct connection *pconn);
 void update_city_activities(struct player *pplayer);
@@ -54,4 +58,9 @@ void check_disasters(void);
 
 void city_style_refresh(struct city *pcity);
 
-#endif  /* FC__CITYTURN_H */
+bool player_balance_treasury_units_and_buildings(struct player *pplayer);
+bool player_balance_treasury_units(struct player *pplayer);
+
+void city_counters_refresh(struct city *pcity);
+
+#endif /* FC__CITYTURN_H */

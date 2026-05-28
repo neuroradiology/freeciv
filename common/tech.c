@@ -75,7 +75,7 @@ const struct advance *advance_array_last(void)
 /**********************************************************************//**
   Return the number of advances/technologies.
 **************************************************************************/
-Tech_type_id advance_count(void)
+Tech_type_id advance_count_real(void)
 {
   return game.control.num_tech_types;
 }
@@ -151,8 +151,15 @@ struct advance *advance_requires(const struct advance *padvance,
 **************************************************************************/
 struct advance *valid_advance(struct advance *padvance)
 {
-  if (NULL == padvance
-      || A_NEVER == padvance->require[AR_ONE]
+  if (padvance == NULL) {
+    return NULL;
+  }
+
+  if (padvance->item_number == A_FUTURE) {
+    return padvance;
+  }
+
+  if (A_NEVER == padvance->require[AR_ONE]
       || A_NEVER == padvance->require[AR_TWO]) {
     return NULL;
   }
@@ -177,11 +184,11 @@ struct advance *valid_advance_by_number(const Tech_type_id id)
 **************************************************************************/
 struct advance *advance_by_translated_name(const char *name)
 {
-  advance_iterate(A_NONE, padvance) {
+  advance_iterate_all(padvance) {
     if (0 == strcmp(advance_name_translation(padvance), name)) {
       return padvance;
     }
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 
   return NULL;
 }
@@ -194,11 +201,11 @@ struct advance *advance_by_rule_name(const char *name)
 {
   const char *qname = Qn_(name);
 
-  advance_iterate(A_NONE, padvance) {
+  advance_iterate_all(padvance) {
     if (0 == fc_strcasecmp(advance_rule_name(padvance), qname)) {
       return padvance;
     }
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 
   return NULL;
 }
@@ -220,7 +227,7 @@ void techs_precalc_data(void)
   fc_assert_msg(tech_cost_style_is_valid(game.info.tech_cost_style),
                 "Invalid tech_cost_style %d", game.info.tech_cost_style);
 
-  advance_iterate(A_FIRST, padvance) {
+  advance_iterate(padvance) {
     int num_reqs = 0;
     bool min_req = TRUE;
 
@@ -240,7 +247,7 @@ void techs_precalc_data(void)
         min_req = FALSE;
         break;
       }
-      /* No break. */
+      fc__fallthrough; /* No break. */
     case TECH_COST_CLASSIC:
       padvance->cost = game.info.base_tech_cost * (1.0 + num_reqs)
                        * sqrt(1.0 + num_reqs) / 2;
@@ -250,15 +257,15 @@ void techs_precalc_data(void)
         min_req = FALSE;
         break;
       }
-      /* No break. */
+      fc__fallthrough; /* No break. */
     case TECH_COST_EXPERIMENTAL:
       padvance->cost = game.info.base_tech_cost * ((num_reqs) * (num_reqs)
                            / (1 + sqrt(sqrt(num_reqs + 1))) - 0.5);
       break;
     }
 
-    if (min_req && padvance->cost < game.info.base_tech_cost) {
-      padvance->cost = game.info.base_tech_cost;
+    if (min_req && padvance->cost < game.info.min_tech_cost) {
+      padvance->cost = game.info.min_tech_cost;
     }
 
     /* Class cost */
@@ -440,7 +447,7 @@ const char *tech_flag_helptxt(enum tech_flag_id id)
  resources, when we can check that it is not the one style without fixed
  costs.
 **************************************************************************/
-bool techs_have_fixed_costs()
+bool techs_have_fixed_costs(void)
 {
   return (game.info.tech_leakage == TECH_LEAKAGE_NONE
           && game.info.tech_cost_style != TECH_COST_CIV1CIV2);

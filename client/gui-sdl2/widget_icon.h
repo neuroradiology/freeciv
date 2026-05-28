@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 2006 - The Freeciv Project
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,21 +15,22 @@
 #define FC__WIDGET_ICON_H
 
 /* ICON */
-void set_new_icon_theme(struct widget *pIcon_Widget,
-                        SDL_Surface *pNew_Theme);
-SDL_Surface *create_icon_theme_surf(SDL_Surface *pIcon);
-struct widget *create_themeicon(SDL_Surface *pIcon_theme,
-                                struct gui_layer *pDest, Uint32 flags);
-SDL_Surface *create_icon_from_theme(SDL_Surface *pIcon_theme,
+void set_new_icon_theme(struct widget *icon_widget,
+                        SDL_Surface *new_theme);
+SDL_Surface *create_icon_theme_surf(SDL_Surface *icon);
+struct widget *create_themeicon(SDL_Surface *icon_theme,
+                                struct gui_layer *pdest, Uint32 flags);
+SDL_Surface *create_icon_from_theme(SDL_Surface *icon_theme,
                                     Uint8 state);
-int draw_icon_from_theme(SDL_Surface *pIcon_theme, Uint8 state,
-                         struct gui_layer *pDest, Sint16 start_x,
+int draw_icon_from_theme(SDL_Surface *icon_theme, Uint8 state,
+                         struct gui_layer *pdest, Sint16 start_x,
                          Sint16 start_y);
-int draw_icon(struct widget *pIcon, Sint16 start_x, Sint16 start_y);
+int draw_icon(struct widget *icon, Sint16 start_x, Sint16 start_y);
 
 /* ICON2 */
-void set_new_icon2_theme(struct widget *pIcon_Widget, SDL_Surface *pNew_Theme,
+void set_new_icon2_theme(struct widget *icon_widget, SDL_Surface *new_theme,
                          bool free_old_theme);
-struct widget *create_icon2(SDL_Surface *pIcon, struct gui_layer *pDest, Uint32 flags);
+struct widget *create_icon2(SDL_Surface *icon, struct gui_layer *pdest,
+                            Uint32 flags);
 
 #endif /* FC__WIDGET_ICON_H */

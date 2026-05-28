@@ -72,17 +72,15 @@ void popup_find_dialog(void)
     gui_dialog_set_title(find_dialog_shell, _("Find City"));
     gui_dialog_set_default_size(find_dialog_shell, -1, 240);
 
-    gui_dialog_add_button(find_dialog_shell, "edit-find", _("Find"),
+    gui_dialog_add_button(find_dialog_shell, "edit-find", _("_Find"),
                           GTK_RESPONSE_ACCEPT);
-    gui_dialog_add_button(find_dialog_shell, NULL, _("Cancel"),
+    gui_dialog_add_button(find_dialog_shell, NULL, _("_Cancel"),
                           GTK_RESPONSE_CANCEL);
-
-    gui_dialog_set_default_response(find_dialog_shell, GTK_RESPONSE_ACCEPT);
 
     gui_dialog_response_set_callback(find_dialog_shell, find_response);
 
-    g_signal_connect(find_dialog_shell->vbox, "destroy",
-	G_CALLBACK(find_destroy_callback), NULL);
+    g_signal_connect(find_dialog_shell->grid, "destroy",
+                     G_CALLBACK(find_destroy_callback), NULL);
 
     store = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_POINTER);
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store),
@@ -100,13 +98,15 @@ void popup_find_dialog(void)
     gtk_tree_view_column_set_sort_order(column, GTK_SORT_ASCENDING);
     gtk_tree_view_append_column(GTK_TREE_VIEW(find_view), column);
 
-    sw = gtk_scrolled_window_new(NULL, NULL);
-    g_object_set(sw, "margin", 2, NULL);
-    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-	GTK_SHADOW_ETCHED_IN);
+    sw = gtk_scrolled_window_new();
+    gtk_widget_set_margin_bottom(sw, 2);
+    gtk_widget_set_margin_end(sw, 2);
+    gtk_widget_set_margin_start(sw, 2);
+    gtk_widget_set_margin_top(sw, 2);
+    gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
 	GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
-    gtk_container_add(GTK_CONTAINER(sw), find_view);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), find_view);
 
     gtk_widget_set_hexpand(GTK_WIDGET(find_view), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(find_view), TRUE);
@@ -116,8 +116,8 @@ void popup_find_dialog(void)
 	"mnemonic-widget", find_view,
 	"label", _("Ci_ties:"),
 	"xalign", 0.0, "yalign", 0.5, NULL);
-    gtk_container_add(GTK_CONTAINER(find_dialog_shell->vbox), label);
-    gtk_container_add(GTK_CONTAINER(find_dialog_shell->vbox), sw);
+    gui_dialog_add_content_widget(find_dialog_shell, label);
+    gui_dialog_add_content_widget(find_dialog_shell, sw);
 
     g_signal_connect(selection, "changed",
 	G_CALLBACK(find_selection_callback), store);

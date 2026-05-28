@@ -17,8 +17,10 @@
 
 /* common */
 #include "achievements.h"
+#include "counters.h"
 #include "game.h"
 #include "government.h"
+#include "nation.h"
 #include "requirements.h"
 #include "server_settings.h"
 #include "specialist.h"
@@ -48,6 +50,12 @@ bool universal_value_initial(struct universal *src)
       return FALSE;
     }
     src->value.advance = advance_by_number(A_NONE);
+    return TRUE;
+  case VUT_COUNTER:
+    if (counters_get_city_counters_count() <= 0) {
+      return FALSE;
+    }
+    src->value.counter = counter_by_index(0, CTGT_CITY);
     return TRUE;
   case VUT_GOVERNMENT:
     src->value.govern = game.government_during_revolution;
@@ -115,6 +123,9 @@ bool universal_value_initial(struct universal *src)
   case VUT_CITYTILE:
     src->value.citytile = CITYT_CENTER;
     return TRUE;
+  case VUT_CITYSTATUS:
+    src->value.citystatus = CITYS_OWNED_BY_ORIGINAL;
+    return TRUE;
   case VUT_GOOD:
     if (game.control.num_goods_types <= 0) {
       return FALSE;
@@ -130,8 +141,11 @@ bool universal_value_initial(struct universal *src)
     }
     src->value.nationality = nation_by_number(0);
     return TRUE;
-  case VUT_BASEFLAG:
-    src->value.baseflag = BF_NOT_AGGRESSIVE;
+  case VUT_ORIGINAL_OWNER:
+    if (game.control.nation_count <= 0) {
+      return FALSE;
+    }
+    src->value.origowner = nation_by_number(0);
     return TRUE;
   case VUT_ROADFLAG:
     src->value.roadflag = RF_RIVER;
@@ -152,6 +166,10 @@ bool universal_value_initial(struct universal *src)
     src->value.achievement = achievement_by_number(0);
     return TRUE;
   case VUT_DIPLREL:
+  case VUT_DIPLREL_TILE:
+  case VUT_DIPLREL_TILE_O:
+  case VUT_DIPLREL_UNITANY:
+  case VUT_DIPLREL_UNITANY_O:
     src->value.diplrel = DS_WAR;
     return TRUE;
   case VUT_MAXTILEUNITS:
@@ -166,8 +184,14 @@ bool universal_value_initial(struct universal *src)
   case VUT_MINCULTURE:
     src->value.minculture = 0;
     return TRUE;
+  case VUT_MINFOREIGNPCT:
+    src->value.minforeignpct = 0;
+    return TRUE;
   case VUT_UNITSTATE:
     src->value.unit_state = USP_TRANSPORTED;
+    return TRUE;
+  case VUT_ACTIVITY:
+    src->value.activity = ACTIVITY_IDLE;
     return TRUE;
   case VUT_MINMOVES:
     src->value.minmoves = 0;
@@ -197,6 +221,9 @@ bool universal_value_initial(struct universal *src)
   case VUT_IMPR_GENUS:
     src->value.impr_genus = IG_IMPROVEMENT;
     return TRUE;
+  case VUT_IMPR_FLAG:
+    src->value.impr_flag = IF_VISIBLE_BY_OTHERS;
+    return TRUE;
   case VUT_ACTION:
     src->value.action = action_by_number(0);
     return TRUE;
@@ -205,6 +232,10 @@ bool universal_value_initial(struct universal *src)
     return TRUE;
   case VUT_EXTRAFLAG:
     src->value.extraflag = EF_NATIVE_TILE;
+    return TRUE;
+  case VUT_MINLATITUDE:
+  case VUT_MAXLATITUDE:
+    src->value.latitude = 0;
     return TRUE;
   case VUT_COUNT:
     fc_assert(src->kind != VUT_COUNT);
@@ -215,7 +246,7 @@ bool universal_value_initial(struct universal *src)
 }
 
 /********************************************************************//**
-  Call cb for each value possible for the universal kind.
+  Call cb() for each value possible for the universal kind.
 ************************************************************************/
 void universal_kind_values(struct universal *univ,
                            univ_kind_values_cb cb, void *data)
@@ -229,6 +260,11 @@ void universal_kind_values(struct universal *univ,
     advance_re_active_iterate(padv) {
       cb(advance_rule_name(padv), univ->value.advance == padv, data);
     } advance_re_active_iterate_end;
+    break;
+  case VUT_COUNTER:
+    city_counters_iterate(pcount) {
+      cb(counter_rule_name(pcount), univ->value.counter == pcount, data);
+    } city_counters_iterate_end;
     break;
   case VUT_GOVERNMENT:
     governments_re_active_iterate(pgov) {
@@ -275,6 +311,11 @@ void universal_kind_values(struct universal *univ,
       cb(nation_rule_name(pnat), univ->value.nationality == pnat, data);
     } nations_iterate_end;
     break;
+  case VUT_ORIGINAL_OWNER:
+    nations_iterate(pnat) {
+      cb(nation_rule_name(pnat), univ->value.origowner == pnat, data);
+    } nations_iterate_end;
+    break;
   case VUT_EXTRA:
     extra_type_re_active_iterate(pextra) {
       cb(extra_rule_name(pextra), univ->value.extra == pextra, data);
@@ -315,11 +356,6 @@ void universal_kind_values(struct universal *univ,
       cb(terrain_flag_id_name(i), univ->value.terrainflag == i, data);
     }
     break;
-  case VUT_BASEFLAG:
-    for (i = 0; i < BF_COUNT; i++) {
-      cb(base_flag_id_name(i), univ->value.baseflag == i, data);
-    }
-    break;
   case VUT_ROADFLAG:
     for (i = 0; i < RF_COUNT; i++) {
       cb(road_flag_id_name(i), univ->value.roadflag == i, data);
@@ -345,12 +381,21 @@ void universal_kind_values(struct universal *univ,
       cb(citytile_type_name(i), univ->value.citytile == i, data);
     }
     break;
+  case VUT_CITYSTATUS:
+    for (i = 0; i < CITYS_LAST; i++) {
+      cb(citystatus_type_name(i), univ->value.citystatus == i, data);
+    }
+    break;
   case VUT_ACHIEVEMENT:
     achievements_re_active_iterate(pach) {
       cb(achievement_rule_name(pach), univ->value.achievement == pach, data);
     } achievements_re_active_iterate_end;
     break;
   case VUT_DIPLREL:
+  case VUT_DIPLREL_TILE:
+  case VUT_DIPLREL_TILE_O:
+  case VUT_DIPLREL_UNITANY:
+  case VUT_DIPLREL_UNITANY_O:
     for (i = 0; i < DS_LAST; i++) {
       cb(diplstate_type_name(i), univ->value.diplrel == i, data);
     }
@@ -362,6 +407,18 @@ void universal_kind_values(struct universal *univ,
     for (i = 0; i < USP_COUNT; i++) {
       cb(ustate_prop_name(i), univ->value.unit_state == i, data);
     }
+    break;
+  case VUT_ACTIVITY:
+    activity_type_iterate(act) {
+      if (!universal_is_legal_in_requirement(
+            &(struct universal){.kind = VUT_ACTIVITY,
+                                .value = {.activity = act}})) {
+        /* This activity is excluded from appearing in requirement
+         * vectors. */
+        continue;
+      }
+      cb(unit_activity_name(act), univ->value.activity == act, data);
+    } activity_type_iterate_end;
     break;
   case VUT_NATIONGROUP:
     nation_groups_iterate(pgroup) {
@@ -386,8 +443,13 @@ void universal_kind_values(struct universal *univ,
     }
     break;
   case VUT_IMPR_GENUS:
-    for (i = 0; i < IG_COUNT; i++) {
-      cb(impr_genus_id_name(i), univ->value.impr_genus == i, data);
+    genus_iterate(genus) {
+      cb(impr_genus_id_name(genus), univ->value.impr_genus == genus, data);
+    } genus_iterate_end;
+    break;
+  case VUT_IMPR_FLAG:
+    for (i = 0; i < IF_COUNT; i++) {
+      cb(impr_flag_id_name(i), univ->value.impr_flag == i, data);
     }
     break;
   case VUT_ACTION:
@@ -402,11 +464,14 @@ void universal_kind_values(struct universal *univ,
   case VUT_MINCALFRAG:
   case VUT_MAXTILEUNITS:
   case VUT_MINCULTURE:
+  case VUT_MINFOREIGNPCT:
   case VUT_MINMOVES:
   case VUT_MINVETERAN:
   case VUT_MINHP:
   case VUT_AGE:
   case VUT_MINTECHS:
+  case VUT_MINLATITUDE:
+  case VUT_MAXLATITUDE:
     /* Requirement types having numerical value */
     cb(NULL, FALSE, data);
     break;

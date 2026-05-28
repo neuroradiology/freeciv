@@ -64,7 +64,7 @@ static void nf_cb(const char *msg, void *data)
   Download modpack from a given URL
 **************************************************************************/
 const char *download_modpack(const char *URL,
-			     const struct fcmp_params *fcmp,
+                             const struct fcmp_params *fcmp,
                              dl_msg_callback mcb,
                              dl_pb_callback pbcb)
 {
@@ -97,6 +97,7 @@ static const char *download_modpack_recursive(const char *URL,
   bool partial_failure = FALSE;
   int dep;
   const char *dep_name;
+  int URL_len;
 
   if (recursion > 5) {
     return _("Recursive dependencies too deep");
@@ -118,6 +119,10 @@ static const char *download_modpack_recursive(const char *URL,
     /* Nothing */
   }
 
+  if (start_idx <= 0) {
+    return _("This does not look like modpack URL");
+  }
+
   log_normal(_("Installing modpack %s from %s"), URL + start_idx, URL);
 
   if (fcmp->inst_prefix == NULL) {
@@ -127,7 +132,7 @@ static const char *download_modpack_recursive(const char *URL,
   if (mcb != NULL) {
     char buf[2048];
 
-    /* TRANS: %s is a filename with suffix '.modpack' */
+    /* TRANS: %s is a filename with suffix '.mpdl' */
     fc_snprintf(buf, sizeof(buf), _("Downloading \"%s\" control file."), URL + start_idx);
     mcb(buf);
   }
@@ -188,6 +193,12 @@ static const char *download_modpack_recursive(const char *URL,
                 URLstart, baseURLpart + 1);
   } else {
     sz_strlcpy(baseURL, baseURLpart);
+  }
+
+  /* Remove potential ending '/' as one will get added later. */
+  URL_len = strlen(baseURL);
+  if (baseURL[URL_len - 1] == '/') {
+    baseURL[URL_len - 1] = '\0';
   }
 
   dep = 0;
@@ -276,7 +287,6 @@ static const char *download_modpack_recursive(const char *URL,
     pbcb(1, total_files + 1);
   }
 
-  filenbr = 0;
   for (filenbr = 0; filenbr < total_files; filenbr++) {
     const char *dest_name;
 
@@ -305,7 +315,7 @@ static const char *download_modpack_recursive(const char *URL,
 #endif /* DIR_SEPARATOR_IS_DEFAULT */
 
     for (i = 0; dest_name[i] != '\0'; i++) {
-      if (dest_name[i] == '.' && dest_name[i+1] == '.') {
+      if (dest_name[i] == '.' && dest_name[i + 1] == '.') {
         if (mcb != NULL) {
           char buf[2048];
 
@@ -338,16 +348,10 @@ static const char *download_modpack_recursive(const char *URL,
       free(dest_name_copy);
 #endif /* DIR_SEPARATOR_IS_DEFAULT */
 
-      for (i = strlen(local_name) - 1 ; local_name[i] != DIR_SEPARATOR_CHAR ; i--) {
-        /* Nothing */
-      }
-      local_name[i] = '\0';
-      log_debug("Create directory \"%s\"", local_name);
-      if (!make_dir(local_name)) {
+      if (!make_dir_for_file(local_name)) {
         secfile_destroy(control);
         return _("Cannot create required directories");
       }
-      local_name[i] = DIR_SEPARATOR_CHAR;
 
       if (mcb != NULL) {
         char buf[2048];
@@ -417,6 +421,10 @@ const char *download_modpack_list(const struct fcmp_params *fcmp,
        start_idx > 0 && fcmp->list_url[start_idx - 1] != '/';
        start_idx--) {
     /* Nothing */
+  }
+
+  if (start_idx <= 0) {
+    return _("Invalid modpack list URL");
   }
 
   list_capstr = secfile_lookup_str(list_file, "info.options");

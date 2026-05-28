@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -45,7 +45,7 @@ tiles = { "row", "column", "tag"
   1, 14, "unit.oil_mine"
   1, 15, "unit.oil_rig"
   1, 16, "unit.buoy"
-  
+
   1, 17, "unit.loaded"
   1, 18, "unit.connect"
   1, 19, "unit.auto_explore"
@@ -56,7 +56,8 @@ tiles = { "row", "column", "tag"
   2, 15, "unit.plant"
   2, 16, "unit.pollution"
 ;  2, 17, "unit.road"
-  2, 18, "unit.irrigate"
+  2, 18, "unit.cultivate",
+         "unit.irrigate" ; For rulesets still using this tag
   2, 19, "unit.fortifying"
 
   3, 15, "unit.convert"

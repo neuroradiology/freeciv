@@ -48,7 +48,12 @@ struct loaddata {
   struct section_file *file;
   const char *secfile_options;
   int version;
+  int full_version;
 
+  struct {
+    const char **order;
+    size_t size;
+  } counter;
   /* loaded in sg_load_savefile(); needed in sg_load_player() */
   struct {
     const char **order;
@@ -103,6 +108,7 @@ struct loaddata {
     size_t size;
   } specialist;
   /* loaded in sg_load_savefile(); needed in sg_load_player_main(), ... */
+  /* Deprecated in 3.0 (savegame3.c) Still saved up to 3.1. */
   struct {
     enum diplstate_type *order;
     size_t size;
@@ -117,6 +123,15 @@ struct loaddata {
     enum action_decision *order;
     size_t size;
   } act_dec;
+  /* loaded in sg_load_savefile(); needed in sg_load_player_unit(), ... */
+  struct {
+    enum server_side_agent *order;
+    size_t size;
+  } ssa;
+  struct {
+    enum city_options *order;
+    size_t size;
+  } coptions;
 
   /* loaded in sg_load_game(); needed in sg_load_random(), ... */
   enum server_states server_state;
@@ -128,7 +143,9 @@ struct loaddata {
   int *worked_tiles;
 };
 
-#define log_sg log_error
+#define log_sg    log_error
+/* Fixing known problems from older savegame formats */
+#define log_sgfix log_normal
 
 #define sg_check_ret(...)                                                   \
   if (!sg_success) {                                                        \
@@ -167,7 +184,16 @@ struct loaddata {
     sg_check_ret_val(_val);                                                 \
   }
 
+#define sg_regr(fixversion, message, ...)                                   \
+  if (loading->full_version >= fixversion) {                                \
+    log_sg(message, ## __VA_ARGS__);                                        \
+  } else {                                                                  \
+    log_sgfix(message, ## __VA_ARGS__);                                     \
+  }
+
 void sg_load_compat(struct loaddata *loading, enum sgf_version format_class);
+void sg_load_post_load_compat(struct loaddata *loading,
+                              enum sgf_version format_class);
 int current_compat_ver(void);
 
 #define hex_chars "0123456789abcdef"
@@ -175,7 +201,6 @@ int current_compat_ver(void);
 char bin2ascii_hex(int value, int halfbyte_wanted);
 int ascii_hex2bin(char ch, int halfbyte);
 
-char num2char(unsigned int num);
 int char2num(char ch);
 
 enum tile_special_type special_by_rule_name(const char *name);
@@ -187,12 +212,7 @@ struct extra_type *resource_by_identifier(const char identifier);
 enum ai_level ai_level_convert(int old_level);
 enum barbarian_type barb_type_convert(int old_type);
 
-#define ORDER_OLD_BUILD_CITY (-1)
-#define ORDER_OLD_DISBAND (-2)
-#define ORDER_OLD_BUILD_WONDER (-3)
-#define ORDER_OLD_TRADE_ROUTE (-4)
-#define ORDER_OLD_HOMECITY (-5)
-int sg_order_to_action(int order, struct unit *act_unit,
-                       struct tile *tgt_tile);
+/* Old savegames might have padding up to this amount of trade routes */
+#define MAX_TRADE_ROUTES_OLD 5
 
 #endif /* FC__SAVECOMPAT_H */

@@ -24,7 +24,7 @@ end
 
 signal.connect("city_destroyed", "city_destroyed_callback")
 
--- Unit enters Hermit`s Nest
+-- Unit enters Hermit`s Place
 function hermit_nest(unit, extra)
   if extra == "Hermit" then
     local chance = random(0, 5)
@@ -35,41 +35,24 @@ function hermit_nest(unit, extra)
     if chance <= 3 then
       local tech = unit.owner:give_tech(nil, 20, false, "hut")
       notify.event(unit.owner, unit.tile, E.HUT_TECH,
-                 _("Secluded studies have led the Hermit to "
-                   .. "the discovery of %s!"),
+                 _("Secluded studies have led the Hermit to the discovery of %s!"),
                  tech:name_translation())
     else
       notify.event(unit.owner, unit.tile, E.HUT_BARB_CITY_NEAR,
                  _("The Hermit has left nothing useful."))
     end
 
-    return false
+    return true
   end
 end
 
 signal.connect("hut_enter", "hermit_nest")
 
--- Horseback riding researched
-function horseback_callback(tech_type, player, source)
-  local img = string.format("%s%s%s", game.rulesetdir(),
-                            "/", "resources/horseman.jpg")
-  local snd = string.format("%s%s%s", game.rulesetdir(),
-                            "/", "resources/horse.ogg")
-  if (tech_type == find.tech_type("Horseback Riding"))
-    then
-    server.showimg_playsnd(player, img, snd,
-                           "Better to run than curse the road", true)
-  end
-  return false
-end
-
-signal.connect('tech_researched', 'horseback_callback')
-
 function hermit_nest_blown(unit, extra)
   if extra == "Hermit" then
     notify.event(unit.owner, unit.tile, E.HUT_BARB,
-                 _("Your %s has overflied a Hermit's Place" 
-                   .. " and destroyed it!"), unit.utype:name_translation())
+                 _("Your %s has overflied a Hermit's Place and destroyed it!"),
+                 unit.utype:name_translation())
     -- do not process default.lua
     return true
   end
@@ -240,7 +223,8 @@ function place_map_labels()
     elseif tname == "Deep Ocean" then
       selected_deep = selected_deep - 1
       if selected_deep == 0 then
-        if random(1, 100) <= 50 then
+        if surrounded_by(place, "Deep Ocean") then
+          -- Fully surrounded
           place:set_label(_("Deep Trench"))
         else
           place:set_label(_("Thermal Vent"))
@@ -250,11 +234,14 @@ function place_map_labels()
       selected_ocean = selected_ocean - 1
       if selected_ocean == 0 then
         if surrounded_by(place, "Ocean") then
+          -- Fully surrounded
           place:set_label(_("Atoll Chain"))
+        elseif adjacent_to(place, "Glacier") then
+          place:set_label(_("Glacier Bay"))
         elseif adjacent_to(place, "Deep Ocean") then
           place:set_label(_("Great Barrier Reef"))
         else
-          -- Coast
+          -- Coast (not adjacent to glacier nor deep ocean)
           place:set_label(_("Great Blue Hole"))
         end
       end
@@ -262,6 +249,7 @@ function place_map_labels()
       selected_lake = selected_lake - 1
       if selected_lake == 0 then
         if surrounded_by(place, "Lake") then
+          -- Fully surrounded
           place:set_label(_("Great Lakes"))
         elseif not adjacent_to(place, "Lake") then
           -- Isolated
@@ -274,8 +262,10 @@ function place_map_labels()
       selected_swamp = selected_swamp - 1
       if selected_swamp == 0 then
         if not adjacent_to(place, "Swamp") then
+          -- Isolated
           place:set_label(_("Grand Prismatic Spring"))
         elseif adjacent_to(place, "Ocean") then
+          -- Coast
           place:set_label(_("Mangrove Forest"))
         else
           place:set_label(_("Cenotes"))
@@ -285,11 +275,14 @@ function place_map_labels()
       selected_glacier = selected_glacier - 1
       if selected_glacier == 0 then
         if surrounded_by(place, "Glacier") then
+          -- Fully surrounded
           place:set_label(_("Ice Sheet"))
         elseif not adjacent_to(place, "Glacier") then
+          -- Isolated
           place:set_label(_("Frozen Lake"))
         elseif adjacent_to(place, "Ocean") then
-          place:set_label(_("Glacier Bay"))
+          -- Coast
+          place:set_label(_("Ice Shelf"))
         else
           place:set_label(_("Advancing Glacier"))
         end
@@ -303,8 +296,10 @@ function place_map_labels()
       selected_desert = selected_desert - 1
       if selected_desert == 0 then
         if surrounded_by(place, "Desert") then
+          -- Fully surrounded
           place:set_label(_("Sand Sea"))
         elseif not adjacent_to(place, "Desert") then
+          -- Isolated
           place:set_label(_("Salt Flat"))
         elseif random(1, 100) <= 50 then
           place:set_label(_("Singing Dunes"))
@@ -316,9 +311,10 @@ function place_map_labels()
       selected_plain = selected_plain - 1
       if selected_plain == 0 then
         if adjacent_to(place, "Ocean") then
+          -- Coast
           place:set_label(_("Long Beach"))
         elseif random(1, 100) <= 50 then
-          place:set_label(_("Mud Volcanoes"))
+          place:set_label(_("Valley of Geysers"))
         else
           place:set_label(_("Rock Pillars"))
         end
@@ -327,6 +323,7 @@ function place_map_labels()
       selected_grassland = selected_grassland - 1
       if selected_grassland == 0 then
         if adjacent_to(place, "Ocean") then
+          -- Coast
           place:set_label(_("White Cliffs"))
         elseif random(1, 100) <= 50 then
           place:set_label(_("Giant Cave"))
@@ -338,8 +335,10 @@ function place_map_labels()
       selected_jungle = selected_jungle - 1
       if selected_jungle == 0 then
         if surrounded_by(place, "Jungle") then
+          -- Fully surrounded
           place:set_label(_("Rainforest"))
         elseif adjacent_to(place, "Ocean") then
+          -- Coast
           place:set_label(_("Subterranean River"))
         else
           place:set_label(_("Sinkholes"))
@@ -350,7 +349,8 @@ function place_map_labels()
       if selected_forest == 0 then
         if adjacent_to(place, "Mountains") then
           place:set_label(_("Stone Forest"))
-        elseif random(1, 100) <= 50 then
+        elseif surrounded_by(place, "Forest") then
+          -- Fully surrounded
           place:set_label(_("Sequoia Forest"))
         else
           place:set_label(_("Millenary Trees"))
@@ -361,24 +361,29 @@ function place_map_labels()
       if selected_hill == 0 then
         if not adjacent_to(place, "Hills") then
           if adjacent_to(place, "Mountains") then
+            -- Isolated (but adjacent to mountains)
             place:set_label(_("Table Mountain"))
           else
+            -- Isolated (not adjacent to hills nor mountains)
             place:set_label(_("Inselberg"))
           end
         elseif random(1, 100) <= 50 then
           place:set_label(_("Karst Landscape"))
         else
-          place:set_label(_("Valley of Geysers"))
+          place:set_label(_("Mud Volcanoes"))
         end
       end
     elseif tname == "Mountains" then
       selected_mountain = selected_mountain - 1
       if selected_mountain == 0 then
         if surrounded_by(place, "Mountains") then
+          -- Fully surrounded
           place:set_label(_("Highest Peak"))
         elseif not adjacent_to(place, "Mountains") then
+          -- Isolated
           place:set_label(_("Sacred Mount"))
         elseif adjacent_to(place, "Ocean") then
+          -- Coast
           place:set_label(_("Cliff Coast"))
         elseif random(1, 100) <= 50 then
           place:set_label(_("Active Volcano"))
@@ -391,4 +396,134 @@ function place_map_labels()
   return false
 end
 
-signal.connect("map_generated", "place_map_labels")
+-- Add random castles at mountain tops.
+function place_ancient_castle_ruins()
+  -- Test castle storming in autogames even if the AI won`t build them.
+  -- Narrative excuse: The game starts in 4000 BC. The builders of the
+  -- castles must have drowned in the dark, formless void - taking
+  -- their advanced technology with them.
+
+  for place in whole_map_iterate() do
+    local terr = place.terrain
+    local tname = terr:rule_name()
+
+    if (tname == "Mountains") and (random(1, 100) <= 5) then
+      place:create_extra("Fort")
+      place:create_extra("Fortress")
+      place:create_extra("Castle")
+    end
+  end
+
+  return false
+end
+
+-- Add random Ancient Transport Hub
+function place_ancient_transport_hub()
+  -- Narrative excuse: The game starts in 4000 BC. Who knows what came
+  -- before the dark, formless void?
+
+  for place in whole_map_iterate() do
+    local terr = place.terrain
+    local tname = terr:rule_name()
+
+    if (tname == "Glacier") and (random(1, 1000) <= 9) then
+      -- adds up to 1% with the throw below
+      place:create_extra("Ancient Transport Hub")
+    elseif (not (tname == "Inaccessible")) and (random(1, 1000) <= 1) then
+      place:create_extra("Ancient Transport Hub")
+    end
+  end
+
+  return false
+end
+
+-- Modify the generated map
+function modify_generated_map()
+  place_map_labels()
+  place_ancient_castle_ruins()
+  place_ancient_transport_hub()
+  return false
+end
+
+signal.connect("map_generated", "modify_generated_map")
+
+-- Only notifications needs Lua
+function notify_unit_unit(action, actor, target)
+  -- Notify actor
+  notify.event(actor.owner, target.tile,
+               E.UNIT_ACTION_ACTOR_SUCCESS,
+               -- /* TRANS: Your Marines does Disrupt Supply Lines to American Armor. */
+               _("Your %s does %s to %s %s."),
+               actor.utype:name_translation(),
+               action:name_translation(),
+               target.owner.nation:name_translation(),
+               target.utype:name_translation())
+
+  -- Notify target
+  notify.event(target.owner, actor.tile,
+               E.UNIT_ACTION_TARGET_HOSTILE,
+               -- /* TRANS: German Paratroopers does Disrupt Supply Lines to your Armor. */
+               _("%s %s does %s to your %s."),
+               actor.owner.nation:name_translation(),
+               actor.utype:name_translation(),
+               action:name_translation(),
+               target.utype:name_translation())
+end
+
+-- Handle unit targeted unit action start
+function action_started_unit_unit_callback(action, actor, target)
+  if action:rule_name() == "User Action 1" then
+    -- Disrupt Supply Lines
+    notify_unit_unit(action, actor, target)
+  end
+end
+
+signal.connect("action_started_unit_unit", "action_started_unit_unit_callback")
+
+-- Use Ancient Transportation Network
+function transport_network(action, actor, target)
+  local actor_name = actor.utype:name_translation()
+  local invade_city_val = effects.unit_bonus(actor, target.owner,
+                                             "User_Effect_1")
+  local invade_extra_val = effects.unit_vs_tile_bonus(actor, target,
+                                                      "User_Effect_2")
+  local survived = actor:teleport(target,
+                                  -- allow transport to transport
+                                  find.transport_unit(actor.owner,
+                                                      actor.utype, target),
+                                  true,
+                                  -- take city and castle conquest from
+                                  -- boolean user effects
+                                  invade_city_val > 0, invade_extra_val > 0,
+                                  -- a unit appearing from the Ancient
+                                  -- Transportation Network is scary to see
+                                  false, true)
+
+  if not survived then
+    notify.event(actor.owner, target,
+                 E.UNIT_ACTION_ACTOR_FAILURE,
+                 -- /* TRANS: Your Marines didn't survive doing
+                 --  * Use Ancient Transportation Network. */
+                 _("Your %s didn't survive doing %s."),
+                 actor_name,
+                 action:name_translation())
+    notify.event(actor.owner, target,
+                 E.UNIT_ACTION_ACTOR_FAILURE,
+                 _("Be more careful the next time you select a target."))
+    -- Kept out to keep the game family friendly:
+    -- Sounds similar to those heard during their spring sacrifices are
+    -- rumored to have been coming from the closed chamber of the
+    -- Amêzârâkian Mysteries at the time of the accident.
+  end
+end
+
+-- Handle tile targeted unit action start
+function action_started_unit_tile_callback(action, actor, target)
+  if action:rule_name() == "User Action 2" then
+    -- Use Ancient Transportation Network
+    transport_network(action, actor, target)
+  end
+end
+
+signal.connect("action_started_unit_tile",
+"action_started_unit_tile_callback")

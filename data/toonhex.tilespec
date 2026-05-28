@@ -2,7 +2,7 @@
 [tilespec]
 
 ; Format and options of this tilespec file:
-options = "+Freeciv-tilespec-Devel-2016-Jun-07"
+options = "+Freeciv-tilespec-3.2-Devel-2022-Jun-21"
 
 ; A simple name for the tileset specified by this file:
 name = "Toonhex"
@@ -15,10 +15,11 @@ priority = 3
 ;version = ""
 
 ; Summary and full description of the tileset.
-summary = _("Tileset combining Hexemplio's terrains and Cimpletoon's units with orientation.")
+summary = _("Large iso-hex tileset combining Hexemplio's terrains \
+and Cimpletoon's units with orientation.")
 ;description = ""
 
-; TODO: add more overall information fields on tiles, 
+; TODO: add more overall information fields on tiles,
 ; eg, authors, colors, etc.
 
 ; What is the primary ruleset this tileset is meant for.
@@ -62,6 +63,10 @@ activity_offset_y = 28
 ; offset of the selected unit sprites
 select_offset_x = 0
 select_offset_y = 21
+
+; offset of the unit stack size number sprites
+stack_size_offset_x = 32
+stack_size_offset_y = 25
 
 ; offset the cities by this amount
 city_offset_x = 17
@@ -117,7 +122,7 @@ layer_order =
   "Grid1",      ; Grid layer for isometric tilesets.
   "City1",      ; City and walls.
   "Special2",   ; 2nd layer for extras with "3Layers" and "Single2" styles.
-  "Fog",        ; Fog of war (on tiles one knows but doesn't see).
+  "Fog",        ; Fog of war (on tiles one knows but doesn`t see).
   "Unit",       ; Units except the selected one(s).
   "Special3",   ; 3rd layer for extras with "3Layers" style, and base flags.
   "City2",      ; City size when the city bar is disabled.
@@ -128,13 +133,14 @@ layer_order =
   "FocusUnit",  ; The focused unit(s).
   "Goto",       ; Goto turn count and intermediate points, *not* goto lines.
   "WorkerTask", ; The unit task indicators ("G", "S", ...).
-  "Editor"      ; Editor stuff (selected tile and start points).
+  "Editor",     ; Editor stuff (selected tile and start points).
+  "InfraWork"   ; Icons for the extras being placed.
 
 ; This is special because it gets freed and reloaded as required:
 main_intro_file    = "misc/intro"
 
-; Below, the graphics spec files; must be somewhere (anywhere) in 
-; the data path. Order may be important for color allocation on 
+; Below, the graphics spec files; must be somewhere (anywhere) in
+; the data path. Order may be important for color allocation on
 ; low-color systems, and if there are any duplicate tags (lattermost
 ; tag is used).
 
@@ -147,7 +153,6 @@ files =
   "misc/events.spec",
   "misc/buildings-large.spec",
   "misc/wonders-large.spec",
-  "misc/flags-large.spec",
   "misc/shields-large.spec",
   "misc/cursors.spec",
   "misc/space.spec",
@@ -177,7 +182,35 @@ files =
   "hexemplio/select.spec",
   "hexemplio/water1.spec",
   "hexemplio/water2.spec",
-  "hexemplio/water3.spec"
+  "hexemplio/water3.spec",
+  ;add XYZ and Elefant units
+  "cimpletoon/units/abrams/xxx.spec",
+  "cimpletoon/units/assaultgun/xxx.spec",
+  "cimpletoon/units/biplane/xxx.spec",
+  "cimpletoon/units/container_ship/xxx.spec",
+  "cimpletoon/units/flak88/xxx.spec",
+  "cimpletoon/units/icebreaker/xxx.spec",
+  "cimpletoon/units/light_howitzer/xxx.spec",
+  "cimpletoon/units/locomotive/xxx.spec",
+  "cimpletoon/units/m4sherman/xxx.spec",
+  "cimpletoon/units/mig15/xxx.spec",
+  "cimpletoon/units/missile_sub/xxx.spec",
+  "cimpletoon/units/panther/xxx.spec",
+  "cimpletoon/units/panzer_iii/xxx.spec",
+  "cimpletoon/units/pt-boat/xxx.spec",
+  "cimpletoon/units/ROMB/xxx.spec",
+  "cimpletoon/units/stationary_sam/xxx.spec",
+  "cimpletoon/units/steamer/xxx.spec",
+  "cimpletoon/units/technical/xxx.spec",
+  "cimpletoon/units/tiger/xxx.spec",
+  "cimpletoon/units/truck/xxx.spec",
+  "cimpletoon/units/zeppelin/xxx.spec"
+
+files_svg =
+  "misc/flags.spec"
+
+files_pixel =
+  "misc/flags-large.spec"
 
 
 ; Include color definitions

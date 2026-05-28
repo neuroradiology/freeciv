@@ -28,6 +28,7 @@
 #include "government.h"
 #include "map.h"
 #include "movement.h"
+#include "nation.h"
 #include "packets.h"
 #include "player.h"
 #include "unit.h"
@@ -59,14 +60,13 @@
 #include "handicaps.h"
 
 /* ai/default */
-#include "aidata.h"
 #include "aiferry.h"
 #include "aiguard.h"
-#include "ailog.h"
-#include "aiplayer.h"
 #include "aitech.h"
-#include "aiunit.h"
+#include "daidata.h"
+#include "dailog.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
 
 #include "aitools.h"
 
@@ -76,7 +76,7 @@
 **************************************************************************/
 const char *dai_unit_task_rule_name(const enum ai_unit_task task)
 {
-  switch(task) {
+  switch (task) {
    case AIUNIT_NONE:
      return "None";
    case AIUNIT_AUTO_SETTLER:
@@ -130,14 +130,14 @@ const char *dai_choice_rule_name(const struct adv_choice *choice)
 
 /**********************************************************************//**
   Amortize a want modified by the shields (build_cost) we risk losing.
-  We add the build time of the unit(s) we risk to amortize delay.  The
+  We add the build time of the unit(s) we risk to amortize delay. The
   build time is calculated as the build cost divided by the production
   output of the unit's homecity or the city where we want to produce
   the unit. If the city has less than average shield output, we
   instead use the average, to encourage long-term thinking.
 **************************************************************************/
-int military_amortize(struct player *pplayer, struct city *pcity,
-                      int value, int delay, int build_cost)
+adv_want military_amortize(struct player *pplayer, struct city *pcity,
+                           adv_want value, int delay, int build_cost)
 {
   struct adv_data *ai = adv_data_get(pplayer, NULL);
   int city_output = (pcity ? pcity->surplus[O_SHIELD] : 1);
@@ -153,12 +153,12 @@ int military_amortize(struct player *pplayer, struct city *pcity,
 
 /**********************************************************************//**
   There are some signs that a player might be dangerous: We are at
-  war with him, he has done lots of ignoble things to us, he is an
-  ally of one of our enemies (a ticking bomb to be sure), he is
-  our war target, we don't like him, diplomatic state is neutral
+  war with them, they have done lots of ignoble things to us, they are
+  an ally of one of our enemies (a ticking bomb to be sure), they are
+  our war target, we don't like them, diplomatic state is neutral
   or we have case fire.
   This function is used for example to check if pplayer can leave
-  his city undefended when aplayer's units are near it.
+  their city undefended when aplayer's units are near it.
 **************************************************************************/
 void dai_consider_plr_dangerous(struct ai_type *ait, struct player *plr1,
                                 struct player *plr2,
@@ -209,8 +209,9 @@ static bool dai_gothere_bodyguard(struct ai_type *ait,
     if (d_type) {
       /* Enemy really can build something */
       danger +=
-        adv_unittype_att_rating(d_type, do_make_unit_veteran(dcity, d_type), 
-                                SINGLE_MOVE, d_type->hp);
+        adv_unittype_att_rating(
+          d_type, city_production_unit_veteran_level(dcity, d_type),
+          SINGLE_MOVE, d_type->hp);
     }
   }
   danger *= POWER_DIVIDER;
@@ -401,19 +402,13 @@ bool dai_unit_goto_constrained(struct ai_type *ait, struct unit *punit,
 
   UNIT_LOG(LOG_DEBUG, punit, "constrained goto to %d,%d", TILE_XY(ptile));
 
-  ptile = immediate_destination(punit, ptile);
-
-  UNIT_LOG(LOG_DEBUG, punit, "constrained goto: let's go to %d,%d",
-           TILE_XY(ptile));
-
   if (same_pos(unit_tile(punit), ptile)) {
-    /* Not an error; sometimes immediate_destination instructs the unit
-     * to stay here. For example, to refuel.*/
+    /* Was not an error in previous versions but now is dubious... */
     UNIT_LOG(LOG_DEBUG, punit, "constrained goto: already there!");
     send_unit_info(NULL, punit);
 
     return TRUE;
-  } else if (!goto_is_sane(punit, ptile)) {
+  } else if (!goto_is_sane(punit, ptile)) {/* FIXME: why do we check it? */
     UNIT_LOG(LOG_DEBUG, punit, "constrained goto: 'insane' goto!");
     punit->activity = ACTIVITY_IDLE;
     send_unit_info(NULL, punit);
@@ -513,7 +508,8 @@ void dai_fill_unit_param(struct ai_type *ait, struct pf_parameter *parameter,
      * in which case the ferry should stop on an adjacent tile. */
     pft_fill_unit_overlap_param(parameter, punit);
   } else if (!utype_fuel(unit_type_get(punit))
-             && is_military_unit(punit)
+             && utype_can_do_action_result(unit_type_get(punit),
+                                           ACTRES_ATTACK)
              && (unit_data->task == AIUNIT_DEFEND_HOME
                  || unit_data->task == AIUNIT_ATTACK
                  || unit_data->task ==  AIUNIT_ESCORT
@@ -639,7 +635,7 @@ void dai_unit_new_adv_task(struct ai_type *ait, struct unit *punit,
                            enum adv_unit_task task, struct tile *ptile)
 {
   /* Keep ai_unit_task in sync with adv task */
-  switch(task) {
+  switch (task) {
    case AUT_AUTO_SETTLER:
      dai_unit_new_task(ait, punit, AIUNIT_AUTO_SETTLER, ptile);
      break;
@@ -754,7 +750,7 @@ void dai_unit_new_task(struct ai_type *ait, struct unit *punit,
 
   /* Map ai tasks to advisor tasks. For most ai tasks there is
      no advisor, so AUT_NONE is set. */
-  switch(unit_data->task) {
+  switch (unit_data->task) {
    case AIUNIT_AUTO_SETTLER:
      punit->server.adv->task = AUT_AUTO_SETTLER;
      break;
@@ -803,13 +799,14 @@ bool dai_unit_make_homecity(struct unit *punit, struct city *pcity)
 static void dai_unit_bodyguard_move(struct ai_type *ait,
                                     struct unit *bodyguard, struct tile *ptile)
 {
-  struct unit *punit;
-  struct player *pplayer;
-
   fc_assert_ret(bodyguard != NULL);
-  pplayer = unit_owner(bodyguard);
-  fc_assert_ret(pplayer != NULL);
-  punit = aiguard_charge_unit(ait, bodyguard);
+  fc_assert_ret(unit_owner(bodyguard) != NULL);
+
+#ifndef FREECIV_NDEBUG
+  struct unit *punit =
+#endif
+    aiguard_charge_unit(ait, bodyguard);
+
   fc_assert_ret(punit != NULL);
 
   CHECK_GUARD(ait, bodyguard);
@@ -834,6 +831,7 @@ static void dai_unit_bodyguard_move(struct ai_type *ait,
 **************************************************************************/
 bool dai_unit_attack(struct ai_type *ait, struct unit *punit, struct tile *ptile)
 {
+  struct unit *ptrans;
   struct unit *bodyguard = aiguard_guard_of(ait, punit);
   int sanity = punit->id;
   bool alive;
@@ -852,16 +850,57 @@ bool dai_unit_attack(struct ai_type *ait, struct unit *punit, struct tile *ptile
     /* Choose capture. */
     unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
                    0, "", ACTION_CAPTURE_UNITS);
+  } else if (is_action_enabled_unit_on_units(ACTION_BOMBARD_LETHAL,
+                                             punit, ptile)) {
+    /* Choose "Bombard Lethal". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_BOMBARD_LETHAL);
   } else if (is_action_enabled_unit_on_units(ACTION_BOMBARD,
-                                        punit, ptile)) {
-    /* Choose bombard. */
+                                             punit, ptile)) {
+    /* Choose "Bombard". */
     unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
                    0, "", ACTION_BOMBARD);
-  } else if (is_action_enabled_unit_on_tile(ACTION_NUKE,
-                                            punit, ptile, NULL)) {
-    /* Choose explode nuclear. */
+  } else if (is_action_enabled_unit_on_units(ACTION_BOMBARD2,
+                                             punit, ptile)) {
+    /* Choose "Bombard 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_BOMBARD2);
+  } else if (is_action_enabled_unit_on_units(ACTION_BOMBARD3,
+                                             punit, ptile)) {
+    /* Choose "Bombard 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_BOMBARD3);
+  } else if (is_action_enabled_unit_on_units(ACTION_NUKE_UNITS,
+                                             punit, ptile)) {
+    /* Choose "Nuke Units". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_NUKE_UNITS);
+  } else if (action_id_get_target_kind(ACTION_NUKE) == ATK_TILE
+             && is_action_enabled_unit_on_tile(ACTION_NUKE,
+                                               punit, ptile, NULL)) {
+    /* Choose "Explode Nuclear". */
     unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
                    0, "", ACTION_NUKE);
+  } else if (action_id_get_target_kind(ACTION_NUKE) == ATK_CITY
+             && (tcity = tile_city(ptile))
+             && is_action_enabled_unit_on_city(ACTION_NUKE,
+                                               punit, tcity)) {
+    /* Choose "Explode Nuclear". */
+    unit_do_action(unit_owner(punit), punit->id, tcity->id,
+                   0, "", ACTION_NUKE);
+  } else if (action_id_get_target_kind(ACTION_NUKE_CITY) == ATK_TILE
+             && is_action_enabled_unit_on_tile(ACTION_NUKE_CITY,
+                                               punit, ptile, NULL)) {
+    /* Choose "Nuke City". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_NUKE_CITY);
+  } else if (action_id_get_target_kind(ACTION_NUKE_CITY) == ATK_CITY
+             && (tcity = tile_city(ptile))
+             && is_action_enabled_unit_on_city(ACTION_NUKE_CITY,
+                                               punit, tcity)) {
+    /* Choose "Nuke City". */
+    unit_do_action(unit_owner(punit), punit->id, tcity->id,
+                   0, "", ACTION_NUKE_CITY);
   } else if (is_action_enabled_unit_on_units(ACTION_ATTACK,
                                              punit, ptile)) {
     /* Choose regular attack. */
@@ -878,9 +917,150 @@ bool dai_unit_attack(struct ai_type *ait, struct unit *punit, struct tile *ptile
     /* Choose "Conquer City". */
     unit_do_action(unit_owner(punit), punit->id, tcity->id,
                    0, "", ACTION_CONQUER_CITY);
+  } else if ((tcity = tile_city(ptile))
+             && is_action_enabled_unit_on_city(ACTION_CONQUER_CITY2,
+                                               punit, tcity)) {
+    /* Choose "Conquer City 2". */
+    unit_do_action(unit_owner(punit), punit->id, tcity->id,
+                   0, "", ACTION_CONQUER_CITY2);
+  } else if ((tcity = tile_city(ptile))
+             && is_action_enabled_unit_on_city(ACTION_CONQUER_CITY3,
+                                               punit, tcity)) {
+    /* Choose "Conquer City 3". */
+    unit_do_action(unit_owner(punit), punit->id, tcity->id,
+                   0, "", ACTION_CONQUER_CITY3);
+  } else if ((tcity = tile_city(ptile))
+             && is_action_enabled_unit_on_city(ACTION_CONQUER_CITY4,
+                                               punit, tcity)) {
+    /* Choose "Conquer City 4". */
+    unit_do_action(unit_owner(punit), punit->id, tcity->id,
+                   0, "", ACTION_CONQUER_CITY4);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ((ptrans = transporter_for_unit_at(punit, ptile)))
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK,
+                                               punit, ptrans)) {
+    /* "Transport Embark". */
+    unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                   0, "", ACTION_TRANSPORT_EMBARK);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ((ptrans = transporter_for_unit_at(punit, ptile)))
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK2,
+                                               punit, ptrans)) {
+    /* "Transport Embark 2". */
+    unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                   0, "", ACTION_TRANSPORT_EMBARK2);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ((ptrans = transporter_for_unit_at(punit, ptile)))
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK3,
+                                               punit, ptrans)) {
+    /* "Transport Embark 3". */
+    unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                   0, "", ACTION_TRANSPORT_EMBARK3);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ((ptrans = transporter_for_unit_at(punit, ptile)))
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK4,
+                                               punit, ptrans)) {
+    /* "Transport Embark 4". */
+    unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                   0, "", ACTION_TRANSPORT_EMBARK4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK1,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_TRANSPORT_DISEMBARK1);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK2,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_TRANSPORT_DISEMBARK2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK3,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_TRANSPORT_DISEMBARK3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK4,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 4". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_TRANSPORT_DISEMBARK4);
+  } else if (tile_has_claimable_base(ptile, unit_type_get(punit))
+             && is_action_enabled_unit_on_extras(ACTION_CONQUER_EXTRAS,
+                                                 punit, ptile, NULL)) {
+    /* Choose "Conquer Extras". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_CONQUER_EXTRAS);
+  } else if (tile_has_claimable_base(ptile, unit_type_get(punit))
+             && is_action_enabled_unit_on_extras(ACTION_CONQUER_EXTRAS2,
+                                                 punit, ptile, NULL)) {
+    /* Choose "Conquer Extras 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_CONQUER_EXTRAS2);
+  } else if (tile_has_claimable_base(ptile, unit_type_get(punit))
+             && is_action_enabled_unit_on_extras(ACTION_CONQUER_EXTRAS3,
+                                                 punit, ptile, NULL)) {
+    /* Choose "Conquer Extras 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_CONQUER_EXTRAS3);
+  } else if (tile_has_claimable_base(ptile, unit_type_get(punit))
+             && is_action_enabled_unit_on_extras(ACTION_CONQUER_EXTRAS4,
+                                                 punit, ptile, NULL)) {
+    /* Choose "Conquer Extras 4". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_CONQUER_EXTRAS4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER,
+                                            punit, ptile, NULL)) {
+    /* Choose "Enter Hut". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_ENTER);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER2,
+                                            punit, ptile, NULL)) {
+    /* Choose "Enter Hut 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_ENTER2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER3,
+                                            punit, ptile, NULL)) {
+    /* Choose "Enter Hut 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_ENTER3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER4,
+                                            punit, ptile, NULL)) {
+    /* Choose "Enter Hut 4". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_ENTER4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN,
+                                            punit, ptile, NULL)) {
+    /* Choose "Frighten Hut". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_FRIGHTEN);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN2,
+                                            punit, ptile, NULL)) {
+    /* Choose "Frighten Hut 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_FRIGHTEN2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN3,
+                                            punit, ptile, NULL)) {
+    /* Choose "Frighten Hut 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_FRIGHTEN3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN4,
+                                            punit, ptile, NULL)) {
+    /* Choose "Frighten Hut 4". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_HUT_FRIGHTEN4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE,
+                                            punit, ptile, NULL)) {
+    /* Choose "Unit Move". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_UNIT_MOVE);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE2,
+                                            punit, ptile, NULL)) {
+    /* Choose "Unit Move 2". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_UNIT_MOVE2);
   } else {
-    /* Other move. */
-    (void) unit_move_handling(punit, ptile, FALSE, TRUE, NULL);
+    /* Choose "Unit Move 3". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", ACTION_UNIT_MOVE3);
   }
   alive = (game_unit_by_number(sanity) != NULL);
 
@@ -917,11 +1097,12 @@ void dai_unit_move_or_attack(struct ai_type *ait, struct unit *punit,
 **************************************************************************/
 bool dai_unit_move(struct ai_type *ait, struct unit *punit, struct tile *ptile)
 {
+  struct action *paction;
   struct unit *bodyguard;
+  struct unit *ptrans = NULL;
   int sanity = punit->id;
   struct player *pplayer = unit_owner(punit);
   const bool is_plr_ai = is_ai(pplayer);
-  int mcost;
 
   CHECK_UNIT(punit);
   fc_assert_ret_val_msg(is_tiles_adjacent(unit_tile(punit), ptile), FALSE,
@@ -939,6 +1120,7 @@ bool dai_unit_move(struct ai_type *ait, struct unit *punit, struct tile *ptile)
   }
 
   /* barbarians shouldn't enter huts */
+  /* FIXME: use unit_can_displace_hut(punit, ptile) better */
   if (is_barbarian(pplayer) && hut_on_tile(ptile)) {
     return FALSE;
   }
@@ -953,20 +1135,144 @@ bool dai_unit_move(struct ai_type *ait, struct unit *punit, struct tile *ptile)
     return FALSE;
   }
 
+  /* Select move kind. */
+  if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+      && ((ptrans = transporter_for_unit_at(punit, ptile)))
+      && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK,
+                                        punit, ptrans)) {
+    /* "Transport Embark". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK2,
+                                               punit, ptrans)) {
+    /* "Transport Embark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK2);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK3,
+                                               punit, ptrans)) {
+    /* "Transport Embark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK3);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK4,
+                                               punit, ptrans)) {
+    /* "Transport Embark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK1,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK1);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK2,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK3,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK4,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut". */
+    paction = action_by_number(ACTION_HUT_ENTER);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER2,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 2". */
+    paction = action_by_number(ACTION_HUT_ENTER2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER3,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 3". */
+    paction = action_by_number(ACTION_HUT_ENTER3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER4,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 4". */
+    paction = action_by_number(ACTION_HUT_ENTER4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN2,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 2". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN3,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 3". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN4,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 4". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move". */
+    paction = action_by_number(ACTION_UNIT_MOVE);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE2,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move 2". */
+    paction = action_by_number(ACTION_UNIT_MOVE2);
+  } else {
+    /* "Unit Move 3". */
+    paction = action_by_number(ACTION_UNIT_MOVE3);
+  }
+
   /* Try not to end move next to an enemy if we can avoid it by waiting */
-  mcost = map_move_cost_unit(&(wld.map), punit, ptile);
-  if (punit->moves_left <= mcost
-      && unit_move_rate(punit) > mcost
-      && adv_danger_at(punit, ptile)
-      && !adv_danger_at(punit,  unit_tile(punit))) {
-    UNIT_LOG(LOG_DEBUG, punit, "ending move early to stay out of trouble");
-    return FALSE;
+  if (action_has_result(paction, ACTRES_UNIT_MOVE)
+      || action_has_result(paction, ACTRES_TRANSPORT_DISEMBARK)) {
+    /* The unit will have to move it self rather than being moved. */
+    int mcost = map_move_cost_unit(&(wld.map), punit, ptile);
+
+    if (paction) {
+      struct tile *from_tile;
+
+      /* Ugly hack to understand the OnNativeTile unit state requirements
+       * used in the Action_Success_Actor_Move_Cost effect. */
+      fc_assert(utype_is_moved_to_tgt_by_action(paction,
+                                                unit_type_get(punit)));
+      from_tile = unit_tile(punit);
+      punit->tile = ptile;
+
+      mcost += unit_pays_mp_for_action(paction, punit);
+
+      punit->tile = from_tile;
+    }
+
+    if (punit->moves_left <= mcost
+        && unit_move_rate(punit) > mcost
+        && adv_danger_at(punit, ptile)
+        && !adv_danger_at(punit, unit_tile(punit))) {
+      UNIT_LOG(LOG_DEBUG, punit,
+               "ending move early to stay out of trouble");
+      return FALSE;
+    }
   }
 
   /* go */
   unit_activity_handling(punit, ACTIVITY_IDLE);
   /* Move */
-  (void) unit_move_handling(punit, ptile, FALSE, TRUE, NULL);
+  if (paction && ptrans
+      && action_has_result(paction, ACTRES_TRANSPORT_EMBARK)) {
+      /* "Transport Embark". */
+      unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                     0, "", action_number(paction));
+    } else if (paction
+               && (action_has_result(paction,
+                                     ACTRES_TRANSPORT_DISEMBARK)
+                   || action_has_result(paction, ACTRES_UNIT_MOVE)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_ENTER)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_FRIGHTEN))) {
+    /* "Transport Disembark", "Transport Disembark 2", "Enter Hut",
+     * "Frighten Hut" or "Unit Move". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", action_number(paction));
+  }
 
   /* handle the results */
   if (game_unit_by_number(sanity) && same_pos(ptile, unit_tile(punit))) {
@@ -993,11 +1299,14 @@ int stack_cost(struct unit *pattacker, struct unit *pdefender)
   if (is_stack_vulnerable(ptile)) {
     /* lotsa people die */
     unit_list_iterate(ptile->units, aunit) {
-      if (unit_attack_unit_at_tile_result(pattacker, aunit, ptile) == ATT_OK) {
+      if (unit_attack_unit_at_tile_result(pattacker, NULL, aunit, ptile)
+          == ATT_OK) {
         victim_cost += unit_build_shield_cost_base(aunit);
       }
     } unit_list_iterate_end;
-  } else if (unit_attack_unit_at_tile_result(pattacker, pdefender, ptile) == ATT_OK) {
+  } else if (unit_attack_unit_at_tile_result(pattacker, NULL,
+                                             pdefender, ptile)
+             == ATT_OK) {
     /* Only one unit dies if attack is successful */
     victim_cost = unit_build_shield_cost_base(pdefender);
   }
@@ -1035,11 +1344,11 @@ int dai_gold_reserve(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Adjust want for choice to 'value' percent
+  Adjust want for choice to given percentage.
 **************************************************************************/
-void adjust_choice(int value, struct adv_choice *choice)
+void adjust_choice(int pct, struct adv_choice *choice)
 {
-  choice->want = (choice->want *value)/100;
+  choice->want = (choice->want * pct) / 100;
 }
 
 /**********************************************************************//**
@@ -1072,7 +1381,7 @@ bool dai_choose_role_unit(struct ai_type *ait, struct player *pplayer,
 void dai_build_adv_override(struct ai_type *ait, struct city *pcity,
                             struct adv_choice *choice)
 {
-  struct impr_type *chosen;
+  const struct impr_type *chosen;
   int want;
 
   if (choice->type == CT_NONE) {

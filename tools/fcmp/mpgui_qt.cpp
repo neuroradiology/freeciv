@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 
   fcmp_init();
 
-  /* This modifies argv! */
+  // This modifies argv!
   ui_options = fcmp_parse_cmdline(argc, argv);
 
   if (ui_options != -1) {
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
              _("This modpack installer accepts the standard Qt command-line options\n"
                "after '--'. See the Qt documentation.\n\n"));
 
-        /* TRANS: No full stop after the URL, could cause confusion. */
+        // TRANS: No full stop after the URL, could cause confusion.
         fc_fprintf(stderr, _("Report bugs at %s\n"), BUG_URL);
 
         ui_options = -1;
@@ -111,12 +111,19 @@ int main(int argc, char **argv)
     mpgui_main *main_window;
     QWidget *central;
     const char *errmsg;
+    QPixmap *pm;
+    const char *full_icon_path = fileinfoname(get_data_dirs(), "freeciv-modpack.png");
+    const QString fip = QString(full_icon_path);
 
     load_install_info_lists(&fcmp);
 
     qapp = new QApplication(ui_options, argv);
     central = new QWidget;
     main_window = new mpgui_main(qapp, central);
+
+    pm = new QPixmap;
+    pm->load(fip);
+    qapp->setWindowIcon(QIcon(*pm));
 
     main_window->setGeometry(0, 30, 640, 60);
     main_window->setWindowTitle(QString::fromUtf8(_("Freeciv modpack installer (Qt)")));
@@ -192,14 +199,22 @@ void mpgui::setup(QWidget *central, struct fcmp_params *params)
   QLabel *version_label;
   char verbuf[2048];
   const char *rev_ver;
+  const char *mode;
 
   rev_ver = fc_git_revision();
 
+#ifndef FC_QT5_MODE
+  mode = R__("built in Qt6 mode.");
+#else  // FC_QT5_MODE
+  mode = R__("built in Qt5 mode.");
+#endif // FC_QT5_MODE
+
   if (rev_ver == nullptr) {
-    fc_snprintf(verbuf, sizeof(verbuf), "%s%s", word_version(), VERSION_STRING);
+    fc_snprintf(verbuf, sizeof(verbuf), "%s%s\n%s", word_version(),
+                VERSION_STRING, mode);
   } else {
-    fc_snprintf(verbuf, sizeof(verbuf), _("%s%s\ncommit: %s"),
-                word_version(), VERSION_STRING, rev_ver);
+    fc_snprintf(verbuf, sizeof(verbuf), _("%s%s\ncommit: %s\n%s"),
+                word_version(), VERSION_STRING, rev_ver, mode);
   }
 
   version_label = new QLabel(QString::fromUtf8(verbuf));
@@ -224,7 +239,7 @@ void mpgui::setup(QWidget *central, struct fcmp_params *params)
 
   connect(mplist_table, SIGNAL(cellClicked(int, int)), this, SLOT(row_selected(int, int)));
   connect(mplist_table, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(row_download(QModelIndex)));
-  connect(this, SIGNAL(display_msg_thr_signal(const char *)), this, SLOT(display_msg(const char *)));
+  connect(this, SIGNAL(display_msg_thr_signal(QString)), this, SLOT(display_msg(QString)));
   connect(this, SIGNAL(progress_thr_signal(int, int)), this, SLOT(progress(int, int)));
   connect(this, SIGNAL(refresh_list_versions_thr_signal()), this, SLOT(refresh_list_versions()));
 
@@ -265,10 +280,12 @@ void mpgui::setup(QWidget *central, struct fcmp_params *params)
 /**********************************************************************//**
   Display status message
 **************************************************************************/
-void mpgui::display_msg(const char *msg)
+void mpgui::display_msg(QString msg)
 {
-  log_verbose("%s", msg);
-  msg_dspl->setText(QString::fromUtf8(msg));
+  QByteArray msg_bytes = msg.toLocal8Bit();
+
+  log_verbose("%s", msg_bytes.data());
+  msg_dspl->setText(msg);
 }
 
 /**********************************************************************//**
@@ -276,7 +293,7 @@ void mpgui::display_msg(const char *msg)
 **************************************************************************/
 void mpgui::display_msg_thr(const char *msg)
 {
-  emit display_msg_thr_signal(msg);
+  emit display_msg_thr_signal(QString::fromUtf8(msg));
 }
 
 /**********************************************************************//**
@@ -331,11 +348,13 @@ void mpgui::refresh_list_versions()
     int type_int;
     const char *new_inst;
     enum modpack_type type;
+    QByteArray name_bytes;
 
     name_str = mplist_table->item(i, ML_COL_NAME)->text();
     type_int = mplist_table->item(i, ML_TYPE)->text().toInt();
     type = (enum modpack_type) type_int;
-    new_inst = mpdb_installed_version(name_str.toUtf8().data(), type);
+    name_bytes = name_str.toUtf8();
+    new_inst = mpdb_installed_version(name_bytes.data(), type);
 
     if (new_inst == nullptr) {
       new_inst = _("Not installed");
@@ -372,14 +391,14 @@ void mpgui::setup_list(const char *name, const char *URL,
   if (modpack_type_is_valid(type)) {
     type_str = _(modpack_type_name(type));
   } else {
-    /* TRANS: Unknown modpack type */
+    // TRANS: Unknown modpack type
     type_str = _("?");
   }
 
   if (license != nullptr) {
     lic_str = license;
   } else {
-    /* TRANS: License of modpack is not known */
+    // TRANS: License of modpack is not known
     lic_str = Q_("?license:Unknown");
   }
 

@@ -87,6 +87,7 @@ struct server_scan {
   struct srv_list srvrs;
   int sock;
 
+#ifdef FREECIV_META_ENABLED
   /* Only used for metaserver */
   struct {
     enum server_scan_status status;
@@ -97,12 +98,15 @@ struct server_scan {
     const char *urlpath;
     struct netfile_write_cb_data mem;
   } meta;
+#endif /* FREECIV_META_ENABLED */
 };
 
 extern enum announce_type announce;
 
-static bool begin_metaserver_scan(struct server_scan *scan);
 static void delete_server_list(struct server_list *server_list);
+
+#ifdef FREECIV_META_ENABLED
+static bool begin_metaserver_scan(struct server_scan *scan);
 
 /**********************************************************************//**
   The server sends a stream in a registry 'ini' type format.
@@ -132,9 +136,10 @@ static struct server_list *parse_metaserver_data(fz_FILE *f)
                 latest_ver, my_comparable);
     if (cvercmp_greater(latest_ver, my_comparable)) {
       const char *const followtag = "?vertag:" FOLLOWTAG;
+
       fc_snprintf(vertext, sizeof(vertext),
-                  /* TRANS: Type is version tag name like "stable", "S2_4",
-                   * "win32" (which can also be localised -- msgids start
+                  /* TRANS: Type is version tag name like "stable", "S3_2",
+                   * "windows" (which can also be localised -- msgids start
                    * '?vertag:') */
                   _("Latest %s release of Freeciv is %s, this is %s."),
                   Q_(followtag), latest_ver, my_comparable);
@@ -238,11 +243,11 @@ static bool meta_read_response(struct server_scan *scan)
     return FALSE;
   }
 
-  /* parse message body */
-  fc_allocate_mutex(&scan->srvrs.mutex);
+  /* Parse message body */
+  fc_mutex_allocate(&scan->srvrs.mutex);
   srvrs = parse_metaserver_data(f);
   scan->srvrs.servers = srvrs;
-  fc_release_mutex(&scan->srvrs.mutex);
+  fc_mutex_release(&scan->srvrs.mutex);
 
   /* 'f' (hence 'meta.mem.mem') was closed in parse_metaserver_data(). */
   scan->meta.mem.mem = NULL;
@@ -268,21 +273,21 @@ static void metaserver_scan(void *arg)
   struct server_scan *scan = arg;
 
   if (!begin_metaserver_scan(scan)) {
-    fc_allocate_mutex(&scan->meta.mutex);
+    fc_mutex_allocate(&scan->meta.mutex);
     scan->meta.status = SCAN_STATUS_ERROR;
   } else {
     if (!meta_read_response(scan)) {
-      fc_allocate_mutex(&scan->meta.mutex);
+      fc_mutex_allocate(&scan->meta.mutex);
       scan->meta.status = SCAN_STATUS_ERROR;
     } else {
-      fc_allocate_mutex(&scan->meta.mutex);
+      fc_mutex_allocate(&scan->meta.mutex);
       if (scan->meta.status == SCAN_STATUS_WAITING) {
         scan->meta.status = SCAN_STATUS_DONE;
       }
     }
   }
 
-  fc_release_mutex(&scan->meta.mutex);
+  fc_mutex_release(&scan->meta.mutex);
 }
 
 /**********************************************************************//**
@@ -308,6 +313,7 @@ static bool begin_metaserver_scan(struct server_scan *scan)
 
   return retval;
 }
+#endif /* FREECIV_META_ENABLED */
 
 /**********************************************************************//**
   Frees everything associated with a server list including
@@ -486,7 +492,13 @@ static bool begin_lanserver_scan(struct server_scan *scan)
 
   /* Create a socket for broadcasting to servers. */
   if ((send_sock = socket(family, SOCK_DGRAM, 0)) < 0) {
-    log_error("socket failed: %s", fc_strerror(fc_get_errno()));
+    char errstr[2048];
+
+    fc_snprintf(errstr, sizeof(errstr),
+                _("Opening socket for sending LAN announcement request failed:\n%s"),
+                fc_strerror(fc_get_errno()));
+    scan->error_func(scan, errstr);
+
     return FALSE;
   }
 
@@ -518,14 +530,28 @@ static bool begin_lanserver_scan(struct server_scan *scan)
   ttl = SERVER_LAN_TTL;
   if (setsockopt(send_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, 
                  sizeof(ttl))) {
-    log_error("setsockopt failed: %s", fc_strerror(fc_get_errno()));
+    char errstr[2048];
+
+    fc_snprintf(errstr, sizeof(errstr),
+                _("Setting Time-to-Live failed:\n%s"),
+                fc_strerror(fc_get_errno()));
+    scan->error_func(scan, errstr);
+
+    /* FIXME: Is this really supposed to be an hard error, or should we
+     *        just continue? After all, Windows builds do not even attempt this. */
     return FALSE;
   }
 #endif /* FREECIV_HAVE_WINSOCK */
 
   if (setsockopt(send_sock, SOL_SOCKET, SO_BROADCAST, (const char*)&opt, 
                  sizeof(opt))) {
-    log_error("setsockopt failed: %s", fc_strerror(fc_get_errno()));
+    char errstr[2048];
+
+    fc_snprintf(errstr, sizeof(errstr),
+                _("Setting Broadcast option failed:\n%s"),
+                fc_strerror(fc_get_errno()));
+    scan->error_func(scan, errstr);
+
     return FALSE;
   }
 
@@ -536,10 +562,14 @@ static bool begin_lanserver_scan(struct server_scan *scan)
 
   if (sendto(send_sock, buffer, size, 0, &addr.saddr,
              sockaddr_size(&addr)) < 0) {
-    /* This can happen when there's no network connection - it should
-     * give an in-game message. */
-    log_error("lanserver scan sendto failed: %s",
-              fc_strerror(fc_get_errno()));
+    /* This can happen when there's no network connection */
+    char errstr[2048];
+
+    fc_snprintf(errstr, sizeof(errstr),
+                _("Sending LAN announcement request failed:\n%s"),
+                fc_strerror(fc_get_errno()));
+    scan->error_func(scan, errstr);
+
     return FALSE;
   } else {
     log_debug("Sending request for server announcement on LAN.");
@@ -547,9 +577,9 @@ static bool begin_lanserver_scan(struct server_scan *scan)
 
   fc_closesocket(send_sock);
 
-  fc_allocate_mutex(&scan->srvrs.mutex);
+  fc_mutex_allocate(&scan->srvrs.mutex);
   scan->srvrs.servers = server_list_new();
-  fc_release_mutex(&scan->srvrs.mutex);
+  fc_mutex_release(&scan->srvrs.mutex);
 
   return TRUE;
 }
@@ -647,7 +677,7 @@ get_lan_server_list(struct server_scan *scan)
     }
 
     /* UDP can send duplicate or delayed packets. */
-    fc_allocate_mutex(&scan->srvrs.mutex);
+    fc_mutex_allocate(&scan->srvrs.mutex);
     server_list_iterate(scan->srvrs.servers, aserver) {
       if (0 == fc_strcasecmp(aserver->host, servername)
           && aserver->port == port) {
@@ -657,7 +687,7 @@ get_lan_server_list(struct server_scan *scan)
     } server_list_iterate_end;
 
     if (duplicate) {
-      fc_release_mutex(&scan->srvrs.mutex);
+      fc_mutex_release(&scan->srvrs.mutex);
       continue;
     }
 
@@ -675,7 +705,7 @@ get_lan_server_list(struct server_scan *scan)
     found_new = TRUE;
 
     server_list_prepend(scan->srvrs.servers, pserver);
-    fc_release_mutex(&scan->srvrs.mutex);
+    fc_mutex_release(&scan->srvrs.mutex);
   }
 
   if (found_new) {
@@ -702,18 +732,25 @@ struct server_scan *server_scan_begin(enum server_scan_type type,
   struct server_scan *scan;
   bool ok = FALSE;
 
+#ifndef FREECIV_META_ENABLED
+  if (type == SERVER_SCAN_GLOBAL) {
+    return NULL;
+  }
+#endif /* FREECIV_META_ENABLED */
+
   scan = fc_calloc(1, sizeof(*scan));
   scan->type = type;
   scan->error_func = error_func;
   scan->sock = -1;
-  fc_init_mutex(&scan->srvrs.mutex);
+  fc_mutex_init(&scan->srvrs.mutex);
 
   switch (type) {
   case SERVER_SCAN_GLOBAL:
     {
+#ifdef FREECIV_META_ENABLED
       int thr_ret;
 
-      fc_init_mutex(&scan->meta.mutex);
+      fc_mutex_init(&scan->meta.mutex);
       scan->meta.status = SCAN_STATUS_WAITING;
       thr_ret = fc_thread_start(&scan->meta.thr, metaserver_scan, scan);
       if (thr_ret) {
@@ -721,12 +758,13 @@ struct server_scan *server_scan_begin(enum server_scan_type type,
       } else {
         ok = TRUE;
       }
+#endif /* FREECIV_META_ENABLED */
     }
     break;
   case SERVER_SCAN_LOCAL:
     ok = begin_lanserver_scan(scan);
     break;
-  default:
+  case SERVER_SCAN_LAST:
     break;
   }
 
@@ -773,20 +811,22 @@ enum server_scan_status server_scan_poll(struct server_scan *scan)
 
   switch (scan->type) {
   case SERVER_SCAN_GLOBAL:
+#ifdef FREECIV_META_ENABLED
     {
       enum server_scan_status status;
 
-      fc_allocate_mutex(&scan->meta.mutex);
+      fc_mutex_allocate(&scan->meta.mutex);
       status = scan->meta.status;
-      fc_release_mutex(&scan->meta.mutex);
+      fc_mutex_release(&scan->meta.mutex);
 
       return status;
     }
+#endif /* FREECIV_META_ENABLED */
     break;
   case SERVER_SCAN_LOCAL:
     return get_lan_server_list(scan);
     break;
-  default:
+  case SERVER_SCAN_LAST:
     break;
   }
 
@@ -817,14 +857,15 @@ void server_scan_finish(struct server_scan *scan)
   }
 
   if (scan->type == SERVER_SCAN_GLOBAL) {
+#ifdef FREECIV_META_ENABLED
     /* Signal metaserver scan thread to stop */
-    fc_allocate_mutex(&scan->meta.mutex);
+    fc_mutex_allocate(&scan->meta.mutex);
     scan->meta.status = SCAN_STATUS_ABORT;
-    fc_release_mutex(&scan->meta.mutex);
+    fc_mutex_release(&scan->meta.mutex);
 
     /* Wait thread to stop */
     fc_thread_wait(&scan->meta.thr);
-    fc_destroy_mutex(&scan->meta.mutex);
+    fc_mutex_destroy(&scan->meta.mutex);
 
     /* This mainly duplicates code from below "else" block.
      * That's intentional, since they will be completely different in future versions.
@@ -835,16 +876,17 @@ void server_scan_finish(struct server_scan *scan)
     }
 
     if (scan->srvrs.servers) {
-      fc_allocate_mutex(&scan->srvrs.mutex);
+      fc_mutex_allocate(&scan->srvrs.mutex);
       delete_server_list(scan->srvrs.servers);
       scan->srvrs.servers = NULL;
-      fc_release_mutex(&scan->srvrs.mutex);
+      fc_mutex_release(&scan->srvrs.mutex);
     }
 
     if (scan->meta.mem.mem) {
       FC_FREE(scan->meta.mem.mem);
       scan->meta.mem.mem = NULL;
     }
+#endif /* FREECIV_META_ENABLED */
   } else {
     if (scan->sock >= 0) {
       fc_closesocket(scan->sock);
@@ -857,7 +899,7 @@ void server_scan_finish(struct server_scan *scan)
     }
   }
 
-  fc_destroy_mutex(&scan->srvrs.mutex);
+  fc_mutex_destroy(&scan->srvrs.mutex);
 
   free(scan);
 }

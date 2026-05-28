@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -64,17 +64,17 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
   tech_layout->addWidget(label, 0, 0);
   tech_layout->addWidget(rname, 0, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
   tech_layout->addWidget(label, 1, 0);
   tech_layout->addWidget(same_name, 1, 1);
@@ -109,7 +109,6 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
   tech_layout->addWidget(effects_button, 5, 2);
-  show_experimental(effects_button);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add tech")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
@@ -136,7 +135,7 @@ void tab_tech::refresh()
 {
   tech_list->clear();
 
-  advance_iterate(A_FIRST, padv) {
+  advance_iterate(padv) {
     if (padv->require[AR_ONE] != A_NEVER) {
       QListWidgetItem *item = new QListWidgetItem(advance_rule_name(padv));
 
@@ -186,9 +185,9 @@ void tab_tech::techs_to_menu(QMenu *fill_menu)
 {
   fill_menu->clear();
 
-  advance_iterate(A_NONE, padv) {
+  advance_iterate_all(padv) {
     fill_menu->addAction(tech_name(padv));
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 }
 
 /**********************************************************************//**
@@ -229,8 +228,10 @@ void tab_tech::update_tech_info(struct advance *adv)
     req2_button->setText(tech_name(adv->require[AR_TWO]));
     root_req_button->setText(tech_name(adv->require[AR_ROOT]));
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
+    // FIXME: Could these be translated, or do we depend on
+    //        them matching English rule_name of tech "None"?
     req1_button->setText("None");
     req2_button->setText("None");
     root_req_button->setText("None");
@@ -247,7 +248,10 @@ void tab_tech::select_tech()
   QList<QListWidgetItem *> select_list = tech_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_tech_info(advance_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray tn_bytes;
+
+    tn_bytes = select_list.at(0)->text().toUtf8();
+    update_tech_info(advance_by_rule_name(tn_bytes.data()));
   }
 }
 
@@ -286,7 +290,11 @@ void tab_tech::root_req_jump()
 **************************************************************************/
 void tab_tech::req1_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_ONE] = padv;
@@ -300,7 +308,11 @@ void tab_tech::req1_menu(QAction *action)
 **************************************************************************/
 void tab_tech::req2_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_TWO] = padv;
@@ -314,7 +326,11 @@ void tab_tech::req2_menu(QAction *action)
 **************************************************************************/
 void tab_tech::root_req_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_ROOT] = padv;
@@ -329,10 +345,14 @@ void tab_tech::root_req_menu(QAction *action)
 void tab_tech::name_given()
 {
   if (selected != nullptr) {
-    advance_iterate(A_FIRST, padv) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
+    advance_iterate(padv) {
       if (padv != selected
           && padv->require[AR_ONE] != A_NEVER) {
-        if (!strcmp(advance_rule_name(padv), rname->text().toUtf8().data())) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(advance_rule_name(padv), rname_bytes.data())) {
           ui->display_msg(R__("A tech with that rule name already exists!"));
           return;
         }
@@ -343,9 +363,11 @@ void tab_tech::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }
@@ -397,7 +419,7 @@ void tab_tech::add_now()
   struct advance *new_adv;
 
   // Try to reuse freed tech slot
-  advance_iterate(A_FIRST, padv) {
+  advance_iterate(padv) {
     if (padv->require[AR_ONE] == A_NEVER) {
       if (initialize_new_tech(padv)) {
         update_tech_info(padv);
@@ -419,7 +441,7 @@ void tab_tech::add_now()
   if (initialize_new_tech(new_adv)) {
     update_tech_info(new_adv);
     refresh();
-  } else{
+  } else {
     game.control.num_tech_types--; // Restore
   }
 }

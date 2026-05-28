@@ -47,9 +47,9 @@ void savegame_load(struct section_file *sfile)
   fc_assert_ret(sfile != NULL);
 
 #ifdef DEBUG_TIMERS
-  struct timer *loadtimer = timer_new(TIMER_CPU, TIMER_DEBUG);
+  struct timer *loadtimer = timer_new(TIMER_CPU, TIMER_DEBUG, "load");
   timer_start(loadtimer);
-#endif
+#endif /* DEBUG_TIMERS */
 
   savefile_options = secfile_lookup_str(sfile, "savefile.options");
 
@@ -108,6 +108,15 @@ struct save_thread_data
 };
 
 /************************************************************************//**
+  Free resources of save_thread_data, including itself
+****************************************************************************/
+static void save_thread_data_free(struct save_thread_data *stdata)
+{
+  secfile_destroy(stdata->sfile);
+  free(stdata);
+}
+
+/************************************************************************//**
   Run game saving thread.
 ****************************************************************************/
 static void save_thread_run(void *arg)
@@ -123,8 +132,7 @@ static void save_thread_run(void *arg)
     con_write(C_OK, _("Game saved as %s"), stdata->filepath);
   }
 
-  secfile_destroy(stdata->sfile);
-  free(arg);
+  save_thread_data_free(stdata);
 }
 
 /************************************************************************//**
@@ -163,7 +171,8 @@ void save_game(const char *orig_filename, const char *save_reason,
       filename[0] = '\0';
     } else {
       char *end_dot;
-      char *strip_extensions[] = { ".sav", ".gz", ".bz2", ".xz", NULL };
+      char *strip_extensions[] = {
+        ".sav", ".gz", ".bz2", ".xz", ".zst", NULL };
       bool stripped = TRUE;
 
       while ((end_dot = strrchr(dot, '.')) && stripped) {
@@ -182,15 +191,15 @@ void save_game(const char *orig_filename, const char *save_reason,
   }
 
   /* If orig_filename is NULL or empty, use a generated default name. */
-  if (filename[0] == '\0'){
+  if (filename[0] == '\0') {
     /* manual save */
     generate_save_name(game.server.save_name, filename,
                        sizeof(stdata->filepath) + stdata->filepath - filename, "manual");
   }
 
-  timer_cpu = timer_new(TIMER_CPU, TIMER_ACTIVE);
+  timer_cpu = timer_new(TIMER_CPU, TIMER_ACTIVE, "save cpu");
+  timer_user = timer_new(TIMER_USER, TIMER_ACTIVE, "save user");
   timer_start(timer_cpu);
-  timer_user = timer_new(TIMER_USER, TIMER_ACTIVE);
   timer_start(timer_user);
 
   /* Allowing duplicates shouldn't be allowed. However, it takes very too
@@ -214,18 +223,18 @@ void save_game(const char *orig_filename, const char *save_reason,
       sz_strlcat(stdata->filepath, ".gz");
       break;
 #endif
-#ifdef FREECIV_HAVE_LIBBZ2
-    case FZ_BZIP2:
-      /* Append ".bz2" to filename. */
-      sz_strlcat(stdata->filepath, ".bz2");
-      break;
-#endif
 #ifdef FREECIV_HAVE_LIBLZMA
    case FZ_XZ:
       /* Append ".xz" to filename. */
       sz_strlcat(stdata->filepath, ".xz");
       break;
 #endif
+#ifdef FREECIV_HAVE_LIBZSTD
+   case FZ_ZSTD:
+      /* Append ".zstd" to filename. */
+      sz_strlcat(stdata->filepath, ".zst");
+      break;
+#endif /* FREECIV_HAVE_LIBZSTD */
     case FZ_PLAIN:
       break;
     default:
@@ -243,12 +252,38 @@ void save_game(const char *orig_filename, const char *save_reason,
 
     if (!scenario) {
       /* Ensure the saves directory exists. */
-      make_dir(srvarg.saves_pathname);
+      if (srvarg.saves_pathname[0] != '\0'
+          && !make_dir(srvarg.saves_pathname)) {
+        log_error(_("Can't create saves directory %s!"),
+                  srvarg.saves_pathname);
+        /* Don't tell server paths to clients */
+        notify_conn(NULL, NULL, E_SETTING, ftc_warning,
+                    _("Can't create saves directory!"));
+
+        save_thread_data_free(stdata);
+        timer_destroy(timer_cpu);
+        timer_destroy(timer_user);
+
+        return;
+      }
 
       sz_strlcpy(tmpname, srvarg.saves_pathname);
     } else {
       /* Make sure scenario directory exist */
-      make_dir(srvarg.scenarios_pathname);
+      if (srvarg.scenarios_pathname[0] != '\0'
+          && !make_dir(srvarg.scenarios_pathname)) {
+        log_error(_("Can't create scenario saves directory %s!"),
+                  srvarg.scenarios_pathname);
+        /* Don't tell server paths to clients */
+        notify_conn(NULL, NULL, E_SETTING, ftc_warning,
+                    _("Can't create scenario saves directory!"));
+
+        save_thread_data_free(stdata);
+        timer_destroy(timer_cpu);
+        timer_destroy(timer_user);
+
+        return;
+      }
 
       sz_strlcpy(tmpname, srvarg.scenarios_pathname);
     }

@@ -22,6 +22,7 @@
 /* utility */
 #include "fcintl.h"
 #include "log.h"
+#include "mem.h"
 #include "rand.h"
 #include "support.h"
 
@@ -36,6 +37,9 @@
 #include "unit.h"
 #include "worklist.h"
 
+/* common/aicore */
+#include "cm.h"
+
 /* server */
 #include "citytools.h"
 #include "cityturn.h"
@@ -43,6 +47,7 @@
 #include "plrhand.h"
 #include "sanitycheck.h"
 #include "unithand.h"
+#include "unittools.h"
 
 #include "cityhand.h"
 
@@ -54,7 +59,6 @@
 void handle_city_name_suggestion_req(struct player *pplayer, int unit_id)
 {
   struct unit *punit = player_unit_by_number(pplayer, unit_id);
-  enum city_build_result res;
 
   if (NULL == punit) {
     /* Probably died or bribed. */
@@ -74,22 +78,11 @@ void handle_city_name_suggestion_req(struct player *pplayer, int unit_id)
     return;
   }
 
-  res = city_build_here_test(unit_tile(punit), punit);
+  log_verbose("handle_city_name_suggest_req(unit_pos (%d, %d)): "
+              "cannot build there.", TILE_XY(unit_tile(punit)));
 
-  switch (res) {
-  case CB_OK:
-    /* No action enabler permitted the city to be built. */
-  case CB_BAD_CITY_TERRAIN:
-  case CB_BAD_UNIT_TERRAIN:
-  case CB_BAD_BORDERS:
-  case CB_NO_MIN_DIST:
-    log_verbose("handle_city_name_suggest_req(unit_pos (%d, %d)): "
-                "cannot build there.", TILE_XY(unit_tile(punit)));
-
-    illegal_action_msg(pplayer, E_BAD_COMMAND, punit, ACTION_FOUND_CITY,
-                       unit_tile(punit), NULL, NULL);
-    break;
-  }
+  illegal_action_msg(pplayer, E_BAD_COMMAND, punit, ACTION_FOUND_CITY,
+                     unit_tile(punit), NULL, NULL);
 }
 
 /**********************************************************************//**
@@ -150,6 +143,9 @@ void handle_city_make_specialist(struct player *pplayer,
     return;
   }
 
+  /* Disable server side governor being overridden */
+  handle_web_cma_clear(pplayer, pcity->id);
+
   if (is_free_worked(pcity, ptile)) {
     auto_arrange_workers(pcity);
   } else if (tile_worked(ptile) == pcity) {
@@ -194,6 +190,9 @@ void handle_city_make_worker(struct player *pplayer,
   }
 
   if (is_free_worked(pcity, ptile)) {
+    /* Disable server side governor being overridden */
+    handle_web_cma_clear(pplayer, pcity->id);
+
     auto_arrange_workers(pcity);
     sync_cities();
     return;
@@ -216,6 +215,9 @@ void handle_city_make_worker(struct player *pplayer,
                 TILE_XY(ptile), city_name_get(pcity));
     return;
   }
+
+  /* Disable server side governor being overridden */
+  handle_web_cma_clear(pplayer, pcity->id);
 
   city_map_update_worker(pcity, ptile);
 
@@ -253,7 +255,7 @@ void really_handle_city_sell(struct player *pplayer, struct city *pcity,
     return;
   }
 
-  pcity->did_sell=TRUE;
+  pcity->did_sell = TRUE;
   price = impr_sell_gold(pimprove);
   notify_player(pplayer, pcity->tile, E_IMP_SOLD, ftc_server,
                 PL_("You sell %s in %s for %d gold.",
@@ -308,7 +310,7 @@ void really_handle_city_buy(struct player *pplayer, struct city *pcity)
     return;
   }
 
-  if (city_production_has_flag(pcity, IF_GOLD)) {
+  if (city_production_is_genus(pcity, IG_CONVERT)) {
     notify_player(pplayer, pcity->tile, E_BAD_COMMAND, ftc_server,
                   _("You don't buy %s!"),
                   improvement_name_translation(pcity->production.value.building));
@@ -345,12 +347,12 @@ void really_handle_city_buy(struct player *pplayer, struct city *pcity)
     return;
   }
 
-  pplayer->economic.gold-=cost;
-  if (pcity->shield_stock < total){
+  pplayer->economic.gold -= cost;
+  if (pcity->shield_stock < total) {
     /* As we never put penalty on disbanded_shields, we can
      * fully well add the missing shields there. */
     pcity->disbanded_shields += total - pcity->shield_stock;
-    pcity->shield_stock=total; /* AI wants this -- Syela */
+    pcity->shield_stock = total; /* AI wants this -- Syela */
     pcity->did_buy = TRUE;	/* !PS: no need to set buy flag otherwise */
   }
   city_refresh(pcity);
@@ -476,7 +478,7 @@ void handle_city_change(struct player *pplayer, int city_id,
 }
 
 /**********************************************************************//**
-  'struct packet_city_rename' handler.
+  Handle city rename request packet.
 **************************************************************************/
 void handle_city_rename(struct player *pplayer, int city_id,
                         const char *name)
@@ -484,7 +486,7 @@ void handle_city_rename(struct player *pplayer, int city_id,
   struct city *pcity = player_city_by_number(pplayer, city_id);
   char message[1024];
 
-  if (!pcity) {
+  if (pcity == NULL) {
     return;
   }
 
@@ -494,7 +496,7 @@ void handle_city_rename(struct player *pplayer, int city_id,
     return;
   }
 
-  sz_strlcpy(pcity->name, name);
+  city_name_set(pcity, name);
   city_refresh(pcity);
   send_city_info(NULL, pcity);
 }
@@ -515,4 +517,60 @@ void handle_city_options_req(struct player *pplayer, int city_id,
   pcity->city_options = options;
 
   send_city_info(pplayer, pcity);
+}
+
+/**********************************************************************//**
+  Handles a request to set city rally point for new units.
+**************************************************************************/
+void handle_city_rally_point(struct player *pplayer,
+                             const struct packet_city_rally_point *packet)
+{
+  struct city *pcity = player_city_by_number(pplayer, packet->id);
+
+  if (NULL != pcity) {
+    city_rally_point_receive(packet, pcity);
+    send_city_info(pplayer, pcity);
+  }
+}
+
+/**********************************************************************//**
+  Handles a request to change city CMA settings.
+**************************************************************************/
+void handle_web_cma_set(struct player *pplayer, int id,
+                        const struct cm_parameter *param)
+{
+  /* Supported only in freeciv-web builds for now -
+   * Let's be cautious for now, and not give any chance
+   * of client requests of server side CMA to overload
+   * server from a standard build. */
+#ifdef FREECIV_WEB
+  struct city *pcity = player_city_by_number(pplayer, id);
+
+  if (pcity != NULL) {
+    if (pcity->cm_parameter == NULL) {
+      pcity->cm_parameter = fc_calloc(1, sizeof(struct cm_parameter));
+    }
+
+    cm_copy_parameter(pcity->cm_parameter, param);
+    pcity->server.synced = FALSE;
+
+    auto_arrange_workers(pcity);
+
+    sync_cities();
+  }
+#endif /* FREECIV_WEB */
+}
+
+/**********************************************************************//**
+  Handles a request to clear city CMA settings.
+**************************************************************************/
+void handle_web_cma_clear(struct player *pplayer, int id)
+{
+  struct city *pcity = player_city_by_number(pplayer, id);
+
+  if (pcity != NULL && pcity->cm_parameter != NULL) {
+    free(pcity->cm_parameter);
+    pcity->cm_parameter = NULL;
+    send_city_info(pplayer, pcity);
+  }
 }

@@ -17,6 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/* utility */
 #include "support.h" /* bool */
 
 struct city;
@@ -32,6 +33,7 @@ enum traderoute_illegal_cancelling
     TRI_LAST                          = 3
   };
 
+/* Values used in the network protocol. */
 enum trade_route_type {
   TRT_NATIONAL                        = 0,
   TRT_NATIONAL_IC                     = 1, /* Intercontinental */
@@ -46,6 +48,7 @@ enum trade_route_type {
   TRT_LAST                            = 10
 };
 
+/* Values used in the network protocol. */
 #define SPECENUM_NAME traderoute_bonus_type
 #define SPECENUM_VALUE0 TBONUS_NONE
 #define SPECENUM_VALUE0NAME "None"
@@ -57,13 +60,16 @@ enum trade_route_type {
 #define SPECENUM_VALUE3NAME "Both"
 #include "specenum_gen.h"
 
+/* Values used in the network protocol. */
 #define SPECENUM_NAME route_direction
-#define SPECENUM_VALUE0 RDIR_FROM
-#define SPECENUM_VALUE0NAME N_("?routedir:From")
-#define SPECENUM_VALUE1 RDIR_TO
-#define SPECENUM_VALUE1NAME N_("?routedir:To")
-#define SPECENUM_VALUE2 RDIR_BIDIRECTIONAL
-#define SPECENUM_VALUE2NAME N_("?routedir:Bidirectional")
+#define SPECENUM_VALUE0 RDIR_NONE
+#define SPECENUM_VALUE0NAME N_("?routedir:None")
+#define SPECENUM_VALUE1 RDIR_FROM
+#define SPECENUM_VALUE1NAME N_("?routedir:From")
+#define SPECENUM_VALUE2 RDIR_TO
+#define SPECENUM_VALUE2NAME N_("?routedir:To")
+#define SPECENUM_VALUE3 RDIR_BIDIRECTIONAL
+#define SPECENUM_VALUE3NAME N_("?routedir:Bidirectional")
 #include "specenum_gen.h"
 
 struct trade_route_settings {
@@ -90,7 +96,7 @@ struct trade_route {
   TYPED_LIST_ITERATE(struct trade_route, trade_route_list, proute)
 #define trade_route_list_iterate_end LIST_ITERATE_END
 
-int max_trade_routes(const struct city *pcity);
+unsigned max_trade_routes(const struct city *pcity);
 enum trade_route_type cities_trade_route_type(const struct city *pcity1,
                                               const struct city *pcity2);
 int trade_route_type_trade_pct(enum trade_route_type type);
@@ -112,8 +118,10 @@ int trade_base_between_cities(const struct city *pc1, const struct city *pc2);
 int trade_from_route(const struct city *pc1, const struct trade_route *route,
 		     int base);
 int city_num_trade_routes(const struct city *pcity);
+int max_trade_prod(const struct city *pcity);
 int get_caravan_enter_city_trade_bonus(const struct city *pc1,
                                        const struct city *pc2,
+                                       const struct unit_type *ut,
                                        struct goods_type *pgood,
                                        const bool establish_trade);
 int city_trade_removable(const struct city *pcity,
@@ -129,11 +137,12 @@ do {                                                        \
 
 #define trade_routes_iterate_safe(c, proute)                \
 {                                                           \
-  int _routes##_size = trade_route_list_size(c->routes);    \
+  struct city *c##_proute = c;                              \
+  int _routes##_size = trade_route_list_size(c##_proute->routes); \
   if (_routes##_size > 0) {                                 \
     struct trade_route *_routes##_saved[_routes##_size];    \
     int _routes##_index = 0;                                \
-    trade_routes_iterate(c, _proute) {                      \
+    trade_routes_iterate(c##_proute, _proute) {             \
       _routes##_saved[_routes##_index++] = _proute;         \
     } trade_routes_iterate_end;                             \
     for (_routes##_index = 0;                               \
@@ -161,6 +170,8 @@ do {                                                        \
 #define SPECENUM_VALUE0NAME "Bidirectional"
 #define SPECENUM_VALUE1 GF_DEPLETES
 #define SPECENUM_VALUE1NAME "Depletes"
+#define SPECENUM_VALUE2 GF_SELF_PROVIDED
+#define SPECENUM_VALUE2NAME "Self-Provided"
 #define SPECENUM_COUNT GF_COUNT
 #define SPECENUM_BITVECTOR bv_goods_flags
 #include "specenum_gen.h"
@@ -197,7 +208,8 @@ struct goods_type *goods_by_translated_name(const char *name);
 
 bool goods_has_flag(const struct goods_type *pgood, enum goods_flag_id flag);
 
-bool goods_can_be_provided(struct city *pcity, struct goods_type *pgood,
+bool goods_can_be_provided(const struct city *pcity,
+                           const struct goods_type *pgood,
                            struct unit *punit);
 struct goods_type *goods_from_city_to_unit(struct city *src, struct unit *punit);
 bool city_receives_goods(const struct city *pcity,

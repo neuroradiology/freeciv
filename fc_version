@@ -1,4 +1,4 @@
-#/bin/sh
+#!/bin/sh
 
 #
 #  Copyright (C) 2004-2008 Freeciv team
@@ -6,23 +6,37 @@
 # Version definition for Freeciv.
 
 MAJOR_VERSION="3"
-MINOR_VERSION="0"
-PATCH_VERSION="91"
-EMERGENCY_VERSION=""
+MINOR_VERSION="1"
+PATCH_VERSION="92"
+EMERGENCY_VERSION="6"
 VERSION_LABEL="-dev"
 
+# Type is either "development" or "stable"
+# Date is relevant only for "stable" releases
+if test "$VERSION_LABEL" = "" ; then
+  RELEASE_TYPE="stable"
+  #RELEASE_DATE="2022-11-05"
+else
+  RELEASE_TYPE="development"
+fi
+
+#
+# At the time being these same updates need to be made to the meson.build,
+# it does not get them automatically from here.
+#
 # 1) Development until MAJOR and MINOR version numbers are
 #    set to new release series:
 #   - IS_DEVEL_VERSION=1
 #   - IS_FREEZE_VERSION=0
 #   - IS_BETA_VERSION=0
 #
-# 2) Development from version number bump to first beta:
+# 2) Development from version number bump to entering beta mode:
 #   - IS_DEVEL_VERSION=1
 #   - IS_FREEZE_VERSION=1
 #   - IS_BETA_VERSION=0
 #
-# 3) Development from first beta to first RC:
+# 3) Development during beta mode, starting latest from beta1,
+#    until first RC:
 #   - IS_DEVEL_VERSION=0
 #   - IS_FREEZE_VERSION=0
 #   - IS_BETA_VERSION=1
@@ -34,19 +48,20 @@ VERSION_LABEL="-dev"
 #
 # 5) Final.
 # Update DEFAULT_FOLLOW_TAG to "stable", and also
-# windows/installer_msys2/Makefile --with-followtag to "windows"
+# windows/installer_msys2/Makefile.autotools --with-followtag to "windows"
 
 IS_DEVEL_VERSION=1
 IS_FREEZE_VERSION=0
 IS_BETA_VERSION=0
 
-NEXT_STABLE_VERSION="3.1.0"
+NEXT_STABLE_VERSION="3.2.0"
 
 # 0 to disable display of release month until we can make better estimate
 RELEASE_MONTH=0
 
+MAIN_VERSION=3.2
 DATASUBDIR=dev
-DEFAULT_FOLLOW_TAG=S3_1
+DEFAULT_FOLLOW_TAG=S3_2
 
 # Freeciv network capstring: see documentation in common/capstr.c
 #
@@ -55,15 +70,14 @@ DEFAULT_FOLLOW_TAG=S3_1
 #   - No new mandatory capabilities can be added to the release branch; doing
 #     so would break network capability of supposedly "compatible" releases.
 #
-NETWORK_CAPSTRING="+Freeciv.Devel-3.1-2019.Feb.28"
-
+NETWORK_CAPSTRING="+Freeciv.Devel-${MAIN_VERSION}-2023.Feb.17"
 FREECIV_DISTRIBUTOR=""
 
 if test "x$FREECIV_LABEL_FORCE" != "x" ; then
   VERSION_LABEL=$(echo $FREECIV_LABEL_FORCE | sed "s/<base>/$VERSION_LABEL/g")
 fi
 
-if test x$VERSION_REVTYPE = xgit && which git > /dev/null ; then
+if test x$VERSION_REVTYPE = xgit && command -v git > /dev/null ; then
   VERSION_REV="$(git rev-parse --short HEAD)"
 else
   VERSION_REV=""

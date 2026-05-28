@@ -174,6 +174,27 @@ struct road_type *road_by_compat_special(enum road_compat compat)
 }
 
 /************************************************************************//**
+  Return road type represented by given gui_type, or NULL if
+  it does not represent road type at all.
+****************************************************************************/
+struct road_type *road_by_gui_type(enum road_gui_type gui_type)
+{
+  if (gui_type == ROAD_GUI_OTHER) {
+    return NULL;
+  }
+
+  extra_type_by_cause_iterate(EC_ROAD, pextra) {
+    struct road_type *proad = extra_road_get(pextra);
+
+    if (proad->gui_type == gui_type) {
+      return proad;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return NULL;
+}
+
+/************************************************************************//**
   Tells if road can build to tile if all other requirements are met.
 ****************************************************************************/
 bool road_can_be_built(const struct road_type *proad, const struct tile *ptile)
@@ -206,13 +227,12 @@ static bool are_road_reqs_fulfilled(const struct road_type *proad,
                                     const struct tile *ptile)
 {
   struct extra_type *pextra = road_extra_get(proad);
-  const struct unit_type *utype;
-
-  if (punit == NULL) {
-    utype = NULL;
-  } else {
-    utype = unit_type_get(punit);
-  }
+  const struct req_context context = {
+    .player = pplayer,
+    .tile = ptile,
+    .unit = punit,
+    .unittype = punit ? unit_type_get(punit) : NULL,
+  };
 
   if (requirement_vector_size(&proad->first_reqs) > 0) {
     bool beginning = TRUE;
@@ -242,16 +262,14 @@ static bool are_road_reqs_fulfilled(const struct road_type *proad,
     } extra_type_list_iterate_end;
 
     if (beginning) {
-      if (!are_reqs_active(pplayer, tile_owner(ptile), NULL, NULL, ptile,
-                           punit, utype, NULL, NULL, NULL,
+      if (!are_reqs_active(&context, tile_owner(ptile),
                            &proad->first_reqs, RPT_POSSIBLE)) {
         return FALSE;
       }
     }
   }
 
-  return are_reqs_active(pplayer, tile_owner(ptile), NULL, NULL, ptile,
-                         punit, utype, NULL, NULL, NULL,
+  return are_reqs_active(&context, tile_owner(ptile),
                          &pextra->reqs, RPT_POSSIBLE);
 }
 
@@ -346,9 +364,10 @@ int count_river_type_tile_card(const struct tile *ptile,
     total++;
   } cardinal_adjc_iterate_end;
 
-  if (percentage) {
+  if (percentage && count > 0) { /* Latter condition avoids div by zero */
     count = count * 100 / total;
   }
+
   return count;
 }
 
@@ -371,9 +390,10 @@ int count_river_type_near_tile(const struct tile *ptile,
     total++;
   } adjc_iterate_end;
 
-  if (percentage) {
+  if (percentage && count > 0) { /* Latter condition avoids div by zero */
     count = count * 100 / total;
   }
+
   return count;
 }
 
@@ -441,8 +461,8 @@ bool is_native_tile_to_road(const struct road_type *proad,
 
   pextra = road_extra_get(proad);
 
-  return are_reqs_active(NULL, NULL, NULL, NULL, ptile,
-                         NULL, NULL, NULL, NULL, NULL,
+  return are_reqs_active(&(const struct req_context) { .tile = ptile },
+                         NULL,
                          &pextra->reqs, RPT_POSSIBLE);
 }
 

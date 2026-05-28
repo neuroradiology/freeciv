@@ -95,6 +95,12 @@ struct resource_type {
 /* Can build roads and/or railroads */
 #define SPECENUM_VALUE2 TA_CAN_ROAD
 #define SPECENUM_VALUE2NAME N_("CanRoad")
+/* Can build military base */
+#define SPECENUM_VALUE3 TA_CAN_BASE
+#define SPECENUM_VALUE3NAME N_("CanBase")
+/* Can place extras with infrapoints */
+#define SPECENUM_VALUE4 TA_CAN_PLACE
+#define SPECENUM_VALUE4NAME N_("CanPlace")
 #define SPECENUM_COUNT  TA_COUNT
 #include "specenum_gen.h"
 
@@ -126,9 +132,9 @@ struct resource_type {
 /* Units on this terrain are not generating or subject to zoc */
 #define SPECENUM_VALUE7 TER_NO_ZOC
 #define SPECENUM_VALUE7NAME N_("NoZoc")
-/* No unit can fortify on this terrain */
-#define SPECENUM_VALUE8 TER_NO_FORTIFY
-#define SPECENUM_VALUE8NAME N_("NoFortify")
+/* Borders on this terrain are not blocking unit movement */
+#define SPECENUM_VALUE8 TER_ENTER_BORDERS
+#define SPECENUM_VALUE8NAME N_("EnterBorders")
 /* Ice-covered terrain (affects minimap) */
 #define SPECENUM_VALUE9 TER_FROZEN
 #define SPECENUM_VALUE9NAME N_("Frozen")
@@ -139,7 +145,9 @@ struct resource_type {
 #define SPECENUM_VALUE14 TER_USER_5
 #define SPECENUM_VALUE15 TER_USER_6
 #define SPECENUM_VALUE16 TER_USER_7
-#define SPECENUM_VALUE17 TER_USER_LAST
+#define SPECENUM_VALUE17 TER_USER_8
+#define SPECENUM_VALUE18 TER_USER_9
+#define SPECENUM_VALUE19 TER_USER_LAST
 #define SPECENUM_NAMEOVERRIDE
 #define SPECENUM_BITVECTOR bv_terrain_flags
 #include "specenum_gen.h"
@@ -178,6 +186,7 @@ struct terrain {
   int item_number;
   struct name_translation name;
   bool ruledit_disabled; /* Does not really exist - hole in terrain array */
+  void *ruledit_dlg;
   char graphic_str[MAX_LEN_NAME];	/* add tile_ prefix */
   char graphic_alt[MAX_LEN_NAME];
 
@@ -195,26 +204,39 @@ struct terrain {
   int output[O_LAST];
 
   struct extra_type **resources; /* NULL-terminated */
+  int *resource_freq; /* same length as resources */
+
+#define RESOURCE_FREQUENCY_MINIMUM (0)
+#define RESOURCE_FREQUENCY_DEFAULT (1)
+#define RESOURCE_FREQUENCY_MAXIMUM (255)
 
   int road_output_incr_pct[O_LAST];
   int base_time;
   int road_time;
 
-  struct terrain *irrigation_result;
+  struct terrain *cultivate_result;
+  int cultivate_time;
+
+  struct terrain *plant_result;
+  int plant_time;
+
   int irrigation_food_incr;
   int irrigation_time;
 
-  struct terrain *mining_result;
   int mining_shield_incr;
   int mining_time;
 
+  int placing_time;
+
   struct terrain *transform_result;
+
   int transform_time;
-  int clean_pollution_time;
-  int clean_fallout_time;
   int pillage_time;
 
-  struct unit_type *animal;
+  /* Currently only clean times, but named for future */
+  int extra_removal_times[MAX_EXTRA_TYPES];
+
+  const struct unit_type *animal;
 
   /* May be NULL if the transformation is impossible. */
   struct terrain *warmer_wetter_result, *warmer_drier_result;
@@ -318,7 +340,8 @@ int terrain_extra_build_time(const struct terrain *pterrain,
                              const struct extra_type *tgt);
 int terrain_extra_removal_time(const struct terrain *pterrain,
                                enum unit_activity activity,
-                               const struct extra_type *tgt);
+                               const struct extra_type *tgt)
+  fc__attribute((nonnull (1, 3)));
 
 /* Functions to operate on a terrain class. */
 const char *terrain_class_name_translation(enum terrain_class tclass);
@@ -360,8 +383,21 @@ const struct terrain *terrain_array_last(void);
     }                                                      \
   } terrain_type_iterate_end;
 
+#define terrain_resources_iterate(pterrain, _res, _freq)                  \
+  if (NULL != pterrain && NULL != pterrain->resources) {                  \
+    int _res##_index;                                                     \
+    for (_res##_index = 0;                                                \
+         pterrain->resources[_res##_index] != NULL;                       \
+         _res##_index++) {                                                \
+      struct extra_type *_res = pterrain->resources[_res##_index];        \
+      int _freq = pterrain->resource_freq[_res##_index];
+
+#define terrain_resources_iterate_end                                     \
+    }                                                                     \
+  }
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__TERRAIN_H */
+#endif /* FC__TERRAIN_H */

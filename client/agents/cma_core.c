@@ -36,6 +36,7 @@
 #include "events.h"
 #include "game.h"
 #include "government.h"
+#include "nation.h"
 #include "packets.h"
 #include "specialist.h"
 
@@ -66,7 +67,7 @@
  */
 
 /****************************************************************************
- defines, structs, globals, forward declarations
+  Defines, structs, globals, forward declarations
 *****************************************************************************/
 
 #define log_apply_result                log_debug
@@ -78,7 +79,10 @@
 #define SHOW_APPLY_RESULT_ON_SERVER_ERRORS              FALSE
 #define ALWAYS_APPLY_AT_SERVER                          FALSE
 
-#define SAVED_PARAMETER_SIZE				29
+#define SAVED_PARAMETER_SIZE                            30
+
+#define CMA_ATTR_VERSION                                3
+#define CMA_ATTR_VERSION_MIN_SUPPORTED                  2
 
 /*
  * Misc statistic to analyze performance.
@@ -87,7 +91,6 @@ static struct {
   struct timer *wall_timer;
   int apply_result_ignored, apply_result_applied, refresh_forced;
 } stats;
-
 
 /************************************************************************//**
   Returns TRUE iff the two results are equal. Both results have to be
@@ -121,6 +124,7 @@ static bool fc_results_are_equal(const struct cm_result *result1,
     if (result1->worker_positions[cindex]
         != result2->worker_positions[cindex]) {
       log_results_are_equal("worker_positions");
+
       return FALSE;
     }
   } city_map_iterate_end;
@@ -129,7 +133,6 @@ static bool fc_results_are_equal(const struct cm_result *result1,
 
 #undef T
 }
-
 
 /************************************************************************//**
   Returns TRUE if the city is valid for CMA. Fills parameter if TRUE
@@ -151,6 +154,7 @@ static struct city *check_city(int city_id, struct cm_parameter *parameter)
 
   if (city_owner(pcity) != client.conn.playing) {
     cma_release_city(pcity);
+
     return NULL;
   }
 
@@ -164,9 +168,9 @@ static struct city *check_city(int city_id, struct cm_parameter *parameter)
 static bool apply_result_on_server(struct city *pcity,
                                    const struct cm_result *result)
 {
-  int first_request_id = 0, last_request_id = 0, i;
+  int first_request_id = 0, last_request_id = 0;
   int city_radius_sq = city_map_radius_sq_get(pcity);
-  struct cm_result *current_state = cm_result_new(pcity);;
+  struct cm_result *current_state = cm_result_new(pcity);
   bool success;
   struct tile *pcenter = city_tile(pcity);
 
@@ -176,6 +180,7 @@ static bool apply_result_on_server(struct city *pcity,
   if (fc_results_are_equal(current_state, result)
       && !ALWAYS_APPLY_AT_SERVER) {
     stats.apply_result_ignored++;
+
     return TRUE;
   }
 
@@ -185,6 +190,7 @@ static bool apply_result_on_server(struct city *pcity,
               pcity->id, city_name_get(pcity));
     cm_print_city(pcity);
     cm_print_result(result);
+
     return FALSE;
   }
 
@@ -213,6 +219,8 @@ static bool apply_result_on_server(struct city *pcity,
 
   /* Change the excess non-default specialists to default. */
   specialist_type_iterate(sp) {
+    int i;
+
     if (sp == DEFAULT_SPECIALIST) {
       continue;
     }
@@ -221,9 +229,9 @@ static bool apply_result_on_server(struct city *pcity,
       log_apply_result("Change specialist from %d to %d.",
                        sp, DEFAULT_SPECIALIST);
       last_request_id = city_change_specialist(pcity,
-					       sp, DEFAULT_SPECIALIST);
+                                               sp, DEFAULT_SPECIALIST);
       if (first_request_id == 0) {
-	first_request_id = last_request_id;
+        first_request_id = last_request_id;
       }
     }
   } specialist_type_iterate_end;
@@ -236,7 +244,7 @@ static bool apply_result_on_server(struct city *pcity,
   city_tile_iterate_skip_free_worked(city_radius_sq, pcenter, ptile, idx,
                                      x, y) {
     if (NULL == tile_worked(ptile)
-     && result->worker_positions[idx]) {
+        && result->worker_positions[idx]) {
       log_apply_result("Putting worker at {%d,%d}.", x, y);
       fc_assert_action(city_can_work_tile(pcity, ptile), break);
 
@@ -244,7 +252,7 @@ static bool apply_result_on_server(struct city *pcity,
         dsend_packet_city_make_worker(&client.conn,
                                       pcity->id, ptile->index);
       if (first_request_id == 0) {
-	first_request_id = last_request_id;
+        first_request_id = last_request_id;
       }
     }
   } city_tile_iterate_skip_free_worked_end;
@@ -252,6 +260,8 @@ static bool apply_result_on_server(struct city *pcity,
   /* Set all specialists except DEFAULT_SPECIALIST (all the unchanged
    * ones remain as DEFAULT_SPECIALIST). */
   specialist_type_iterate(sp) {
+    int i;
+
     if (sp == DEFAULT_SPECIALIST) {
       continue;
     }
@@ -260,9 +270,9 @@ static bool apply_result_on_server(struct city *pcity,
       log_apply_result("Changing specialist from %d to %d.",
                        DEFAULT_SPECIALIST, sp);
       last_request_id = city_change_specialist(pcity,
-					       DEFAULT_SPECIALIST, sp);
+                                               DEFAULT_SPECIALIST, sp);
       if (first_request_id == 0) {
-	first_request_id = last_request_id;
+        first_request_id = last_request_id;
       }
     }
   } specialist_type_iterate_end;
@@ -277,7 +287,7 @@ static bool apply_result_on_server(struct city *pcity,
        * PACKET_CITY_REFRESH to bring them in sync.
        */
     first_request_id = last_request_id =
-	dsend_packet_city_refresh(&client.conn, pcity->id);
+      dsend_packet_city_refresh(&client.conn, pcity->id);
     stats.refresh_forced++;
   }
 
@@ -318,6 +328,7 @@ static bool apply_result_on_server(struct city *pcity,
   cm_result_destroy(current_state);
 
   log_apply_result("apply_result_on_server() return %d.", (int) success);
+
   return success;
 }
 
@@ -349,7 +360,7 @@ static void release_city(int city_id)
 }
 
 /****************************************************************************
-                           algorithmic functions
+                           Algorithmic functions
 ****************************************************************************/
 
 /************************************************************************//**
@@ -377,7 +388,7 @@ static void handle_city(struct city *pcity)
     log_handle_city2("  try %d", i);
 
     if (pcity != check_city(city_id, &parameter)) {
-      handled = TRUE;	
+      handled = TRUE;
       break;
     }
 
@@ -476,10 +487,11 @@ void cma_init(void)
   /* reset cache counters */
   memset(&stats, 0, sizeof(stats));
 
-  /* We used to just use timer_new here, but apparently cma_init can be
+  /* We used to just use timer_new() here, but apparently cma_init() can be
    * called multiple times per client invocation so that lead to memory
    * leaks. */
-  stats.wall_timer = timer_renew(timer, TIMER_USER, TIMER_ACTIVE);
+  stats.wall_timer = timer_renew(timer, TIMER_USER, TIMER_ACTIVE,
+                                 timer != NULL ? NULL : "agent: stats");
 
   memset(&self, 0, sizeof(self));
   strcpy(self.name, "CMA");
@@ -497,10 +509,12 @@ void cma_init(void)
 bool cma_apply_result(struct city *pcity, const struct cm_result *result)
 {
   fc_assert(!cma_is_city_under_agent(pcity, NULL));
+
   if (result->found_a_valid) {
     return apply_result_on_server(pcity, result);
-  } else
+  } else {
     return TRUE; /* ???????? */
+  }
 }
 
 /************************************************************************//**
@@ -543,16 +557,17 @@ bool cma_is_city_under_agent(const struct city *pcity,
     return FALSE;
   }
 
-  if (parameter) {
+  if (parameter != NULL) {
     memcpy(parameter, &my_parameter, sizeof(struct cm_parameter));
   }
+
   return TRUE;
 }
 
 /************************************************************************//**
   Get the parameter.
 
-  Don't bother to cm_init_parameter, since we set all the fields anyway.
+  Don't bother to cm_init_parameter(), since we set all the fields anyway.
   But leave the comment here so we can find this place when searching
   for all the creators of a parameter.
 ****************************************************************************/
@@ -564,7 +579,7 @@ bool cma_get_parameter(enum attr_city attr, int city_id,
   struct data_in din;
   int version, dummy;
 
-  /* Changing this function is likely to break compatability with old
+  /* Changing this function is likely to break compatibility with old
    * savegames that store these values. */
 
   len = attr_city_get(attr, city_id, sizeof(buffer), buffer);
@@ -576,7 +591,11 @@ bool cma_get_parameter(enum attr_city attr, int city_id,
   dio_input_init(&din, buffer, len);
 
   dio_get_uint8_raw(&din, &version);
-  fc_assert_ret_val(version == 2, FALSE);
+  if (version > CMA_ATTR_VERSION && version < CMA_ATTR_VERSION_MIN_SUPPORTED) {
+    log_error("CMA data has a wrong version %d (expected %d)",
+              version, CMA_ATTR_VERSION);
+    return FALSE;
+  }
 
   /* Initialize the parameter (includes some AI-only fields that aren't
    * touched below). */
@@ -590,6 +609,9 @@ bool cma_get_parameter(enum attr_city attr, int city_id,
   dio_get_sint16_raw(&din, &parameter->happy_factor);
   dio_get_uint8_raw(&din, &dummy); /* Dummy value; used to be factor_target. */
   dio_get_bool8_raw(&din, &parameter->require_happy);
+  if (version > 2) {
+    dio_get_bool8_raw(&din, &parameter->max_growth);
+  }
 
   return TRUE;
 }
@@ -603,12 +625,12 @@ void cma_set_parameter(enum attr_city attr, int city_id,
   char buffer[SAVED_PARAMETER_SIZE];
   struct raw_data_out dout;
 
-  /* Changing this function is likely to break compatability with old
+  /* Changing this function is likely to break compatibility with old
    * savegames that store these values. */
 
   dio_output_init(&dout, buffer, sizeof(buffer));
 
-  dio_put_uint8_raw(&dout, 2);
+  dio_put_uint8_raw(&dout, CMA_ATTR_VERSION);
 
   output_type_iterate(i) {
     dio_put_sint16_raw(&dout, parameter->minimal_surplus[i]);
@@ -618,6 +640,7 @@ void cma_set_parameter(enum attr_city attr, int city_id,
   dio_put_sint16_raw(&dout, parameter->happy_factor);
   dio_put_uint8_raw(&dout, 0); /* Dummy value; used to be factor_target. */
   dio_put_bool8_raw(&dout, parameter->require_happy);
+  dio_put_bool8_raw(&dout, parameter->max_growth);
 
   fc_assert(dio_output_used(&dout) == SAVED_PARAMETER_SIZE);
 

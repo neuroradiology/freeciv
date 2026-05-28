@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -37,7 +37,7 @@ sprites =
                 "f.shield.animals", "flags/animals-shield-large"
 		"f.shield.anishinaabe", "flags/anishinaabe-shield-large"
 		"f.shield.antarctica", "flags/antarctica-shield-large"
-;		"f.shield.antarctica_alt", "flags/antarctica_alt-shield-large"
+		"f.shield.antarctica_alt", "flags/antarctica_alt-shield-large"
 		"f.shield.antigua_and_barbuda", "flags/antigua_and_barbuda-shield-large"
 		"f.shield.apache", "flags/apache-shield-large"
 		"f.shield.arab", "flags/arab-shield-large"
@@ -178,6 +178,7 @@ sprites =
 		"f.shield.finland", "flags/finland-shield-large"
 		"f.shield.flanders", "flags/flanders-shield-large"
 		"f.shield.florence", "flags/florence-shield-large"
+		"f.shield.florida", "flags/florida-shield-large"
 		"f.shield.formosan", "flags/formosan-shield-large"
 		"f.shield.france", "flags/france-shield-large"
 		"f.shield.france_old", "flags/france_old-shield-large"
@@ -304,6 +305,7 @@ sprites =
 		"f.shield.lippe", "flags/lippe-shield-large"
 		"f.shield.lithuania", "flags/lithuania-shield-large"
 		"f.shield.lorraine", "flags/lorraine-shield-large"
+		"f.shield.luik", "flags/luik-shield-large"
 		"f.shield.luna", "flags/luna-shield-large"
 		"f.shield.lusatia", "flags/lusatia-shield-large"
 		"f.shield.luwian", "flags/luwian-shield-large"
@@ -358,6 +360,7 @@ sprites =
 		"f.shield.muskogee", "flags/muskogee-shield-large"
 		"f.shield.mwiska", "flags/mwiska-shield-large"
 		"f.shield.myanmar", "flags/myanmar-shield-large"
+		"f.shield.myanmar_old", "flags/myanmar_old-shield-large"
 		"f.shield.nagorno_karabakh", "flags/nagorno_karabakh-shield-large"
 		"f.shield.namibia", "flags/namibia-shield-large"
 		"f.shield.naples", "flags/naples-shield-large"
@@ -395,6 +398,7 @@ sprites =
 		"f.shield.paeonia", "flags/paeonia-shield-large"
 		"f.shield.pakistan", "flags/pakistan-shield-large"
 		"f.shield.palatinate", "flags/palatinate-shield-large"
+		"f.shield.palau", "flags/palau-shield-large"
 		"f.shield.palestine", "flags/palestine-shield-large"
 		"f.shield.palmyra", "flags/palmyra-shield-large"
 		"f.shield.panama", "flags/panama-shield-large"
@@ -580,6 +584,7 @@ sprites =
 		"f.shield.zhuang", "flags/zhuang-shield-large"
 		"f.shield.zimbabwe", "flags/zimbabwe-shield-large"
 		"f.shield.zulu", "flags/zulu-shield-large"
-	}
 
 *include "override/shields-large.spec"
+
+	}

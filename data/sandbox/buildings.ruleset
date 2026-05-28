@@ -11,9 +11,22 @@
 ; than minor changes.
 
 [datafile]
-description="Sandbox buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Sandbox buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02"
+format_version = 30
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+building_flags =
+  { "name", "helptxt"
+    "Barracks"
+  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -33,7 +46,8 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
 ; graphic	= icon of improvement (used in city dialog)
@@ -54,7 +68,7 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
@@ -249,13 +263,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_i"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_ii]
@@ -277,13 +293,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_ii"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_iii]
@@ -303,13 +321,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_iii"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_cathedral]
@@ -440,8 +460,9 @@ eliminated. A Granary together with a Courthouse in a city will \
 eliminate food waste.\
 "), _("\
 Also makes one unhappy citizen content (unless that citizen is unhappy \
-about military activity), and makes the revolt cost of the city 4 times \
-bigger.\
+about military activity).\
+"), _("\
+A city with a Courthouse cannot be incited to revolt.\
 ")
 
 [building_factory]
@@ -589,8 +610,7 @@ sound		= "b_library"
 sound_alt	= "b_generic"
 ; /* xgettext:no-c-format */
 helptext	= _("\
-Increases the science output in a city by 50%, or by 100% once the \
-Great Library has been built by any player.\
+Increases the science output in a city by 50%.\
 ")
 
 [building_marketplace]
@@ -823,6 +843,33 @@ Under Despotism the city containing the palace gains a +75% \
 gold bonus, and under Monarchy a +50% gold bonus.\
 ")
 
+; "Amêzârâk taught all the conjurers and root-cutters," Book of Enok 8:3a
+; (The Tewahedo Orthodox view The Book of Enok as a part of the Bible.)
+[building_mystery_school]
+name            = _("Amêzârâkian Mysteries")
+rule_name       = "Mysteries"
+genus           = "SmallWonder"
+reqs            =
+    { "type", "name",       "range"
+      "Tech", "Polytheism", "Player"
+    }
+graphic	        = "b.mystery_school"
+graphic_alt     = "b.temple"
+obsolete_by     =
+    { "type", "name", "range"
+    }
+build_cost      = 400
+upkeep          = 0
+sabotage        = 0
+sound           = "b_mystery_school"
+sound_alt       = "b_temple"
+helptext        = _("\
+Initiates of The School of Amêzârâk knows how to operate an \
+Ancient Transport Hub.\
+"), _("\
+Initiates of The School of Amêzârâk know how to heal wounded flesh.\
+")
+
 [building_police_station]
 name		= _("Police Station")
 genus		= "Improvement"
@@ -956,9 +1003,9 @@ by 100% once the Internet wonder has been built by any player.\
 ; /* xgettext:no-c-format */
 _("\
 The total bonus is 150% if a Library, a University and a \
-Research Lab are all present in the same city, increasing to 300% \
-once the Great Library, Isaac Newton's College, and the Internet have \
-all been built.\
+Research Lab are all present in the same city, increasing to 250% \
+once Isaac Newton's College, and the Internet have \
+both been built.\
 ")
 
 [building_sam_battery]
@@ -1100,6 +1147,41 @@ Space Components can be differentiated into Propulsion and Fuel\
 "), _("\
 Before you can build any spaceship parts, the Apollo Program wonder\
  must have been built by any player.\
+")
+
+[building_space_elevator_tether]
+name        = _("Space Elevator Tether")
+genus       = "Improvement"
+reqs        =
+    { "type",         "name",           "range",     "present"
+      "Tech",         "Nanomaterials",  "Player",    TRUE
+      "Building",     "Space Elevator", "Continent", TRUE
+      "Building",     "Space Elevator", "City",      FALSE
+    }
+graphic     = "b.space_elevator_tether"
+graphic_alt = "b.space_modules"
+obsolete_by =
+    { "type", "name", "range"
+    }
+build_cost  = 400
+upkeep      = 4
+sabotage    = 100
+sound       = "b_space_elevator_tether"
+sound_alt   = "b_generic"
+helptext    = _("\
+Each tile around the city that is already generating some trade, produces \
+one extra trade resource.\
+"), _("\
+Adds 3 trade route slots to the city.\
+"), _("\
+Increases the radius of the city.\
+"), _("\
+Increases the vision radius of the city.\
+"), _("\
+A Space Elevator is too easy for an enemy to destroy to leave operational \
+and fully assembled during war. \
+It is therefore shut down and without any effect if its owner is at war \
+with anyone at all.\
 ")
 
 [building_space_module]
@@ -1303,8 +1385,36 @@ by 100% once Isaac Newton's College has been built by any player.\
 ; /* xgettext:no-c-format */
 _("\
 The total bonus is 100% if a Library and a University are present \
-together in the same city, increasing to 200% once the Great Library and \
-Isaac Newton's College have both been built.\
+together in the same city, increasing to 150% once \
+Isaac Newton's College has been built.\
+")
+
+; The consensus among the wise men you have licensed and granted a generous
+; regular allowance is that you are divine or that the commoners should
+; believe that you are divine. What better way to honor this consensus than
+; to build an altar to yourself?
+[building_altar_to_the_divine_ruler]
+name            = _("Altar to The Divine Ruler")
+genus           = "GreatWonder"
+reqs            =
+    { "type", "name",             "range"
+      "Tech", "Ruler Apotheosis", "Player"
+    }
+graphic     = "b.altar"
+graphic_alt = "b.oracle"
+obsolete_by =
+    { "type", "name",     "range"
+      "Tech", "Theology", "Player"
+    }
+build_cost  = 300
+upkeep      = 0
+sabotage    = 0
+sound       = "w_altar"
+sound_alt   = "w_generic"
+helptext    = _("\
+Makes it possible to receive sacrifices from your subjects.\
+ A Sacrifice of Work makes the unit unhomed and therefore without material\
+ or happiness upkeep.\
 ")
 
 [building_apollo_program]
@@ -1363,6 +1473,29 @@ Communism.)\
 "), _("\
 Upon completion of this wonder, tax collector specialists' gold output \
 increases to 3 permanently for every nation.\
+")
+
+[building_chichen_itza]
+name		= _("Chichen Itza")
+genus		= "GreatWonder"
+reqs	=
+    { "type", "name", "range"
+      "Tech", "Warrior Code", "Player"
+    }
+graphic         = "b.chichen_itza"
+graphic_alt     = "b.pyramids"
+obsolete_by	=
+    { "type", "name", "range", "survives"
+      "Tech", "Metallurgy", "Player", FALSE
+    }
+build_cost	= 300
+upkeep		= 0
+sabotage	= 0
+sound		= "w_chichen_itza"
+sound_alt	= "w_generic"
+helptext	= _("\
+In a city with Chichen Itza, settlers can be built without\
+ size of the city shrinking.\
 ")
 
 [building_colossus]
@@ -1487,6 +1620,34 @@ reduces the pollution caused by the population; it counteracts the \
 pollution associated with a single building in each of your cities.\
 ")
 
+; This is in no way, shape or form an accusation that the USA was behind
+; the COVID-19 pandemic. I had planned this rule as a part of a new ruleset,
+; "Too Much Detail", long before the Corona pandemic. The rule was inspired
+; by conspiracy theories.
+; I delayed introducing this rule until 2021 because of COVID-19.
+; -- Sveinung
+[building_georgia_guidestones]
+name        = _("Guidestones")
+genus       = "GreatWonder"
+reqs        =
+    { "type", "name",             "range"
+      "Tech", "Environmentalism", "Player"
+    }
+graphic     = "b.georgia_guidestones"
+graphic_alt = "b.port_facility"
+obsolete_by =
+    { "type", "name",      "range"
+    }
+build_cost  = 400
+upkeep      = 0
+sabotage    = 0
+sound       = "w_georgia_guidestones"
+sound_alt   = "w_generic"
+helptext    = _("\
+Allows releasing plague against any city as this helps maintain humanity \
+under 500,000,000.\
+")
+
 [building_great_library]
 name		= _("Great Library")
 genus		= "GreatWonder"
@@ -1508,9 +1669,11 @@ sound_alt	= "w_generic"
 helptext	= _("\
 Gives an immediate technology advance to the player that builds it, \
 and thereafter 4 extra research points every turn to its city.\
-"), _("\
-Completion of this wonder permanently doubles the effect of Libraries \
-for every player.\
+"),
+; /* xgettext:no-c-format */
+_("\
+Completion of this wonder starts permanent tech sharing so that once \
+a tech is known by 30% of players, also all the others get it.\
 ")
 
 [building_great_wall]
@@ -1849,11 +2012,11 @@ sabotage	= 0
 sound		= "w_oracle"
 sound_alt	= "w_generic"
 helptext	= _("\
-Reduces the unhappiness caused by aggressively deployed military \
-units owned by the city by 1 -- in other words, it neutralizes the \
-unhappiness caused by a single military unit (except under Democracy, \
-where a single unit makes two citizens unhappy). Each city also avoids \
-one shield of upkeep for units.\
+Reduces by 1 the unhappiness caused by one aggressively deployed \
+military unit per city -- in other words, in each city it neutralizes \
+the unhappiness caused by a single military unit (except under \
+Democracy, where it just halves the unhappiness from that unit). \
+Each city also avoids one shield of upkeep for units.\
 ")
 
 [building_temple_of_artemis]
@@ -1959,6 +2122,44 @@ Upon completion of this wonder, entertainer specialists' luxury \
 output increases to 3 permanently for every nation.\
 ")
 
+[building_space_elevator]
+name        = _("Space Elevator")
+genus       = "SmallWonder"
+reqs        =
+    { "type",         "name",           "range", "present"
+      "Tech",         "Nanomaterials",  "Player", TRUE
+      "Building",     "Apollo Program", "World",  TRUE
+      "Building",     "Space Elevator", "Player", FALSE
+      "TerrainClass", "Oceanic",        "City",   TRUE
+      "MaxLatitude",  "150",            "Tile",   TRUE
+      "MinLatitude",  "-150",           "Tile",   TRUE
+    }
+graphic	    = "b.space_elevator"
+graphic_alt = "b.space_structural"
+obsolete_by =
+    { "type", "name", "range"
+    }
+build_cost  = 800
+upkeep      = 0
+sabotage    = 0
+sound       = "w_space_elevator"
+sound_alt   = "w_generic"
+helptext    = _("\
+Each tile around the city that is already generating some trade, produces \
+one extra trade resource.\
+"), _("\
+Adds 3 trade route slots to the city.\
+"), _("\
+Increases the radius of the city.\
+"), _("\
+Increases the vision radius of the city.\
+"), _("\
+A Space Elevator is too easy for an enemy to destroy to leave operational \
+and fully assembled during war. \
+It is therefore shut down and without any effect if its owner is at war \
+with anyone at all.\
+")
+
 [building_statue_of_liberty]
 name		= _("Statue of Liberty")
 genus		= "GreatWonder"
@@ -2006,6 +2207,50 @@ helptext	= _("\
 All your new military land units start with an additional veteran level \
 (this is cumulative with any Barracks building in a city; with both, units \
 are created as Hardened).\
+")
+
+; This is the "It Is Just A Game" version. I have been working on "Pax Dei",
+; a version for more "serious" rulesets, since 2015. It will only ban its
+; owner (and perhaps their allies) from violence against civilians in return
+; for increased trade. (Merchants and their goods were protected.) I could
+; replace "Treuga Dei" with "Pax Dei" in sandbox when it is done.
+; A historian will object and say that there were around 80 days each year
+; when fighting was allowed. I reply that this rule is far more accurate
+; than most fiction about the "dark and oppressive" middle ages.
+; For why Communism changes its effect see the attitude behind the poem
+; "Rent flagg" ("Clean flag" - he commands or requests - in Norwegian the
+; imperative mood can be a request - the reader to remove the Christian
+; crosses from their (Norwegian) flag) by the Norwegian communist (fellow
+; traveler) Arnulf Øverland where he says `let no one offer you the deceit /
+; that "the savior" is born` and that you have to `liberate yourself`.
+; Combine this attitude with the attitude behind Pax et treuga Dei and
+; you get a Casus Belli for everyone once anyone does anything violent.
+; -- Sveinung
+[building_treuga_dei]
+name        = _("Treuga Dei")
+genus       = "GreatWonder"
+reqs        =
+    { "type", "name",     "range"
+      "Tech", "Theology", "Player"
+    }
+graphic     = "b.treuga_dei"
+graphic_alt = "b.michelangelos_chapel"
+obsolete_by =
+    { "type", "name",      "range"
+    }
+build_cost  = 600
+upkeep      = 0
+sabotage    = 0
+sound       = "w_treuga_dei"
+sound_alt   = "w_generic"
+helptext    = _("\
+Historical note: The real Treuga Dei was far less extreme. \
+Fighting was allowed around 80 days each year. \
+It also both began and ended during the middle ages \
+- long before communism.\
+"), _("\
+Makes violence impossible before Communism is discovered. \
+Makes every violent action a Casus Belli after Communism is discovered.\
 ")
 
 [building_united_nations]
@@ -2064,7 +2309,7 @@ same level as a Republic).\
 
 [building_capitalization]
 name		= _("Coinage")
-genus		= "Special"
+genus		= "Convert"
 flags		= "Gold"
 reqs	=
     { "type", "name", "range"

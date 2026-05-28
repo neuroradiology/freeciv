@@ -41,7 +41,7 @@
 #include "cityturn.h"
 #include "connecthand.h"
 #include "gamehand.h"
-#include "hand_gen.h"
+#include <hand_gen.h>       /* <> so looked from the build directory first. */
 #include "maphand.h"
 #include "plrhand.h"
 #include "notify.h"
@@ -145,6 +145,8 @@ static void check_edited_tile_terrains(void)
     assign_continent_numbers();
     send_all_known_tiles(NULL);
     need_continents_reassigned = FALSE;
+
+    /* FIXME: adv / ai phase handling like in check_terrain_change() */
   }
 
 #ifdef SANITY_CHECKING
@@ -269,6 +271,11 @@ static bool edit_tile_extra_handling(struct tile *ptile,
     if (!tile_extra_apply(ptile, pextra)) {
       return FALSE;
     }
+
+    if (is_extra_caused_by(pextra, EC_RESOURCE)
+        && terrain_has_resource(ptile->terrain, pextra)) {
+      tile_set_resource(ptile, pextra);
+    }
   }
 
   if (send_info) {
@@ -322,9 +329,10 @@ void handle_edit_tile_terrain(struct connection *pc, int tile,
   argument controls whether to remove or add the given extra from the tile.
 ****************************************************************************/
 void handle_edit_tile_extra(struct connection *pc, int tile,
-                            int id, bool removal, int size)
+                            int id, bool removal, int eowner, int size)
 {
   struct tile *ptile_center;
+  struct player *plr_eowner;
 
   ptile_center = index_to_tile(&(wld.map), tile);
   if (!ptile_center) {
@@ -343,8 +351,15 @@ void handle_edit_tile_extra(struct connection *pc, int tile,
     return;
   }
 
+  if (eowner != MAP_TILE_OWNER_NULL) {
+    plr_eowner = player_by_number(eowner);
+  } else {
+    plr_eowner = NULL;
+  }
+
   conn_list_do_buffer(game.est_connections);
   square_iterate(&(wld.map), ptile_center, size - 1, ptile) {
+    ptile->extras_owner = plr_eowner;
     edit_tile_extra_handling(ptile, extra_by_number(id), removal, TRUE);
   } square_iterate_end;
   conn_list_do_unbuffer(game.est_connections);
@@ -357,6 +372,7 @@ void handle_edit_tile(struct connection *pc,
                       const struct packet_edit_tile *packet)
 {
   struct tile *ptile;
+  struct player *eowner;
   bool changed = FALSE;
 
   ptile = index_to_tile(&(wld.map), packet->tile);
@@ -365,6 +381,12 @@ void handle_edit_tile(struct connection *pc,
                 _("Cannot edit the tile because %d is not a valid "
                   "tile index on this map!"), packet->tile);
     return;
+  }
+
+  if (packet->eowner != MAP_TILE_OWNER_NULL) {
+    eowner = player_by_number(packet->eowner);
+  } else {
+    eowner = NULL;
   }
 
   /* Handle changes in extras. */
@@ -376,6 +398,11 @@ void handle_edit_tile(struct connection *pc,
         changed = TRUE;
       }
     } extra_type_iterate_end;
+  }
+
+  if (ptile->extras_owner != eowner) {
+    ptile->extras_owner = eowner;
+    changed = TRUE;
   }
 
   /* Handle changes in label */
@@ -434,6 +461,22 @@ void handle_edit_unit_create(struct connection *pc, int owner, int tile,
                   "invalid."), utype_name_translation(punittype),
                 tile_link(ptile), owner);
     return;
+  }
+
+  if (utype_has_flag(punittype, UTYF_UNIQUE)) {
+    if (utype_player_already_has_this_unique(pplayer, punittype)) {
+      notify_conn(pc->self, ptile, E_BAD_COMMAND, ftc_editor,
+                  _("Cannot create another instance of unique unit type %s. "
+                    "Player already has one such unit."),
+                  utype_name_translation(punittype));
+      return;
+    }
+    if (count > 1) {
+      notify_conn(pc->self, ptile, E_BAD_COMMAND, ftc_editor,
+                  _("Cannot create multiple instances of unique unit type %s."),
+                  utype_name_translation(punittype));
+      return;
+    }
   }
 
   if (is_non_allied_unit_tile(ptile, pplayer)
@@ -559,7 +602,7 @@ void handle_edit_unit_remove_by_id(struct connection *pc, Unit_type_id id)
 void handle_edit_unit(struct connection *pc,
                       const struct packet_edit_unit *packet)
 {
-  struct unit_type *putype;
+  const struct unit_type *putype;
   struct unit *punit;
   int id;
   bool changed = FALSE;
@@ -658,25 +701,17 @@ void handle_edit_city_create(struct connection *pc, int owner, int tile,
 
   }
 
+  conn_list_do_buffer(game.est_connections);
 
-  if (is_enemy_unit_tile(ptile, pplayer) != NULL
-      || !city_can_be_built_here(ptile, NULL)) {
+  if (!create_city_for_player(pplayer, ptile, NULL)) {
     notify_conn(pc->self, ptile, E_BAD_COMMAND, ftc_editor,
                 /* TRANS: ..." at <tile-coordinates>." */
                 _("A city may not be built at %s."), tile_link(ptile));
+    conn_list_do_unbuffer(game.est_connections);
+
     return;
   }
 
-  if (!pplayer->is_alive) {
-    pplayer->is_alive = TRUE;
-    send_player_info_c(pplayer, NULL);
-  }
-
-  conn_list_do_buffer(game.est_connections);
-
-  map_show_tile(pplayer, ptile);
-  create_city(pplayer, ptile, city_name_suggestion(pplayer, ptile),
-              pplayer);
   pcity = tile_city(ptile);
 
   if (size > 1) {
@@ -726,7 +761,7 @@ void handle_edit_city(struct connection *pc,
       notify_conn(pc->self, ptile, E_BAD_COMMAND, ftc_editor,
                   _("Cannot edit city name: %s"), buf);
     } else {
-      sz_strlcpy(pcity->name, packet->name);
+      city_name_set(pcity, packet->name);
       changed = TRUE;
     }
   }
@@ -773,30 +808,23 @@ void handle_edit_city(struct connection *pc,
 
     } else if (!city_has_building(pcity, pimprove)
                && packet->built[id] >= 0) {
+      struct player *old_owner = NULL;
 
-      if (is_great_wonder(pimprove)) {
-        oldcity = city_from_great_wonder(pimprove);
-        if (oldcity != pcity) {
-          BV_SET(need_player_info, player_index(pplayer));
-        }
-        if (NULL != oldcity && city_owner(oldcity) != pplayer) {
-          /* Great wonders make more changes. */
-          need_game_info = TRUE;
-          BV_SET(need_player_info, player_index(city_owner(oldcity)));
-        }
-      } else if (is_small_wonder(pimprove)) {
-        oldcity = city_from_small_wonder(pplayer, pimprove);
-        if (oldcity != pcity) {
-          BV_SET(need_player_info, player_index(pplayer));
+      oldcity = build_or_move_building(pcity, pimprove, &old_owner);
+      if (oldcity != pcity) {
+        BV_SET(need_player_info, player_index(pplayer));
+      }
+      if (oldcity && old_owner != pplayer) {
+        /* Great wonders make more changes. */
+        need_game_info = TRUE;
+        if (old_owner) {
+          BV_SET(need_player_info, player_index(old_owner));
         }
       }
 
       if (oldcity) {
-        city_remove_improvement(oldcity, pimprove);
         city_refresh_queue_add(oldcity);
       }
-
-      city_add_improvement(pcity, pimprove);
       changed = TRUE;
     }
   } improvement_iterate_end;
@@ -818,6 +846,7 @@ void handle_edit_city(struct connection *pc,
   /* Handle shield stock change. */
   if (packet->shield_stock != pcity->shield_stock) {
     int max = USHRT_MAX; /* Limited to uint16 by city info packet. */
+
     if (!(0 <= packet->shield_stock && packet->shield_stock <= max)) {
       notify_conn(pc->self, ptile, E_BAD_COMMAND, ftc_editor,
                   _("Invalid city shield stock amount %d for city %s "
@@ -825,6 +854,8 @@ void handle_edit_city(struct connection *pc,
                   packet->shield_stock, city_link(pcity), 0, max);
     } else {
       pcity->shield_stock = packet->shield_stock;
+      /* Make sure the shields stay if changing production back and forth */
+      pcity->before_change_shields = packet->shield_stock;
       changed = TRUE;
     }
   }
@@ -865,8 +896,9 @@ void handle_edit_player_create(struct connection *pc, int tag)
   struct player *pplayer;
   struct nation_type *pnation;
   struct research *presearch;
+  int existing = player_count();
 
-  if (player_count() >= player_slot_count()) {
+  if (existing >= player_slot_count()) {
     notify_conn(pc->self, NULL, E_BAD_COMMAND, ftc_editor,
                 _("No more players can be added because the maximum "
                   "number of players (%d) has been reached."),
@@ -874,7 +906,15 @@ void handle_edit_player_create(struct connection *pc, int tag)
     return;
   }
 
-  if (player_count() >= nation_count() ) {
+  if (existing >= game.server.max_players) {
+    notify_conn(pc->self, NULL, E_BAD_COMMAND, ftc_editor,
+                _("No more players can be added because there's "
+                  "already maximum number of players allowed by maxplayers setting (value %d)"),
+                game.server.max_players);
+    return;
+  }
+
+  if (existing >= nation_count() ) {
     notify_conn(pc->self, NULL, E_BAD_COMMAND, ftc_editor,
                 _("No more players can be added because there are "
                   "no available nations (%d used)."),
@@ -911,7 +951,7 @@ void handle_edit_player_create(struct connection *pc, int tag)
   pplayer->server.got_first_city = FALSE;
 
   pplayer->economic.gold = 0;
-  pplayer->economic = player_limit_to_max_rates(pplayer);
+  player_limit_to_max_rates(pplayer);
 
   presearch = research_get(pplayer);
   init_tech(presearch, TRUE);
@@ -1066,6 +1106,12 @@ void handle_edit_player(struct connection *pc,
       pplayer->economic.gold = packet->gold;
       changed = TRUE;
     }
+  }
+
+  /* Handle a change in the player's autoselect weight. */
+  if (packet->autoselect_weight != pplayer->autoselect_weight) {
+    pplayer->autoselect_weight = packet->autoselect_weight;
+    changed = TRUE;
   }
 
   /* Handle player government change */
@@ -1370,22 +1416,6 @@ void handle_edit_game(struct connection *pc,
 {
   bool changed = FALSE;
 
-  if (packet->year != game.info.year) {
-
-    /* 'year' is stored in a signed short. */
-    const short min_year = -30000, max_year = 30000;
-
-    if (!(min_year <= packet->year && packet->year <= max_year)) {
-      notify_conn(pc->self, NULL, E_BAD_COMMAND, ftc_editor,
-                  _("Cannot set invalid game year %d. Valid year range "
-                    "is from %d to %d."),
-                  packet->year, min_year, max_year);
-    } else {
-      game.info.year = packet->year;
-      changed = TRUE;
-    }
-  }
-
   if (packet->scenario != game.scenario.is_scenario) {
     game.scenario.is_scenario = packet->scenario;
     changed = TRUE;
@@ -1396,8 +1426,11 @@ void handle_edit_game(struct connection *pc,
     changed = TRUE;
   }
 
+  FC_STATIC_ASSERT(sizeof(packet->scenario_authors) == sizeof(game.scenario.authors),
+                   scen_authors_field_size_mismatch);
+
   if (0 != strncmp(packet->scenario_authors, game.scenario.authors,
-                   MAX_LEN_PACKET)) {
+                   sizeof(game.scenario.authors))) {
     sz_strlcpy(game.scenario.authors, packet->scenario_authors);
     changed = TRUE;
   }

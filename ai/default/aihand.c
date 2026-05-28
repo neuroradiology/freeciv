@@ -54,15 +54,14 @@
 #include "handicaps.h"
 
 /* ai/default */
-#include "aicity.h"
-#include "aidata.h"
-#include "ailog.h"
-#include "aiplayer.h"
 #include "aitech.h"
 #include "aitools.h"
-#include "aiunit.h"
+#include "daicity.h"
+#include "daidata.h"
 #include "daidiplomacy.h"
+#include "dailog.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
 
 #include "aihand.h"
 
@@ -112,8 +111,8 @@ static void dai_manage_spaceship(struct player *pplayer)
 }
 
 /*************************************************************************//**
-  Returns the total amount of trade generated (trade) and total amount of
-  gold needed as upkeep (expenses).
+  Returns the total amount of trade generated (trade), total amount of
+  gold needed as upkeep (expenses), and total amount of gold gained (income).
 *****************************************************************************/
 void dai_calc_data(const struct player *pplayer, int *trade, int *expenses,
                    int *income)
@@ -128,7 +127,7 @@ void dai_calc_data(const struct player *pplayer, int *trade, int *expenses,
     *income = 0;
   }
 
-  /* Find total trade surplus and gold expenses */
+  /* Find total trade surplus, gold expenses, and gold income */
   city_list_iterate(pplayer->cities, pcity) {
     if (NULL != trade) {
       *trade += pcity->surplus[O_TRADE];
@@ -139,7 +138,8 @@ void dai_calc_data(const struct player *pplayer, int *trade, int *expenses,
     }
 
     if (NULL != income) {
-      *income += pcity->surplus[O_GOLD];
+      /* Also the immediately used gold is part of income, not only surplus */
+      *income += pcity->usage[O_GOLD] + pcity->surplus[O_GOLD];
     }
   } city_list_iterate_end;
 
@@ -220,7 +220,9 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
   int expenses = 0;      /* total amount of gold upkeep */
   int income = 0;        /* total amount of gold income */
   int turns_for_rapture; /* additional reserve needed for rapture */
-  int rates_save[AI_RATE_COUNT], rates[AI_RATE_COUNT], result[AI_RATE_COUNT];
+  unsigned rates_save[AI_RATE_COUNT], rates_tmp[AI_RATE_COUNT];
+  int rates[AI_RATE_COUNT];
+  int result[AI_RATE_COUNT];
   int rate_tax_min = RATE_NOT_SET;
   int rate_tax_balance = RATE_NOT_SET;
   int rate_sci_min = RATE_NOT_SET;
@@ -229,7 +231,7 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
   int delta_tax = 0, delta_sci = 0;
 
 #ifdef DEBUG_TIMERS
-  struct timer *taxtimer= NULL;
+  struct timer *taxtimer = NULL;
 #endif
 
   struct cm_parameter cmp;
@@ -245,9 +247,9 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
   }
 
 #ifdef DEBUG_TIMERS
-  taxtimer = timer_new(TIMER_CPU, TIMER_DEBUG);
+  taxtimer = timer_new(TIMER_CPU, TIMER_DEBUG, "AI tax");
   timer_start(taxtimer);
-#endif
+#endif /* DEBUG_TIMERS */
 
   /* City parameters needed for celebrations. */
   cm_init_parameter(&cmp);
@@ -309,8 +311,13 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
          && rates[AI_RATE_LUX] >= 0) {
     bool refill_coffers = pplayer->economic.gold < dai_gold_reserve(pplayer);
     int balance_tax, balance_tax_min;
+    int i;
 
-    distribute(trade, AI_RATE_COUNT, rates, result);
+    for (i = 0; i < AI_RATE_COUNT; i++) {
+      fc_assert(rates[i] >= 0);
+      rates_tmp[i] = rates[i];
+    }
+    distribute(trade, AI_RATE_COUNT, rates_tmp, result);
 
     /* Consider the delta between the result and the real value from the
      * last turn to get better estimates. */
@@ -393,8 +400,13 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
            && rates[AI_RATE_TAX] >= 0
            && rates[AI_RATE_LUX] >= 0) {
       int balance_sci, balance_sci_min;
+      int i;
 
-      distribute(trade, AI_RATE_COUNT, rates, result);
+      for (i = 0; i < AI_RATE_COUNT; i++) {
+        fc_assert(rates[i] >= 0);
+        rates_tmp[i] = rates[i];
+      }
+      distribute(trade, AI_RATE_COUNT, rates_tmp, result);
 
       /* Consider the delta between the result and the real value from the
        * last turn. */
@@ -650,7 +662,7 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
     city_list_iterate(pplayer->cities, pcity) {
       struct cm_result *cmr = cm_result_new(pcity);
 
-      if (def_ai_city_data(pcity, ait)->celebrate == TRUE) {
+      if (def_ai_city_data(pcity, ait)->celebrate) {
         log_base(LOGLEVEL_TAX, "setting %s to celebrate", city_name_get(pcity));
         cm_query_result(pcity, &cmp, cmr, FALSE);
         if (cmr->found_a_valid) {

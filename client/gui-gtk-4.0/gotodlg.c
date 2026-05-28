@@ -124,7 +124,7 @@ static void goto_cmd_callback(GtkWidget *dlg, gint arg)
     break;
   }
 
-  gtk_widget_destroy(dlg);
+  gtk_window_destroy(GTK_WINDOW(dlg));
   dshell = NULL;
 }
 
@@ -133,14 +133,15 @@ static void goto_cmd_callback(GtkWidget *dlg, gint arg)
 **************************************************************************/
 static void create_goto_dialog(void)
 {
-  GtkWidget *sw, *label, *frame, *vbox;
+  GtkWidget *sw, *label, *frame, *vgrid;
   GtkCellRenderer *rend;
   GtkTreeViewColumn *col;
+  int grid_row = 0;
 
   dshell = gtk_dialog_new_with_buttons(_("Goto/Airlift Unit"),
                                        NULL,
                                        0,
-                                       _("Cancel"),
+                                       _("_Cancel"),
                                        GTK_RESPONSE_CANCEL,
                                        _("Air_lift"),
                                        CMD_AIRLIFT,
@@ -148,18 +149,17 @@ static void create_goto_dialog(void)
                                        CMD_GOTO,
                                        NULL);
   setup_dialog(dshell, toplevel);
-  gtk_window_set_position(GTK_WINDOW(dshell), GTK_WIN_POS_MOUSE);
   gtk_dialog_set_default_response(GTK_DIALOG(dshell), CMD_GOTO);
   g_signal_connect(dshell, "destroy",
-		   G_CALLBACK(gtk_widget_destroyed), &dshell);
+                   G_CALLBACK(widget_destroyed), &dshell);
   g_signal_connect(dshell, "response",
                    G_CALLBACK(goto_cmd_callback), NULL);
 
   source = gtk_label_new("" /* filled in later */);
-  gtk_label_set_line_wrap(GTK_LABEL(source), TRUE);
+  gtk_label_set_wrap(GTK_LABEL(source), TRUE);
   gtk_label_set_justify(GTK_LABEL(source), GTK_JUSTIFY_CENTER);
-  gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dshell))),
-                     source);
+  gtk_box_insert_child_after(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dshell))),
+                             source, NULL);
 
   label = g_object_new(GTK_TYPE_LABEL,
     "use-underline", TRUE,
@@ -169,14 +169,14 @@ static void create_goto_dialog(void)
     NULL);
   frame = gtk_frame_new("");
   gtk_frame_set_label_widget(GTK_FRAME(frame), label);
-  gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dshell))),
-                     frame);
+  gtk_box_insert_child_after(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dshell))),
+                             frame, NULL);
 
-  vbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+  vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 6);
-  gtk_container_add(GTK_CONTAINER(frame), vbox);
+  gtk_grid_set_row_spacing(GTK_GRID(vgrid), 6);
+  gtk_frame_set_child(GTK_FRAME(frame), vgrid);
 
   goto_list_store = gtk_list_store_new(GD_COL_NUM, G_TYPE_INT, G_TYPE_STRING,
                                        GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING);
@@ -226,16 +226,16 @@ static void create_goto_dialog(void)
   gtk_tree_view_append_column(GTK_TREE_VIEW(view), col);
   gtk_tree_view_column_set_sort_column_id(col, GD_COL_AIRLIFT);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_container_add(GTK_CONTAINER(sw), view);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
     GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
   gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sw), 200);
 
-  gtk_container_add(GTK_CONTAINER(vbox), sw);
+  gtk_grid_attach(GTK_GRID(vgrid), sw, 0, grid_row++, 1, 1);
 
   all_toggle = gtk_check_button_new_with_mnemonic(_("Show _All Cities"));
-  gtk_container_add(GTK_CONTAINER(vbox), all_toggle);
+  gtk_grid_attach(GTK_GRID(vgrid), all_toggle, 0, grid_row++, 1, 1);
 
   g_signal_connect(all_toggle, "toggled", G_CALLBACK(update_goto_dialog), NULL);
 
@@ -379,7 +379,7 @@ static void update_source_label(void)
 
     astr_init(&strs[i]);
     if (air_text != NULL) {
-      astr_add(&strs[i], 
+      astr_add(&strs[i],
                /* TRANS: goto/airlift dialog. "Paris (airlift: 2/4)".
                 * A set of these appear in an "and"-separated list. */
                _("%s (airlift: %s)"),
@@ -408,7 +408,7 @@ static void update_source_label(void)
   /* Finally, update the label. */
   {
     struct astring label = ASTRING_INIT, list = ASTRING_INIT;
-    astr_set(&label, 
+    astr_set(&label,
              /* TRANS: goto/airlift dialog. Current location of units; %s is an
               * "and"-separated list of cities and associated info */
              _("Currently in: %s"),
@@ -431,7 +431,7 @@ static void update_source_label(void)
 static void update_goto_dialog(GtkToggleButton *button)
 {
   bool nonempty = FALSE;
-  
+
   if (!client_has_player()) {
     /* Case global observer. */
     return;

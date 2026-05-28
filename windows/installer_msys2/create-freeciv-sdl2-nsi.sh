@@ -1,6 +1,13 @@
 #!/bin/sh
 
-# ./create-freeciv-sdl2-nsi.sh <Freeciv files directory> <version> <win32|win64|win>
+# ./create-freeciv-sdl2-nsi.sh <Freeciv files dir> <Output dir> <version> <win32|win64|win>
+
+ARCH_KEY_PART="$4"
+if test "$4" != "win32" && test "$4" != "win64" ; then
+  ARCH_INST_PART="-${ARCH_KEY_PART}"
+else
+  ARCH_INST_PART=""
+fi
 
 cat <<EOF
 ; Freeciv Windows installer script
@@ -10,20 +17,23 @@ Unicode true
 SetCompressor /SOLID lzma
 
 !define APPNAME "Freeciv"
-!define VERSION $2
+!define VERSION $3
 !define GUI_ID sdl2
 !define GUI_NAME SDL2
-!define WIN_ARCH $3
-!define APPID "\${APPNAME}-\${VERSION}-\${GUI_ID}"
+!define WIN_ARCH $4
+!define ARCH_KEY_PART ${ARCH_KEY_PART}
+!define ARCH_INST_PART ${ARCH_INST_PART}
+
+!define APPID "\${APPNAME}-\${VERSION}\${ARCH_INST_PART}-\${GUI_ID}"
 
 !define MULTIUSER_EXECUTIONLEVEL Highest
 !define MULTIUSER_MUI
 !define MULTIUSER_INSTALLMODE_COMMANDLINE
-!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${ARCH_KEY_PART}\\\${GUI_ID}"
 !define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME ""
-!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}"
+!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${ARCH_KEY_PART}\\\${GUI_ID}"
 !define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_VALUENAME ""
-!define MULTIUSER_INSTALLMODE_INSTDIR "\${APPNAME}-\${VERSION}-\${GUI_ID}"
+!define MULTIUSER_INSTALLMODE_INSTDIR "\${APPNAME}-\${VERSION}\${ARCH_INST_PART}-\${GUI_ID}"
 
 !include "MultiUser.nsh"
 !include "MUI2.nsh"
@@ -32,7 +42,7 @@ SetCompressor /SOLID lzma
 ;General
 
 Name "\${APPNAME} \${VERSION} (\${GUI_NAME} client)"
-OutFile "Output/\${APPNAME}-\${VERSION}-msys2-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
+OutFile "$2/\${APPNAME}-\${VERSION}-msys2-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
 
 ;Variables
 
@@ -49,9 +59,9 @@ Page custom DefaultLanguage DefaultLanguageLeave
 !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !insertmacro MUI_PAGE_DIRECTORY
 
-;Start Menu Folder Page Configuration
-!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX" 
-!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}" 
+; Start Menu Folder Page Configuration
+!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX"
+!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${ARCH_KEY_PART}\\\${GUI_ID}"
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "\$(^Name)"
 
@@ -115,8 +125,9 @@ cat <<EOF
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
   CreateDirectory "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Server.lnk" "\$INSTDIR\freeciv-server.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-server.exe" 0 SW_SHOWMINIMIZED
-  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-gtk3.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-gtk3.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-gtk4.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-gtk4.exe" 0 SW_SHOWMINIMIZED
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv.lnk" "\$INSTDIR\freeciv-sdl2.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-sdl2.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Documentation.lnk" "\$INSTDIR\doc\freeciv"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Uninstall.lnk" "\$INSTDIR\uninstall.exe"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Website.lnk" "\$INSTDIR\Freeciv.url"
   !insertmacro MUI_STARTMENU_WRITE_END
@@ -127,7 +138,7 @@ cat <<EOF
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoModify" 1
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoRepair" 1
   WriteUninstaller "uninstall.exe"
-  
+
   SetOutPath \$INSTDIR
 SectionEnd
 
@@ -171,6 +182,7 @@ EOF
 
 cat ../../bootstrap/langstat_core.txt |
 sort -k 1 |
+iconv -f UTF-8 -t ISO-8859-1 |
 while read -r code prct name
 do
 if test -e $1/share/locale/$code/LC_MESSAGES/freeciv-core.mo; then
@@ -249,6 +261,7 @@ EOF
 
   cat ../../bootstrap/langstat_core.txt |
   sort -k 1 |
+  iconv -f UTF-8 -t ISO-8859-1 |
   while read -r code prct name
   do
   if test -e $1/share/locale/$code/LC_MESSAGES/freeciv-core.mo; then
@@ -272,6 +285,7 @@ EOF
   echo "  \${EndIf}"
 
   cat ../../bootstrap/langstat_core.txt |
+  iconv -f UTF-8 -t ISO-8859-1 |
   while read -r code prct name
   do
     echo "  \${If} \$LangName == \"$name ($code) $prct\""
@@ -288,17 +302,19 @@ FunctionEnd
 
 EOF
 
-### uninstall section ###
+### Uninstall section ###
 
 cat <<EOF
-; special uninstall section.
+; Special uninstall section.
 Section "Uninstall"
 
-  ; remove files
+  ; Remove files
 EOF
 
 find $1 -type f |
 grep -v '/$' |
+sed 's|meson/install/||' |
+sed 's|autotools/install/||' |
 sed 's|[^/]*||' |
 tr '/' '\\' | while read -r name
 do
@@ -307,6 +323,8 @@ done
 
 find $1 -depth -type d |
 grep -v '/$' |
+sed 's|meson/install/||' |
+sed 's|autotools/install/||' |
 sed 's|[^/]*||' |
 tr '/' '\\' | while read -r name
 do
@@ -328,7 +346,8 @@ cat <<EOF
 
   ; remove registry keys
   DeleteRegKey "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}"
-  DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}
+  DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}\\\${ARCH_KEY_PART}\\\${GUI_ID}
+  DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}\\\${ARCH_KEY_PART}
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}
 SectionEnd

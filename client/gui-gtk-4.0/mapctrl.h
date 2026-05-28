@@ -21,12 +21,26 @@
 /* client */
 #include "mapctrl_g.h"
 
-gboolean butt_release_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data);
-gboolean butt_down_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data);
-gboolean butt_down_overviewcanvas(GtkWidget *w, GdkEvent *ev, gpointer data);
-gboolean move_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data);
-gboolean leave_mapcanvas(GtkWidget *widget, GdkEvent *ev);
-gboolean move_overviewcanvas(GtkWidget *w, GdkEvent *ev, gpointer data);
+gboolean left_butt_up_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                double x, double y, gpointer data);
+gboolean right_butt_up_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                 double x, double y, gpointer data);
+gboolean left_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                  double x, double y, gpointer data);
+gboolean right_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                   double x, double y, gpointer data);
+gboolean middle_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                    double x, double y, gpointer data);
+gboolean left_butt_down_overviewcanvas(GtkGestureClick *gesture, int n_press,
+                                       double x, double y, gpointer data);
+gboolean right_butt_down_overviewcanvas(GtkGestureClick *gesture, int n_press,
+                                        double x, double y, gpointer data);
+gboolean move_mapcanvas(GtkEventControllerMotion *controller,
+                        gdouble x, gdouble y, gpointer data);
+gboolean leave_mapcanvas(GtkEventControllerMotion *controller,
+                         gpointer data);
+gboolean move_overviewcanvas(GtkEventControllerMotion *controller,
+                             gdouble x, gdouble y, gpointer data);
 
 void center_on_unit(void);
 

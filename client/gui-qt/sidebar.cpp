@@ -18,12 +18,12 @@
 // Qt
 #include <QAction>
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPixmap>
+#include <QScreen>
 #include <QTimer>
 
 // common
@@ -66,12 +66,17 @@ fc_sidewidget::fc_sidewidget(QPixmap *pix, QString label, QString pg,
     pix = new QPixmap(12,12);
     pix->fill(Qt::black);
   }
+
   blink = false;
   disabled = false;
   def_pixmap = pix;
   scaled_pixmap = new QPixmap;
   final_pixmap = new QPixmap;
-  sfont = new QFont(*fc_font::instance()->get_font(fonts::notify_label));
+
+  sfont = nullptr;
+  info_font = nullptr;
+  update_fonts();
+
   left_click = func;
   desc = label;
   standard = type;
@@ -84,11 +89,7 @@ fc_sidewidget::fc_sidewidget(QPixmap *pix, QString label, QString pg,
   timer = new QTimer;
   timer->setSingleShot(false);
   timer->setInterval(700);
-  sfont->setCapitalization(QFont::SmallCaps);
-  sfont->setItalic(true);
-  info_font = new  QFont(*sfont);
-  info_font->setBold(true);
-  info_font->setItalic(false);
+
   connect(timer, &QTimer::timeout, this, &fc_sidewidget::sblink);
 }
 
@@ -123,6 +124,26 @@ void fc_sidewidget::set_pixmap(QPixmap *pm)
   }
 
   def_pixmap = pm;
+}
+
+/***********************************************************************//**
+  Update sidebar fonts
+***************************************************************************/
+void fc_sidewidget::update_fonts()
+{
+  if (sfont != nullptr) {
+    delete sfont;
+  }
+  sfont = new QFont(*fc_font::instance()->get_font(fonts::notify_label));
+  sfont->setCapitalization(QFont::SmallCaps);
+  sfont->setItalic(true);
+
+  if (info_font != nullptr) {
+    delete info_font;
+  }
+  info_font = new QFont(*sfont);
+  info_font->setBold(true);
+  info_font->setItalic(false);
 }
 
 /***********************************************************************//**
@@ -203,9 +224,13 @@ void fc_sidewidget::paint(QPainter *painter, QPaintEvent *event)
 /***********************************************************************//**
   Mouse entered on widget area
 ***************************************************************************/
+#ifndef FC_QT5_MODE
+void fc_sidewidget::enterEvent(QEnterEvent *event)
+#else  // FC_QT5_MODE
 void fc_sidewidget::enterEvent(QEvent *event)
+#endif // FC_QT5_MODE
 {
-  if (hover == false) {
+  if (!hover) {
     hover = true;
     update_final_pixmap();
     QWidget::enterEvent(event);
@@ -293,9 +318,11 @@ void fc_sidewidget::mousePressEvent(QMouseEvent *event)
 ***************************************************************************/
 void fc_sidewidget::wheelEvent(QWheelEvent *event)
 {
-  if (event->delta() < -90 && wheel_down) {
+  int delta = event->angleDelta().y();
+
+  if (delta < -90 && wheel_down) {
     wheel_down();
-  } else if (event->delta() > 90 && wheel_up) {
+  } else if (delta > 90 && wheel_up) {
     wheel_up();
   }
 
@@ -308,7 +335,7 @@ void fc_sidewidget::wheelEvent(QWheelEvent *event)
 void fc_sidewidget::sblink()
 {
   if (keep_blinking) {
-    if (timer->isActive() == false) {
+    if (!timer->isActive()) {
       timer->start();
     }
     blink = !blink;
@@ -335,11 +362,11 @@ void fc_sidewidget::some_slot()
   act = qobject_cast<QAction *>(sender());
   qvar = act->data();
 
-  if (qvar.isValid() == false) {
+  if (!qvar.isValid()) {
     return;
   }
 
-  if (act->property("scimenu") == true) {
+  if (act->property("scimenu").toBool()) {
     dsend_packet_player_research(&client.conn, qvar.toInt());
     return;
   }
@@ -352,8 +379,11 @@ void fc_sidewidget::some_slot()
   obs_player = reinterpret_cast<struct player *>(qvar.value<void *>());
   if (obs_player != nullptr) {
     QString s;
+    QByteArray cn_bytes;
+
     s = QString("/observe \"%1\"").arg(obs_player->name);
-    send_chat(s.toLocal8Bit().data());
+    cn_bytes = s.toLocal8Bit();
+    send_chat(cn_bytes.data());
   }
 }
 
@@ -388,9 +418,10 @@ void fc_sidewidget::update_final_pixmap()
   pen.setColor(QColor(232, 255, 0));
   p.setPen(pen);
 
-  if (standard == SW_TAX && client_is_global_observer() == false) {
-    pos = 0;
+  if (standard == SW_TAX && !client_is_global_observer()) {
     int d, modulo;
+
+    pos = 0;
     sprite = get_tax_sprite(tileset, O_GOLD);
     if (sprite == nullptr) {
       return;
@@ -445,7 +476,7 @@ void fc_sidewidget::update_final_pixmap()
   }
 
   p.setPen(palette().color(QPalette::Text));
-  if (custom_label.isEmpty() == false) {
+  if (!custom_label.isEmpty()) {
     p.setFont(*info_font);
     p.drawText(0, 0, width(), height(), Qt::AlignLeft | Qt::TextWordWrap,
                custom_label);
@@ -539,23 +570,21 @@ void fc_sidebar::paint(QPainter *painter, QPaintEvent *event)
 void fc_sidebar::resize_me(int hght, bool force)
 {
   int w, h, non_std, non_std_count, screen_hres;
-  QDesktopWidget *qdp;
 
   h = hght;
-  qdp = QApplication::desktop();
-  screen_hres = qdp->availableGeometry(gui()->central_wdg).width();
+  screen_hres = QApplication::primaryScreen()->availableGeometry().width();
   w = (100 * screen_hres) / 1920;
   w = qMax(w, 80);
 
-  if (force == false && w == width() && h == height()) {
+  if (!force && w == width() && h == height()) {
     return;
   }
 
   non_std = 0;
   non_std_count = 0;
 
-  /* resize all non standard sidewidgets first*/
-  foreach (fc_sidewidget * sw,  objects) {
+  // Resize all non standard sidewidgets first
+  foreach (fc_sidewidget *sw, objects) {
     if (sw->standard != SW_STD) {
       sw->resize_pixmap(w, 0);
       sw->setFixedSize(w, sw->get_pixmap()->height());
@@ -567,8 +596,8 @@ void fc_sidebar::resize_me(int hght, bool force)
 
   h = h - non_std;
   h = h / (objects.count() - non_std_count) - 2;
-  /* resize all standard sidewidgets */
-  foreach (fc_sidewidget * sw,  objects) {
+  // Resize all standard sidewidgets
+  foreach (fc_sidewidget *sw, objects) {
     if (sw->standard == SW_STD) {
       sw->resize_pixmap(w, h);
       sw->setFixedSize(w, h);
@@ -577,6 +606,16 @@ void fc_sidebar::resize_me(int hght, bool force)
   }
 }
 
+/***********************************************************************//**
+  Refresh fonts for all the sidebar widgets.
+***************************************************************************/
+void fc_sidebar::update_fonts()
+{
+  foreach (fc_sidewidget *sw, objects) {
+    sw->update_fonts();
+    sw->update_final_pixmap();
+  }
+}
 
 /***********************************************************************//**
   Callback to show map
@@ -599,7 +638,7 @@ void side_finish_turn(bool nothing)
 ***************************************************************************/
 void side_rates_wdg(bool nothing)
 {
-  if (client_is_observer() == false) {
+  if (!client_is_observer()) {
     popup_rates_dialog();
   }
 }
@@ -675,7 +714,7 @@ void side_right_click_diplomacy(void)
       menu->addAction(eiskalt);
     } players_iterate_end
 
-    if (client_is_global_observer() == false) {
+    if (!client_is_global_observer()) {
       eiskalt = new QAction(_("Observe globally"), gui()->mapview_wdg);
       eiskalt->setData(-1);
       menu->addAction(eiskalt);
@@ -683,7 +722,8 @@ void side_right_click_diplomacy(void)
                        &fc_sidewidget::some_slot);
     }
 
-    menu->exec(QCursor::pos());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->popup(QCursor::pos());
   } else {
     int i;
     i = gui()->gimme_index_of("DDI");
@@ -705,7 +745,7 @@ void side_right_click_science(void)
   QList<qlist_item> curr_list;
   qlist_item item;
 
-  if (client_is_observer() == false) {
+  if (!client_is_observer()) {
     struct research *research = research_get(client_player());
 
     advance_index_iterate(A_FIRST, i) {
@@ -738,7 +778,8 @@ void side_right_click_science(void)
       QObject::connect(act, &QAction::triggered, gui()->sw_science,
                        &fc_sidewidget::some_slot);
     }
-    menu->exec(QCursor::pos());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->popup(QCursor::pos());
   }
 }
 
@@ -756,11 +797,11 @@ void side_left_click_science(bool nothing)
   }
   if (!gui()->is_repo_dlg_open("SCI")) {
     sci_rep = new science_report;
-    sci_rep->init(true);
+    sci_rep->init();
   } else {
     i = gui()->gimme_index_of("SCI");
     w = gui()->game_tab_widget->widget(i);
-    if (w->isVisible() == true) {
+    if (w->isVisible()) {
       gui()->game_tab_widget->setCurrentIndex(0);
       return;
     }

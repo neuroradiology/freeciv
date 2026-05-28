@@ -34,6 +34,7 @@
 #include "events.h"
 #include "game.h"
 #include "government.h"
+#include "nation.h"
 #include "packets.h"
 #include "player.h"
 #include "research.h"
@@ -74,14 +75,17 @@ static void plrdata_slot_replace(struct plrdata_slot *plrdata,
 static void plrdata_slot_free(struct plrdata_slot *plrdata);
 
 static void page_conn_etype(struct conn_list *dest, const char *caption,
-			    const char *headline, const char *lines,
-			    enum event_type event);
+                            const char *headline, const char *lines,
+                            enum event_type event);
+static void page_conn(struct conn_list *dest, const char *caption,
+                      const char *headline, const char *lines);
+
 enum historian_type {
-        HISTORIAN_RICHEST=0, 
-        HISTORIAN_ADVANCED=1,
-        HISTORIAN_MILITARY=2,
-        HISTORIAN_HAPPIEST=3,
-        HISTORIAN_LARGEST=4};
+        HISTORIAN_RICHEST  = 0,
+        HISTORIAN_ADVANCED = 1,
+        HISTORIAN_MILITARY = 2,
+        HISTORIAN_HAPPIEST = 3,
+        HISTORIAN_LARGEST  = 4};
 
 #define HISTORIAN_FIRST		HISTORIAN_RICHEST
 #define HISTORIAN_LAST 		HISTORIAN_LARGEST
@@ -117,6 +121,9 @@ static const char *historian_name[]={
     /* TRANS: [year] <name> [reports ...] */
     N_("Pan Ku")
 };
+
+/* With terminating '\0' */
+#define MAX_SCORELOG_LINE_LEN (119 + 1)
 
 static const char scorelog_magic[] = "#FREECIV SCORELOG2 ";
 
@@ -241,7 +248,7 @@ static void historian_generic(struct history_report *report,
   report->turn = game.info.turn;
   players_iterate(pplayer) {
     if (GOOD_PLAYER(pplayer)) {
-      switch(which_news) {
+      switch (which_news) {
       case HISTORIAN_RICHEST:
 	size[j].value = pplayer->economic.gold;
 	break;
@@ -319,76 +326,196 @@ static int nr_wonders(struct city *pcity)
 }
 
 /**********************************************************************//**
-  Send report listing the "best" 5 cities in the world.
+  Send report listing the "best" cities in the world.
 **************************************************************************/
-void report_top_five_cities(struct conn_list *dest)
+void report_top_cities(struct conn_list *dest)
 {
-  const int NUM_BEST_CITIES = 5;
-  /* a wonder equals WONDER_FACTOR citizen */
-  const int WONDER_FACTOR = 5;
-  struct city_score_entry size[NUM_BEST_CITIES];
-  int i;
-  char buffer[4096];
+  if (game.info.top_cities_count > 0) {
+    /* A wonder equals WONDER_FACTOR citizen */
+    const int WONDER_FACTOR = 5;
+    struct city_score_entry size[game.info.top_cities_count];
+    int i;
+    char header[256];
+    char buffer[4096];
 
-  for (i = 0; i < NUM_BEST_CITIES; i++) {
-    size[i].value = 0;
-    size[i].city = NULL;
-  }
+    for (i = 0; i < game.info.top_cities_count; i++) {
+      size[i].value = 0;
+      size[i].city = NULL;
+    }
 
-  shuffled_players_iterate(pplayer) {
-    city_list_iterate(pplayer->cities, pcity) {
-      int value_of_pcity = city_size_get(pcity)
-                           + nr_wonders(pcity) * WONDER_FACTOR;
+    shuffled_players_iterate(pplayer) {
+      city_list_iterate(pplayer->cities, pcity) {
+        int value_of_pcity = city_size_get(pcity)
+          + nr_wonders(pcity) * WONDER_FACTOR;
 
-      if (value_of_pcity > size[NUM_BEST_CITIES - 1].value) {
-        size[NUM_BEST_CITIES - 1].value = value_of_pcity;
-        size[NUM_BEST_CITIES - 1].city = pcity;
-        qsort(size, NUM_BEST_CITIES, sizeof(size[0]), secompare);
+        if (value_of_pcity > size[game.info.top_cities_count - 1].value) {
+          size[game.info.top_cities_count - 1].value = value_of_pcity;
+          size[game.info.top_cities_count - 1].city = pcity;
+          qsort(size, game.info.top_cities_count, sizeof(size[0]), secompare);
+        }
+      } city_list_iterate_end;
+    } shuffled_players_iterate_end;
+
+    buffer[0] = '\0';
+    for (i = 0; i < game.info.top_cities_count; i++) {
+      int wonders;
+
+      if (size[i].city == NULL) {
+        /*
+         * There are less than game.info.top_cities_count cities in
+         * the whole game.
+         */
+        break;
       }
-    } city_list_iterate_end;
-  } shuffled_players_iterate_end;
+
+      if (player_count() > team_count()) {
+        /* There exists a team with more than one member. */
+        char team_name[2 * MAX_LEN_NAME];
+
+        team_pretty_name(city_owner(size[i].city)->team, team_name,
+                         sizeof(team_name));
+        cat_snprintf(buffer, sizeof(buffer),
+                     /* TRANS:"The French City of Lyon (team 3) of size 18". */
+                     _("%2d: The %s City of %s (%s) of size %d, "), i + 1,
+                     nation_adjective_for_player(city_owner(size[i].city)),
+                     city_name_get(size[i].city), team_name,
+                     city_size_get(size[i].city));
+      } else {
+        cat_snprintf(buffer, sizeof(buffer),
+                     _("%2d: The %s City of %s of size %d, "), i + 1,
+                     nation_adjective_for_player(city_owner(size[i].city)),
+                     city_name_get(size[i].city), city_size_get(size[i].city));
+      }
+
+      wonders = nr_wonders(size[i].city);
+      if (wonders == 0) {
+        cat_snprintf(buffer, sizeof(buffer), _("with no Great Wonders\n"));
+      } else {
+        cat_snprintf(buffer, sizeof(buffer),
+                     PL_("with %d Great Wonder\n", "with %d Great Wonders\n",
+                         wonders),
+                     wonders);
+      }
+    }
+
+    fc_snprintf(header, sizeof(header),
+                PL_("The %d Greatest City in the World!",
+                    "The %d Greatest Cities in the World!",
+                    game.info.top_cities_count),
+                game.info.top_cities_count);
+    page_conn(dest, _("Traveler's Report:"), header, buffer);
+  }
+}
+
+/**********************************************************************//**
+  Send report listing all built and destroyed wonders, and wonders
+  currently being built.
+**************************************************************************/
+void report_wonders_of_the_world_long(struct conn_list *dest)
+{
+  char buffer[4096];
+  const char *separator = "\n";
+  struct strvec *wonderlist = strvec_new();
 
   buffer[0] = '\0';
-  for (i = 0; i < NUM_BEST_CITIES; i++) {
-    int wonders;
 
-    if (!size[i].city) {
-	/* 
-	 * pcity may be NULL if there are less then NUM_BEST_CITIES in
-	 * the whole game.
-	 */
-      break;
+  /* Sort by players and cities */
+  players_iterate(pplayer) {
+    city_list_iterate(pplayer->cities, pcity) {
+      int w = 0;
+
+      city_built_iterate(pcity, i) {
+        if (is_great_wonder(i)) {
+          w++;
+
+          if (player_count() > team_count()) {
+            /* There exists a team with more than one member. */
+            char team_name[2 * MAX_LEN_NAME];
+
+            team_pretty_name(city_owner(pcity)->team, team_name,
+                             sizeof(team_name));
+            cat_snprintf(buffer, sizeof(buffer),
+                         /* TRANS: "Colossus in Rhodes (Greek, team 2)". */
+                         _("%s in %s (%s, %s)\n"),
+                         city_improvement_name_translation(pcity, i),
+                         city_name_get(pcity),
+                         _(nation_adjective_for_player(pplayer)),
+                         team_name);
+          } else {
+            cat_snprintf(buffer, sizeof(buffer), _("%s in %s (%s)\n"),
+                         city_improvement_name_translation(pcity, i),
+                         city_name_get(pcity),
+                         _(nation_adjective_for_player(pplayer)));
+          }
+        } /* endif is_great_wonder */
+      } city_built_iterate_end;
+
+      if (w != 0) {
+        cat_snprintf(buffer, sizeof(buffer), "\n");
+      }
+    } city_list_iterate_end;
+  } players_iterate_end;
+
+  cat_snprintf(buffer, sizeof(buffer), "----------------------------\n");
+
+  /* Find destroyed wonders */
+  improvement_iterate(imp) {
+    if (is_great_wonder(imp)) {
+      if (great_wonder_is_destroyed(imp)) {
+        cat_snprintf(buffer, sizeof(buffer), _("%s has been DESTROYED\n"),
+                     improvement_name_translation(imp));
+      }
     }
+  } improvement_iterate_end;
 
-    if (player_count() > team_count()) {
-      /* There exists a team with more than one member. */
-      char team_name[2 * MAX_LEN_NAME];
+  /* Blank line */
+  cat_snprintf(buffer, sizeof(buffer), "----------------------------\n");
 
-      team_pretty_name(city_owner(size[i].city)->team, team_name,
-                       sizeof(team_name));
-      cat_snprintf(buffer, sizeof(buffer),
-                   /* TRANS:"The French City of Lyon (team 3) of size 18". */
-                   _("%2d: The %s City of %s (%s) of size %d, "), i + 1,
-                   nation_adjective_for_player(city_owner(size[i].city)),
-                   city_name_get(size[i].city), team_name,
-                   city_size_get(size[i].city));
-    } else {
-      cat_snprintf(buffer, sizeof(buffer),
-                   _("%2d: The %s City of %s of size %d, "), i + 1,
-                   nation_adjective_for_player(city_owner(size[i].city)),
-                   city_name_get(size[i].city), city_size_get(size[i].city));
+  /* Copy buffer into list before "building %s in ...."
+     because all "building %s" would be sorted at the same letter b */
+
+  strvec_from_str(wonderlist, *separator, buffer);
+
+  improvement_iterate(i) {
+    if (is_great_wonder(i)) {
+      players_iterate(pplayer) {
+        city_list_iterate(pplayer->cities, pcity) {
+          if (VUT_IMPROVEMENT == pcity->production.kind
+           && pcity->production.value.building == i) {
+            if (player_count() > team_count()) {
+              /* There exists a team with more than one member. */
+              char team_name[2 * MAX_LEN_NAME];
+
+              team_pretty_name(city_owner(pcity)->team, team_name,
+                               sizeof(team_name));
+              cat_snprintf(buffer, sizeof(buffer),
+                           /* TRANS: "([...] (Roman, team 4))". */
+                           _("(building %s in %s (%s, %s))\n"),
+                           improvement_name_translation(i), city_name_get(pcity),
+                           _(nation_adjective_for_player(pplayer)), team_name);
+            } else {
+              cat_snprintf(buffer, sizeof(buffer),
+                           _("(building %s in %s (%s))\n"),
+                           improvement_name_translation(i), city_name_get(pcity),
+                           _(nation_adjective_for_player(pplayer)));
+            }
+          }
+        } city_list_iterate_end;
+      } players_iterate_end;
     }
+  } improvement_iterate_end;
 
-    wonders = nr_wonders(size[i].city);
-    if (wonders == 0) {
-      cat_snprintf(buffer, sizeof(buffer), _("with no wonders\n"));
-    } else {
-      cat_snprintf(buffer, sizeof(buffer),
-		   PL_("with %d wonder\n", "with %d wonders\n", wonders),
-		   wonders);}
-  }
+  /* Show again all wonders, sorted alphabetically */
+  /* The separator line will be the first one, no need to add another one */
+  strvec_remove_duplicate(wonderlist, strcmp);
+  strvec_sort(wonderlist, compare_strings_strvec);
+
+  strvec_iterate(wonderlist,wonder) {
+    cat_snprintf(buffer, sizeof(buffer), "%s\n", wonder);
+  } strvec_iterate_end;
+
   page_conn(dest, _("Traveler's Report:"),
-	    _("The Five Greatest Cities in the World!"), buffer);
+            _("Wonders of the World"), buffer);
 }
 
 /**********************************************************************//**
@@ -466,7 +593,7 @@ void report_wonders_of_the_world(struct conn_list *dest)
 }
 
 /**************************************************************************
- Helper functions which return the value for the given player.
+  Helper functions which return the value for the given player.
 **************************************************************************/
 
 /**********************************************************************//**
@@ -546,7 +673,7 @@ static int get_pollution(const struct player *pplayer)
 **************************************************************************/
 static int get_mil_service(const struct player *pplayer)
 {
-  return (pplayer->score.units * 5000) / (10 + civ_population(pplayer));
+  return (pplayer->score.units * 5000) / (10 + pplayer->score.population);
 }
 
 /**********************************************************************//**
@@ -572,9 +699,9 @@ static int get_munits(const struct player *pplayer)
 {
   int result = 0;
 
-  /* count up military units */
+  /* Count up military units */
   unit_list_iterate(pplayer->units, punit) {
-    if (is_military_unit(punit)) {
+    if (!is_special_unit(punit)) {
       result++;
     }
   } unit_list_iterate_end;
@@ -656,6 +783,14 @@ static int get_units_killed(const struct player *pplayer)
 static int get_units_lost(const struct player *pplayer)
 {
   return pplayer->score.units_lost;
+}
+
+/**********************************************************************//**
+  Number of units used
+**************************************************************************/
+static int get_units_used(const struct player *pplayer)
+{
+  return pplayer->score.units_used;
 }
 
 /**********************************************************************//**
@@ -923,7 +1058,7 @@ static void dem_line_item(char *outptr, size_t out_size,
     } players_iterate_end;
 
     if (NULL == pplayer
-        || (player_has_embassy(pplayer, best_player)
+        || (team_has_embassy(pplayer->team, best_player)
             && (pplayer != best_player))) {
       cat_snprintf(outptr, out_size, "   %s: %s",
 		   nation_plural_for_player(best_player),
@@ -991,7 +1126,7 @@ void report_demographics(struct connection *pconn)
 {
   char civbuf[1024];
   char buffer[4096];
-  unsigned int i;
+  int i;
   bool anyrows;
   bv_cols selcols;
   int numcols = 0;
@@ -1123,7 +1258,13 @@ static bool scan_score_log(char *id)
 {
   int line_nr, turn, plr_no, spaces;
   struct plrdata_slot *plrdata;
-  char plr_name[MAX_LEN_NAME], line[120], *ptr;
+  char line[MAX_SCORELOG_LINE_LEN], *ptr;
+
+  /* Must be big enough to contain any string there might be in "addplayer" line
+   * to read.
+   * Could have even strlen("addplayer 0 0 "), but maintenance not worth
+   * saving couple of bytes. */
+  char plr_name[MAX(MAX_LEN_NAME, MAX_SCORELOG_LINE_LEN - strlen("addplayer "))];
 
   fc_assert_ret_val(score_log != NULL, FALSE);
   fc_assert_ret_val(score_log->fp != NULL, FALSE);
@@ -1182,6 +1323,8 @@ static bool scan_score_log(char *id)
     }
 
     if (strncmp(line, "addplayer ", strlen("addplayer ")) == 0) {
+      /* If you change this, be sure to adjust plr_name buffer size to
+       * match longest possible string read. */
       if (3 != sscanf(line + strlen("addplayer "), "%d %d %s",
                       &turn, &plr_no, plr_name)) {
         log_error("[%s:%d] Bad line (addplayer)!",
@@ -1364,7 +1507,9 @@ void log_civ_score_now(void)
     {"unitskilled",     get_units_killed},
     {"unitslost",       get_units_lost},
 
-    {"culture",         get_culture}      /* New tag in 2.6.0. */
+    {"culture",         get_culture},     /* New tag in 2.6.0. */
+
+    {"unitsused",       get_units_used}   /* New tag in 3.2.0. */
   };
 
   if (!game.server.scorelog) {
@@ -1376,7 +1521,7 @@ void log_civ_score_now(void)
   }
 
   if (!score_log->fp) {
-    if (game.info.year == GAME_START_YEAR) {
+    if (game.info.year == game.server.start_year) {
       oper = SL_CREATE;
     } else {
       score_log->fp = fc_fopen(game.server.scorefile, "r");
@@ -1450,12 +1595,16 @@ void log_civ_score_now(void)
 
   players_iterate(pplayer) {
     struct plrdata_slot *plrdata = score_log->plrdata + player_index(pplayer);
+
     if (plrdata->name == NULL && GOOD_PLAYER(pplayer)) {
       switch (game.server.scoreloglevel) {
       case SL_HUMANS:
         if (is_ai(pplayer)) {
           break;
         }
+
+        fc__fallthrough; /* No break - continue to actual implementation
+                          * in SL_ALL case if reached here */
       case SL_ALL:
         fprintf(score_log->fp, "addplayer %d %d %s\n", game.info.turn,
               player_number(pplayer), player_name(pplayer));
@@ -1474,6 +1623,9 @@ void log_civ_score_now(void)
           /* If a human player toggled into AI mode, don't break. */
           break;
         }
+
+        fc__fallthrough; /* No break - continue to actual implementation
+                          * in SL_ALL case if reached here */
       case SL_ALL:
         if (strcmp(plrdata->name, player_name(pplayer)) != 0) {
           log_debug("player names does not match '%s' != '%s'", plrdata->name,
@@ -1560,6 +1712,7 @@ void report_final_scores(struct conn_list *dest)
     { N_("Built Units\n"),              get_units_built },
     { N_("Killed Units\n"),             get_units_killed },
     { N_("Unit Losses\n"),              get_units_lost },
+    { N_("Units Used\n"),               get_units_used },
   };
   const size_t score_categories_num = ARRAY_SIZE(score_categories);
 
@@ -1580,7 +1733,7 @@ void report_final_scores(struct conn_list *dest)
 
   i = 0;
   players_iterate(pplayer) {
-    if (is_barbarian(pplayer) == FALSE) {
+    if (!is_barbarian(pplayer)) {
       size[i].value = pplayer->score.game;
       size[i].player = pplayer;
       i++;
@@ -1613,11 +1766,11 @@ void report_final_scores(struct conn_list *dest)
 /**********************************************************************//**
   This function pops up a non-modal message dialog on the player's desktop
 **************************************************************************/
-void page_conn(struct conn_list *dest, const char *caption, 
-	       const char *headline, const char *lines) {
+static void page_conn(struct conn_list *dest, const char *caption,
+                      const char *headline, const char *lines)
+{
   page_conn_etype(dest, caption, headline, lines, E_REPORT);
 }
-
 
 /**********************************************************************//**
   This function pops up a non-modal message dialog on the player's desktop

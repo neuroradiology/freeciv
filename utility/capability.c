@@ -39,7 +39,7 @@
   }
 
 /***********************************************************************//**
-  This routine returns true if the capability in cap appears
+  This routine returns TRUE if the capability in cap appears
   in the capability list in capstr.  The capabilities in capstr
   are allowed to start with a "+", but the capability in cap must not.
 ***************************************************************************/
@@ -56,14 +56,18 @@ static bool fc_has_capability(const char *cap, const char *capstr,
     if (*capstr == '+') {
       capstr++;
     }
-    if ((next-capstr == cap_len) && strncmp(cap, capstr, cap_len)==0) {
+
+    fc_assert(next >= capstr);
+
+    if (((size_t)(next - capstr) == cap_len)
+        && strncmp(cap, capstr, cap_len) == 0) {
       return TRUE;
     }
     if (*next == '\0') {
       return FALSE;
     }
 
-    capstr = next+1;
+    capstr = next + 1;
   }
 }
 
@@ -76,7 +80,7 @@ bool has_capability(const char *cap, const char *capstr)
 }
 
 /***********************************************************************//**
-  This routine returns true if all the mandatory capabilities in
+  This routine returns TRUE if all the mandatory capabilities in
   us appear in them.
 ***************************************************************************/
 bool has_capabilities(const char *us, const char *them)

@@ -16,10 +16,8 @@ AM_CPPFLAGS = \
 libdefaultai_la_SOURCES = \
 		aiair.c		\
 		aiair.h		\
-		aicity.c	\
-		aicity.h	\
-		aidata.c	\
-		aidata.h	\
+		aidiplomat.c	\
+		aidiplomat.h	\
 		aiferry.c	\
 		aiferry.h	\
 		aiguard.c	\
@@ -28,30 +26,34 @@ libdefaultai_la_SOURCES = \
 		aihand.h	\
 		aihunt.c	\
 		aihunt.h	\
-		ailog.c		\
-		ailog.h		\
 		aiparatrooper.c \
 		aiparatrooper.h \
-		aiplayer.c	\
-		aiplayer.h	\
-		aisettler.c	\
-		aisettler.h	\
 		aitech.c	\
 		aitech.h	\
 		aitools.c	\
 		aitools.h	\
-		aiunit.c	\
-		aiunit.h	\
-		aidiplomat.c	\
-		aidiplomat.h	\
+		daiactions.c	\
+		daiactions.h	\
+		daicity.c	\
+		daicity.h	\
+		daidata.c	\
+		daidata.h	\
 		daidiplomacy.c	\
 		daidiplomacy.h	\
 		daidomestic.c	\
 		daidomestic.h	\
 		daieffects.c	\
 		daieffects.h	\
+		dailog.c	\
+		dailog.h	\
 		daimilitary.c	\
-		daimilitary.h
+		daimilitary.h	\
+		daiplayer.c	\
+		daiplayer.h	\
+		daisettler.c	\
+		daisettler.h	\
+		daiunit.c	\
+		daiunit.h
 
 
 libdefaultai_la_LIBADD = -lm

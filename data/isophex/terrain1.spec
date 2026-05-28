@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -124,7 +124,7 @@ tiles = { "row", "column","tag"
   4,    5, "tx.fallout"
   4,    6, "tx.pollution"
   4,    7, "tx.village"
- 
+
 ; misc
 
   5,    0, "t.coast_color"
@@ -134,7 +134,7 @@ tiles = { "row", "column","tag"
   5,    0, "t.blend.ocean"
   5,    1, "t.dither_tile"
   5,    1, "tx.darkness"
-  5,    3, "user.attention"
+  5,    3, "user.attention", "user.infratile"
   5,    4, "tx.fog"
   5,    5, "mask.tile"
 

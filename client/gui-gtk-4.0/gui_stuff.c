@@ -55,33 +55,24 @@ void gtk_expose_now(GtkWidget *w)
 }
 
 /**********************************************************************//**
-  Set window position relative to reference window
-**************************************************************************/
-void set_relative_window_position(GtkWindow *ref, GtkWindow *w, int px, int py)
-{
-  gint x, y, width, height;
+  Create new icon button with label.
 
-  gtk_window_get_position(ref, &x, &y);
-  gtk_window_get_size(ref, &width, &height);
-
-  x += px * width / 100;
-  y += py * height / 100;
-
-  gtk_window_move(w, x, y);
-}
-
-/**********************************************************************//**
-  Create new icon button with label
+  Current implementation sets either icon or label, preferring label,
+  never both. Caller should not rely on that, though.
 **************************************************************************/
 GtkWidget *icon_label_button_new(const gchar *icon_name,
                                  const gchar *label_text)
 {
   GtkWidget *button;
 
-  button = gtk_button_new_with_mnemonic(label_text);
+  fc_assert(icon_name != NULL || label_text != NULL);
 
-  if (icon_name != NULL) {
-    gtk_button_set_icon_name(GTK_BUTTON(button), icon_name);
+  if (label_text != NULL) {
+    button = gtk_button_new_with_mnemonic(label_text);
+  } else if (icon_name != NULL) {
+    button = gtk_button_new_from_icon_name(icon_name);
+  } else {
+    button = NULL;
   }
 
   return button;
@@ -182,7 +173,7 @@ void tstore_append(GtkTreeStore *store, ITree *it, ITree *parent)
 }
 
 /**********************************************************************//**
-  Return whether current itree item is selected 
+  Return whether current itree item is selected
 **************************************************************************/
 gboolean itree_is_selected(GtkTreeSelection *selection, ITree *it)
 {
@@ -249,31 +240,19 @@ void gtk_tree_view_focus(GtkTreeView *view)
   Create an auxiliary menubar (i.e., not the main menubar at the top of
   the window).
 **************************************************************************/
-GtkWidget *gtk_aux_menu_bar_new(void)
+GtkWidget *aux_menu_new(void)
 {
-  GtkWidget *menubar = gtk_menu_bar_new();
+  GtkWidget *menu_button = gtk_menu_button_new();
 
-  /*
-   * Ubuntu Linux's Ayatana/Unity desktop environment likes to steal the
-   * application's main menu bar from its window and put it at the top of
-   * the screen. It needs a hint in order not to steal menu bars other
-   * than the main one. Gory details at
-   * https://bugs.launchpad.net/ubuntu/+source/freeciv/+bug/743265
-   */
-  if (g_object_class_find_property(
-        G_OBJECT_CLASS(GTK_MENU_BAR_GET_CLASS(menubar)), "ubuntu-local")) {
-    g_object_set(G_OBJECT(menubar), "ubuntu-local", TRUE, NULL);
-  }
-
-  return menubar;
+  return menu_button;
 }
 
 /**********************************************************************//**
-  Generic close callback for all widgets
+  Generic close callback for all dialogs
 **************************************************************************/
 static void close_callback(GtkDialog *dialog, gpointer data)
 {
-  gtk_widget_destroy(GTK_WIDGET(dialog));
+  gtk_window_destroy(GTK_WINDOW(dialog));
 }
 
 /**********************************************************************//**
@@ -286,15 +265,19 @@ void setup_dialog(GtkWidget *shell, GtkWidget *parent)
   if (GUI_GTK_OPTION(dialogs_on_top) || GUI_GTK_OPTION(fullscreen)) {
     gtk_window_set_transient_for(GTK_WINDOW(shell),
                                  GTK_WINDOW(parent));
-    gtk_window_set_type_hint(GTK_WINDOW(shell),
-                             GDK_WINDOW_TYPE_HINT_DIALOG);
-  } else {
-    gtk_window_set_type_hint(GTK_WINDOW(shell),
-                             GDK_WINDOW_TYPE_HINT_NORMAL);
   }
 
   /* Close dialog window on Escape keypress. */
   if (GTK_IS_DIALOG(shell)) {
+    GtkEventController *controller;
+
+    controller = GTK_EVENT_CONTROLLER(gtk_event_controller_focus_new());
+    g_signal_connect(controller, "enter",
+                     G_CALLBACK(fc_gained_focus), NULL);
+    g_signal_connect(controller, "leave",
+                     G_CALLBACK(fc_lost_focus), NULL);
+    gtk_widget_add_controller(shell, controller);
+
     g_signal_connect_after(shell, "close", G_CALLBACK(close_callback), shell);
   }
 }
@@ -364,14 +347,13 @@ static void gui_dialog_destroy_handler(GtkWidget *w, struct gui_dialog *dlg)
   needs to know when a deletion took place.
   Popup dialog version
 **************************************************************************/
-static gint gui_dialog_delete_handler(GtkWidget *widget,
-                                      GdkEventAny *ev, gpointer data)
+static gint gui_dialog_delete_handler(GtkWidget *widget, gpointer data)
 {
   struct gui_dialog *dlg = data;
 
   /* emit response signal. */
   gui_dialog_response(dlg, GTK_RESPONSE_DELETE_EVENT);
-                                                                               
+
   /* do the destroy by default. */
   return FALSE;
 }
@@ -391,7 +373,7 @@ static gint gui_dialog_delete_tab_handler(struct gui_dialog* dlg)
   if (gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), n)
       != dlg->v.tab.child) {
     gui_dialog_set_return_dialog(dlg, NULL);
-  }			                                  
+  }
 
   /* emit response signal. */
   gui_dialog_response(dlg, GTK_RESPONSE_DELETE_EVENT);
@@ -404,29 +386,20 @@ static gint gui_dialog_delete_tab_handler(struct gui_dialog* dlg)
 /**********************************************************************//**
   Allow the user to close a dialog using Escape or CTRL+W.
 **************************************************************************/
-static gboolean gui_dialog_key_press_handler(GtkWidget *w, GdkEvent *ev,
+static gboolean gui_dialog_key_press_handler(GtkEventControllerKey *controller,
+                                             guint keyval, guint keycode,
+                                             GdkModifierType state,
                                              gpointer data)
 {
-  GdkEventType type;
-  struct gui_dialog *dlg = data;
-  guint keyval;
-  GdkModifierType state;
-
-  type = gdk_event_get_event_type(ev);
-  if (type != GDK_KEY_PRESS) {
-    return FALSE;
-  }
-
-  gdk_event_get_keyval(ev, &keyval);
-  gdk_event_get_state(ev, &state);
+  struct gui_dialog *dlg = (struct gui_dialog *)data;
 
   if (keyval == GDK_KEY_Escape
       || ((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_w)) {
-    /* emit response signal. */
+    /* Emit response signal. */
     gui_dialog_response(dlg, GTK_RESPONSE_DELETE_EVENT);
   }
 
-  /* propagate event further. */
+  /* Propagate event further. */
   return FALSE;
 }
 
@@ -440,18 +413,20 @@ static void gui_dialog_switch_page_handler(GtkNotebook *notebook,
 {
   gint n;
 
-  n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->vbox);
+  n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->grid);
 
   if (n == num) {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(dlg->v.tab.label),
-                                   "alert");
+    GtkStyleContext *context = gtk_widget_get_style_context(dlg->v.tab.label);
+
+    gtk_style_context_remove_class(context, "alert");
+    gtk_style_context_remove_class(context, "notice");
   }
 }
 
 /**********************************************************************//**
   Changes a tab into a window.
 **************************************************************************/
-static void gui_dialog_detach(struct gui_dialog* dlg)
+static void gui_dialog_detach(struct gui_dialog *dlg)
 {
   gint n;
   GtkWidget *window, *notebook;
@@ -464,54 +439,43 @@ static void gui_dialog_detach(struct gui_dialog* dlg)
 
   /* Create a new reference to the main widget, so it won't be
    * destroyed in gtk_notebook_remove_page() */
-  g_object_ref(dlg->vbox);
+  g_object_ref(dlg->grid);
 
   /* Remove widget from the notebook */
   notebook = dlg->v.tab.notebook;
   handler_id = dlg->v.tab.handler_id;
   g_signal_handler_disconnect(notebook, handler_id);
 
-  n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->vbox);
+  n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->grid);
   gtk_notebook_remove_page(GTK_NOTEBOOK(dlg->v.tab.notebook), n);
 
 
   /* Create window and put the widget inside */
-  window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  window = gtk_window_new();
   gtk_window_set_title(GTK_WINDOW(window), dlg->title);
   setup_dialog(window, toplevel);
 
-  gtk_container_add(GTK_CONTAINER(window), dlg->vbox);
+  gtk_window_set_child(GTK_WINDOW(window), dlg->grid);
   dlg->v.window = window;
-  g_signal_connect(window, "delete_event",
+  g_signal_connect(window, "close-request",
                    G_CALLBACK(gui_dialog_delete_handler), dlg);
 
   gtk_window_set_default_size(GTK_WINDOW(dlg->v.window),
                               dlg->default_width,
-                              dlg->default_height);    
+                              dlg->default_height);
   gtk_widget_show(window);
 }
 
 /**********************************************************************//**
   Someone has clicked on a label in a notebook
 **************************************************************************/
-static gboolean click_on_tab_callback(GtkWidget *w,
-                                      GdkEvent *button,
-                                      gpointer data)
+static gboolean click_on_tab_callback(GtkGestureClick *gesture,
+                                      int n_press,
+                                      double x, double y, gpointer data)
 {
-  GdkEventType type;
-  guint button_number;
-
-  type = gdk_event_get_event_type(button);
-  if (type != GDK_BUTTON_PRESS) {
-    return FALSE;
+  if (n_press == 2) {
+    gui_dialog_detach((struct gui_dialog *)data);
   }
-
-  gdk_event_get_button(button, &button_number);
-
-  if (button_number != 1) {
-    return FALSE;
-  }
-  gui_dialog_detach((struct gui_dialog*) data);
 
   return TRUE;
 }
@@ -528,8 +492,9 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
                     gpointer user_data, bool check_top)
 {
   struct gui_dialog *dlg;
-  GtkWidget *vbox, *action_area;
+  GtkWidget *action_area;
   static int dialog_id_counter;
+  GtkEventController *controller;
 
   dlg = fc_malloc(sizeof(*dlg));
   dialog_list = g_list_prepend(dialog_list, dlg);
@@ -553,32 +518,32 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
   }
   dlg->gui_button = gtk_size_group_new(GTK_SIZE_GROUP_BOTH);
 
-  vbox = gtk_grid_new();
-  action_area = gtk_grid_new();
-  gtk_grid_set_row_spacing(GTK_GRID(action_area), 4);
-  gtk_grid_set_column_spacing(GTK_GRID(action_area), 4);
+  dlg->grid = gtk_grid_new();
+  dlg->content_counter = 0;
   if (GUI_GTK_OPTION(enable_tabs)
       && (check_top && notebook != GTK_NOTEBOOK(top_notebook))
       && !GUI_GTK_OPTION(small_display_layout)) {
     /* We expect this to be short (as opposed to tall); maximise usable
      * height by putting buttons down the right hand side */
-    gtk_orientable_set_orientation(GTK_ORIENTABLE(action_area),
-                                   GTK_ORIENTATION_VERTICAL);
+    action_area = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    dlg->vertical_content = FALSE;
   } else {
     /* We expect this to be reasonably tall; maximise usable width by
      * putting buttons along the bottom */
-    gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+    action_area = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(dlg->grid),
                                    GTK_ORIENTATION_VERTICAL);
+    dlg->vertical_content = TRUE;
   }
 
-  gtk_widget_show(vbox);
-  gtk_container_add(GTK_CONTAINER(vbox), action_area);
+  gtk_widget_show(dlg->grid);
+  gui_dialog_add_content_widget(dlg, action_area);
   gtk_widget_show(action_area);
 
-  gtk_widget_set_margin_start(vbox, 2);
-  gtk_widget_set_margin_end(vbox, 2);
-  gtk_widget_set_margin_top(vbox, 2);
-  gtk_widget_set_margin_bottom(vbox, 2);
+  gtk_widget_set_margin_start(dlg->grid, 2);
+  gtk_widget_set_margin_end(dlg->grid, 2);
+  gtk_widget_set_margin_top(dlg->grid, 2);
+  gtk_widget_set_margin_bottom(dlg->grid, 2);
 
   gtk_widget_set_margin_start(action_area, 2);
   gtk_widget_set_margin_end(action_area, 2);
@@ -590,14 +555,13 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
     {
       GtkWidget *window;
 
-      window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+      window = gtk_window_new();
       gtk_widget_set_name(window, "Freeciv");
-      gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_MOUSE);
       setup_dialog(window, toplevel);
 
-      gtk_container_add(GTK_CONTAINER(window), vbox);
+      gtk_window_set_child(GTK_WINDOW(window), dlg->grid);
       dlg->v.window = window;
-      g_signal_connect(window, "delete_event",
+      g_signal_connect(window, "close-request",
         G_CALLBACK(gui_dialog_delete_handler), dlg);
 
     }
@@ -607,7 +571,7 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       GtkWidget *hbox, *label, *button;
       gchar *buf;
 
-      hbox = gtk_grid_new();
+      hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 
       label = gtk_label_new(NULL);
       gtk_widget_set_halign(label, GTK_ALIGN_START);
@@ -616,10 +580,10 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       gtk_widget_set_margin_end(label, 4);
       gtk_widget_set_margin_top(label, 0);
       gtk_widget_set_margin_bottom(label, 0);
-      gtk_container_add(GTK_CONTAINER(hbox), label);
+      gtk_box_append(GTK_BOX(hbox), label);
 
       button = gtk_button_new();
-      gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
+      gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
       g_signal_connect_swapped(button, "clicked",
                                G_CALLBACK(gui_dialog_delete_tab_handler), dlg);
 
@@ -629,15 +593,15 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
 
       gtk_button_set_icon_name(GTK_BUTTON(button), "window-close");
 
-      gtk_container_add(GTK_CONTAINER(hbox), button);
+      gtk_box_append(GTK_BOX(hbox), button);
 
       gtk_widget_show(hbox);
 
-      gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, hbox);
+      gtk_notebook_append_page(GTK_NOTEBOOK(notebook), dlg->grid, hbox);
       dlg->v.tab.handler_id =
         g_signal_connect(notebook, "switch-page",
                          G_CALLBACK(gui_dialog_switch_page_handler), dlg);
-      dlg->v.tab.child = vbox;
+      dlg->v.tab.child = dlg->grid;
 
       gtk_style_context_add_provider(gtk_widget_get_style_context(label),
                                      GTK_STYLE_PROVIDER(dlg_tab_provider),
@@ -645,14 +609,15 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       dlg->v.tab.label = label;
       dlg->v.tab.notebook = GTK_WIDGET(notebook);
 
-      g_signal_connect(hbox, "button-press-event",
+      controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+      g_signal_connect(controller, "pressed",
                        G_CALLBACK(click_on_tab_callback), dlg);
+      gtk_widget_add_controller(hbox, controller);
     }
     break;
   }
 
-  dlg->vbox = vbox;
-  dlg->action_area = action_area;
+  dlg->actions = action_area;
 
   dlg->response_callback = gui_dialog_destroyed;
 
@@ -660,12 +625,14 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
   dialog_id_counter++;
   dlg->return_dialog_id = -1;
 
-  g_signal_connect(vbox, "destroy",
+  g_signal_connect(dlg->grid, "destroy",
                    G_CALLBACK(gui_dialog_destroy_handler), dlg);
-  g_signal_connect(vbox, "key_press_event",
-      G_CALLBACK(gui_dialog_key_press_handler), dlg);
+  controller = gtk_event_controller_key_new();
+  g_signal_connect(controller, "key-pressed",
+                   G_CALLBACK(gui_dialog_key_press_handler), dlg);
+  gtk_widget_add_controller(dlg->grid, controller);
 
-  g_object_set_data(G_OBJECT(vbox), "gui-dialog-data", dlg);
+  g_object_set_data(G_OBJECT(dlg->grid), "gui-dialog-data", dlg);
 }
 
 /**********************************************************************//**
@@ -698,12 +665,11 @@ static void gui_dialog_pack_button(struct gui_dialog *dlg, GtkWidget *button,
     GClosure *closure;
 
     closure = g_cclosure_new_object(G_CALLBACK(action_widget_activated),
-	G_OBJECT(dlg->vbox));
+                                    G_OBJECT(dlg->grid));
     g_signal_connect_closure_by_id(button, signal_id, 0, closure, FALSE);
   }
 
-  gtk_container_add(GTK_CONTAINER(dlg->action_area), button);
-  gtk_size_group_add_widget(gui_action, button);
+  gui_dialog_add_action_widget(dlg, button);
   gtk_size_group_add_widget(dlg->gui_button, button);
 }
 
@@ -717,7 +683,6 @@ GtkWidget *gui_dialog_add_button(struct gui_dialog *dlg,
   GtkWidget *button;
 
   button = icon_label_button_new(icon_name, text);
-  gtk_widget_set_can_default(button, TRUE);
   gui_dialog_pack_button(dlg, button, response);
 
   return button;
@@ -726,39 +691,14 @@ GtkWidget *gui_dialog_add_button(struct gui_dialog *dlg,
 /**********************************************************************//**
   Adds a widget to a dialog.
 **************************************************************************/
-GtkWidget *gui_dialog_add_widget(struct gui_dialog *dlg,
-                                 GtkWidget *widget)
+GtkWidget *gui_dialog_add_action_widget(struct gui_dialog *dlg,
+                                        GtkWidget *widget)
 {
-  gtk_container_add(GTK_CONTAINER(dlg->action_area), widget);
+  gtk_box_append(GTK_BOX(dlg->actions), widget);
+
   gtk_size_group_add_widget(gui_action, widget);
 
   return widget;
-}
-
-/**********************************************************************//**
-  Changes the default dialog response.
-**************************************************************************/
-void gui_dialog_set_default_response(struct gui_dialog *dlg, int response)
-{
-  GList *children;
-  GList *list;
-
-  children = gtk_container_get_children(GTK_CONTAINER(dlg->action_area));
-
-  for (list = children; list; list = g_list_next(list)) {
-    GtkWidget *button = list->data;
-
-    if (GTK_IS_BUTTON(button)) {
-      gpointer data = g_object_get_data(G_OBJECT(button),
-	  "gui-dialog-response-data");
-
-      if (response == GPOINTER_TO_INT(data)) {
-	gtk_widget_grab_default(button);
-      }
-    }
-  }
-
-  g_list_free(children);
 }
 
 /**********************************************************************//**
@@ -767,25 +707,20 @@ void gui_dialog_set_default_response(struct gui_dialog *dlg, int response)
 void gui_dialog_set_response_sensitive(struct gui_dialog *dlg,
                                        int response, bool setting)
 {
-  GList *children;
-  GList *list;
+  GtkWidget *iter;
 
-  children = gtk_container_get_children(GTK_CONTAINER(dlg->action_area));
-
-  for (list = children; list; list = g_list_next(list)) {
-    GtkWidget *button = list->data;
-
-    if (GTK_IS_BUTTON(button)) {
-      gpointer data = g_object_get_data(G_OBJECT(button),
+  for (iter = gtk_widget_get_first_child(dlg->actions);
+       iter != NULL;
+       iter = gtk_widget_get_next_sibling(iter)) {
+    if (GTK_IS_BUTTON(iter)) {
+      gpointer data = g_object_get_data(G_OBJECT(iter),
 	  "gui-dialog-response-data");
 
       if (response == GPOINTER_TO_INT(data)) {
-	gtk_widget_set_sensitive(button, setting);
+	gtk_widget_set_sensitive(iter, setting);
       }
     }
   }
-
-  g_list_free(children);
 }
 
 /**********************************************************************//**
@@ -793,7 +728,7 @@ void gui_dialog_set_response_sensitive(struct gui_dialog *dlg,
 **************************************************************************/
 GtkWidget *gui_dialog_get_toplevel(struct gui_dialog *dlg)
 {
-  return gtk_widget_get_toplevel(dlg->vbox);
+  return gtk_widget_get_ancestor(dlg->grid, GTK_TYPE_WINDOW);
 }
 
 /**********************************************************************//**
@@ -801,22 +736,19 @@ GtkWidget *gui_dialog_get_toplevel(struct gui_dialog *dlg)
 **************************************************************************/
 void gui_dialog_show_all(struct gui_dialog *dlg)
 {
-  gtk_widget_show(dlg->vbox);
+  gtk_widget_show(dlg->grid);
 
   if (dlg->type == GUI_DIALOG_TAB) {
-    GList *children;
-    GList *list;
+    GtkWidget *iter;
     gint num_visible = 0;
 
-    children = gtk_container_get_children(GTK_CONTAINER(dlg->action_area));
-
-    for (list = children; list; list = g_list_next(list)) {
-      GtkWidget *button = list->data;
-
-      if (!GTK_IS_BUTTON(button)) {
+    for (iter = gtk_widget_get_first_child(dlg->actions);
+         iter != NULL;
+         iter = gtk_widget_get_next_sibling(iter)) {
+      if (!GTK_IS_BUTTON(iter)) {
 	num_visible++;
       } else {
-	gpointer data = g_object_get_data(G_OBJECT(button),
+	gpointer data = g_object_get_data(G_OBJECT(iter),
 	    "gui-dialog-response-data");
 	int response = GPOINTER_TO_INT(data);
 
@@ -824,14 +756,13 @@ void gui_dialog_show_all(struct gui_dialog *dlg)
 	    && response != GTK_RESPONSE_CANCEL) {
 	  num_visible++;
 	} else {
-	  gtk_widget_hide(button);
+	  gtk_widget_hide(iter);
 	}
       }
     }
-    g_list_free(children);
 
     if (num_visible == 0) {
-      gtk_widget_hide(dlg->action_area);
+      gtk_widget_hide(dlg->actions);
     }
   }
 }
@@ -853,13 +784,13 @@ void gui_dialog_present(struct gui_dialog *dlg)
       gint current, n;
 
       current = gtk_notebook_get_current_page(notebook);
-      n = gtk_notebook_page_num(notebook, dlg->vbox);
+      n = gtk_notebook_page_num(notebook, dlg->grid);
 
       if (current != n) {
 	GtkWidget *label = dlg->v.tab.label;
 
         gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+                                    "notice");
       }
     }
     break;
@@ -882,7 +813,7 @@ void gui_dialog_raise(struct gui_dialog *dlg)
       GtkNotebook *notebook = GTK_NOTEBOOK(dlg->v.tab.notebook);
       gint n;
 
-      n = gtk_notebook_page_num(notebook, dlg->vbox);
+      n = gtk_notebook_page_num(notebook, dlg->grid);
       gtk_notebook_set_current_page(notebook, n);
     }
     break;
@@ -905,13 +836,15 @@ void gui_dialog_alert(struct gui_dialog *dlg)
       gint current, n;
 
       current = gtk_notebook_get_current_page(notebook);
-      n = gtk_notebook_page_num(notebook, dlg->vbox);
+      n = gtk_notebook_page_num(notebook, dlg->grid);
 
       if (current != n) {
         GtkWidget *label = dlg->v.tab.label;
+        GtkStyleContext *context = gtk_widget_get_style_context(label);
 
-        gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+        /* Have only alert - remove notice if it exist. */
+        gtk_style_context_remove_class(context, "notice");
+        gtk_style_context_add_class(context, "alert");
       }
     }
     break;
@@ -960,13 +893,13 @@ void gui_dialog_destroy(struct gui_dialog *dlg)
 {
   switch (dlg->type) {
   case GUI_DIALOG_WINDOW:
-    gtk_widget_destroy(dlg->v.window);
+    gtk_window_destroy(GTK_WINDOW(dlg->v.window));
     break;
   case GUI_DIALOG_TAB:
     {
       gint n;
 
-      n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->vbox);
+      n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->grid);
       gtk_notebook_remove_page(GTK_NOTEBOOK(dlg->v.tab.notebook), n);
     }
     break;
@@ -1061,8 +994,8 @@ void gui_update_font(const char *font_name, const char *font_value)
   provider = gtk_css_provider_new();
   gtk_css_provider_load_from_data(GTK_CSS_PROVIDER(provider),
                                   str, -1);
-  gtk_style_context_add_provider_for_screen(
-    gtk_widget_get_screen(toplevel), GTK_STYLE_PROVIDER(provider),
+  gtk_style_context_add_provider_for_display(
+    gtk_widget_get_display(toplevel), GTK_STYLE_PROVIDER(provider),
     GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   g_free(str);
 }
@@ -1159,6 +1092,76 @@ void dlg_tab_provider_prepare(void)
   gtk_css_provider_load_from_data(dlg_tab_provider,
                                   ".alert {\n"
                                   "color: rgba(255, 0, 0, 255);\n"
+                                  "}\n"
+                                  ".notice {\n"
+                                  "color: rgba(0, 0, 255, 255);\n"
                                   "}\n",
                                   -1);
+}
+
+/**********************************************************************//**
+  Add widget to the gui_dialog grid
+**************************************************************************/
+void gui_dialog_add_content_widget(struct gui_dialog *dlg, GtkWidget *wdg)
+{
+  if (dlg->vertical_content) {
+    gtk_grid_attach(GTK_GRID(dlg->grid), wdg,
+                    0, dlg->content_counter++, 1, 1);
+  } else {
+    gtk_grid_attach(GTK_GRID(dlg->grid), wdg,
+                    dlg->content_counter++, 0, 1, 1);
+  }
+}
+
+struct blocking_dialog_data {
+  GMainLoop *loop;
+  gint response;
+};
+
+/**********************************************************************//**
+  Received a response to a blocking dialog
+**************************************************************************/
+static void blocking_dialog_response(GtkWidget *dlg, gint response, void *data)
+{
+  struct blocking_dialog_data *bd_data = (struct blocking_dialog_data *)data;
+
+  bd_data->response = response;
+
+  g_main_loop_quit(bd_data->loop);
+}
+
+/**********************************************************************//**
+  Present a blocking dialog and wait for response
+**************************************************************************/
+gint blocking_dialog(GtkWidget *dlg)
+{
+  struct blocking_dialog_data data;
+  GMainLoop *dlg_loop;
+
+  gtk_widget_show(dlg);
+  dlg_loop = g_main_loop_new(NULL, FALSE);
+  data.loop = dlg_loop;
+  g_signal_connect(dlg, "response", G_CALLBACK(blocking_dialog_response),
+                   &data);
+
+  g_main_loop_run(dlg_loop);
+
+  return data.response;
+}
+
+/**********************************************************************//**
+  Nullify GtkWidget pointer when widget is destroyed
+**************************************************************************/
+void widget_destroyed(GtkWidget *wdg, void *data)
+{
+  *(GtkWidget **)data = NULL;
+}
+
+/**********************************************************************//**
+  Get child widget for a widget whose own type is not known
+  (without further GTK_IS_...() checks) in the caller side.
+**************************************************************************/
+GtkWidget *widget_get_child(GtkWidget *wdg)
+{
+  return gtk_widget_get_first_child(wdg);
 }

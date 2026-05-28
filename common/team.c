@@ -432,10 +432,15 @@ int team_pretty_name(const struct team *pteam, char *buf, size_t buf_len)
 {
   if (NULL != pteam) {
     if (NULL != pteam->slot->defined_name) {
+      /* TRANS: %s is ruleset-chosen team name (e.g. "Red") */
       return fc_snprintf(buf, buf_len, _("team %s"),
                          team_slot_name_translation(pteam->slot));
     } else {
-      return fc_snprintf(buf, buf_len, _("team %d"), team_number(pteam));
+      /* The generated name already contains word "Team" so don't repeat it.
+       * Also note that number of teams may have changed since the name
+       * was originally generated, so the number in it can be
+       * something else than current team_number(). */
+      return fc_snprintf(buf, buf_len, "%s", team_name_translation(pteam));
     }
   }
 

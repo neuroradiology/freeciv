@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +27,18 @@ extern "C" {
 #include "mapimg.h"
 
 #define DEFAULT_METASERVER_OPTION "default"
+
+#if MINOR_VERSION >= 90
+#define MAJOR_NEW_OPTION_FILE_NAME (MAJOR_VERSION + 1)
+#define MINOR_NEW_OPTION_FILE_NAME 0
+#else /* MINOR_VERSION < 90 */
+#define MAJOR_NEW_OPTION_FILE_NAME MAJOR_VERSION
+#if IS_DEVEL_VERSION && ! IS_FREEZE_VERSION
+#define MINOR_NEW_OPTION_FILE_NAME (MINOR_VERSION + 1)
+#else
+#define MINOR_NEW_OPTION_FILE_NAME MINOR_VERSION
+#endif /* IS_DEVEL_VERSION */
+#endif /* MINOR_VERSION >= 90 */
 
 struct video_mode {
   int width;
@@ -119,6 +131,7 @@ struct client_options
   bool gui_gtk2_migrated_from_2_5;
   bool gui_gtk3_migrated_from_2_5;
   bool gui_qt_migrated_from_2_5;
+  bool gui_qt_default_fonts_set;
 
   bool migrate_fullscreen;
 
@@ -145,6 +158,7 @@ struct client_options
   bool popup_new_cities;
   bool popup_actor_arrival;
   bool popup_attack_actions;
+  bool popup_last_move_to_allied;
   bool update_city_text_in_refresh_tile;
   bool keyboardless_goto;
   bool enable_cursor_changes;
@@ -164,6 +178,7 @@ struct client_options
   bool sound_enable_effects;
   bool sound_enable_menu_music;
   bool sound_enable_game_music;
+  int sound_effects_volume;
 
   bool draw_city_outlines;
   bool draw_city_output;
@@ -190,6 +205,7 @@ struct client_options
   bool draw_native;
   bool draw_full_citybar;
   bool draw_unit_shields;
+  bool draw_unit_stack_size;
 
   bool player_dlg_show_dead_players;
   bool reqtree_show_icons;
@@ -204,10 +220,8 @@ struct client_options
   bool zoom_set;
   float zoom_default_level;
 
-/* gui-gtk-2.0 client specific options. */
-#define FC_GTK2_DEFAULT_THEME_NAME "Freeciv"
-  char gui_gtk2_default_theme_name[512];
-  bool gui_gtk2_fullscreen;
+/* gui-gtk-2.0 client specific options.
+ * These are still kept just so users can migrate them to later gtk-clients */
   bool gui_gtk2_map_scrollbars;
   bool gui_gtk2_dialogs_on_top;
   bool gui_gtk2_show_task_icons;
@@ -218,8 +232,6 @@ struct client_options
   bool gui_gtk2_show_message_window_buttons;
   bool gui_gtk2_metaserver_tab_first;
   bool gui_gtk2_allied_chat_only;
-  int gui_gtk2_message_chat_location; /* enum GUI_GTK_MSGCHAT_* */
-  bool gui_gtk2_small_display_layout;
   bool gui_gtk2_mouse_over_map_focus;
   bool gui_gtk2_chatline_autocompletion;
   int gui_gtk2_citydlg_xsize;
@@ -239,9 +251,8 @@ struct client_options
   char gui_gtk2_font_city_productions[512];
   char gui_gtk2_font_reqtree_text[512];
 
-/* gui-gtk-3.0 client specific options. */
-#define FC_GTK3_DEFAULT_THEME_NAME "Freeciv"
-  char gui_gtk3_default_theme_name[512];
+/* gui-gtk-3.0 client specific options.
+ * These are still kept just so users can migrate them to later gtk-clients */
   bool gui_gtk3_fullscreen;
   bool gui_gtk3_map_scrollbars;
   bool gui_gtk3_dialogs_on_top;
@@ -372,18 +383,11 @@ struct client_options
   bool gui_qt_allied_chat_only;
   bool gui_qt_sidebar_left;
   char gui_qt_default_theme_name[512];
-  char gui_qt_font_city_label[512];
   char gui_qt_font_default[512];
   char gui_qt_font_notify_label[512];
-  char gui_qt_font_spaceship_label[512];
   char gui_qt_font_help_label[512];
-  char gui_qt_font_help_link[512];
   char gui_qt_font_help_text[512];
-  char gui_qt_font_help_title[512];
   char gui_qt_font_chatline[512];
-  char gui_qt_font_beta_label[512];
-  char gui_qt_font_small[512];
-  char gui_qt_font_comment_label[512];
   char gui_qt_font_city_names[512];
   char gui_qt_font_city_productions[512];
   char gui_qt_font_reqtree_text[512];
@@ -530,6 +534,7 @@ void desired_settable_options_update(void);
 void desired_settable_option_update(const char *op_name,
                                     const char *op_value,
                                     bool allow_replace);
+void resend_desired_settable_options(void);
 
 
 /** Dialog report options. **/
@@ -598,7 +603,7 @@ extern int messages_where[];	/* OR-ed MW_ values [E_COUNT] */
 #define GUI_GTK3_22_GOV_RANGE_MAX_MIN      0
 #define GUI_GTK3_22_GOV_RANGE_MAX_MAX      100
 
-/* gui-gtk3x: [xy]size of the city dialog */
+/* gui-gtk4.0: [xy]size of the city dialog */
 #define GUI_GTK4_CITYDLG_DEFAULT_XSIZE  770
 #define GUI_GTK4_CITYDLG_MIN_XSIZE      256
 #define GUI_GTK4_CITYDLG_MAX_XSIZE      4096

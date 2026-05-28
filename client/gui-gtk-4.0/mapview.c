@@ -33,8 +33,9 @@
 
 /* common */
 #include "game.h"
-#include "government.h"		/* government_graphic() */
+#include "government.h"	        /* government_graphic() */
 #include "map.h"
+#include "nation.h"
 #include "player.h"
 
 /* client */
@@ -94,6 +95,8 @@ void update_turn_done_button(bool do_restore)
                                       "}\n",
                                       -1);
 
+      /* Turn Done button is persistent, so we only need to do this
+       * once too. */
       gtk_style_context_add_provider(scontext,
                                      GTK_STYLE_PROVIDER(tdb_provider),
                                      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -179,20 +182,20 @@ void update_info_label(void)
     for (; d < client.conn.playing->economic.luxury /10; d++) {
       struct sprite *spr = get_tax_sprite(tileset, O_LUXURY);
 
-      image_set_from_surface(GTK_IMAGE(econ_label[d]), spr->surface);
+      picture_set_from_surface(GTK_PICTURE(econ_label[d]), spr->surface);
     }
 
     for (; d < (client.conn.playing->economic.science
 		+ client.conn.playing->economic.luxury) / 10; d++) {
       struct sprite *spr = get_tax_sprite(tileset, O_SCIENCE);
 
-      image_set_from_surface(GTK_IMAGE(econ_label[d]), spr->surface);
+      picture_set_from_surface(GTK_PICTURE(econ_label[d]), spr->surface);
     }
 
     for (; d < 10; d++) {
       struct sprite *spr = get_tax_sprite(tileset, O_GOLD);
 
-      image_set_from_surface(GTK_IMAGE(econ_label[d]), spr->surface);
+      picture_set_from_surface(GTK_PICTURE(econ_label[d]), spr->surface);
     }
   }
 
@@ -224,13 +227,13 @@ static gboolean anim_cursor_cb(gpointer data)
   }
 
   if (cursor_type == CURSOR_DEFAULT) {
-    gdk_window_set_cursor(root_window, NULL);
+    gtk_widget_set_cursor(toplevel, NULL);
     cursor_timer_id = 0;
-    return FALSE; 
+    return FALSE;
   }
 
-  gdk_window_set_cursor(root_window,
-                fc_cursors[cursor_type][cursor_frame]);
+  gtk_widget_set_cursor(toplevel,
+                        fc_cursors[cursor_type][cursor_frame]);
   control_mouse_cursor(NULL);
   return TRUE;
 }
@@ -286,10 +289,10 @@ GdkPixbuf *get_thumb_pixbuf(int onoff)
 void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
                          struct sprite *flake, struct sprite *gov)
 {
-  image_set_from_surface(GTK_IMAGE(bulb_label), bulb->surface);
-  image_set_from_surface(GTK_IMAGE(sun_label), sol->surface);
-  image_set_from_surface(GTK_IMAGE(flake_label), flake->surface);
-  image_set_from_surface(GTK_IMAGE(government_label), gov->surface);
+  picture_set_from_surface(GTK_PICTURE(bulb_label), bulb->surface);
+  picture_set_from_surface(GTK_PICTURE(sun_label), sol->surface);
+  picture_set_from_surface(GTK_PICTURE(flake_label), flake->surface);
+  picture_set_from_surface(GTK_PICTURE(government_label), gov->surface);
 }
 
 /**********************************************************************//**
@@ -322,9 +325,10 @@ struct canvas *get_overview_window(void)
 {
 #if 0
   static struct canvas store;
+  GtkNative *nat = gtk_widget_get_native(overview_canvas);
 
   store.surface = NULL;
-  store.drawable = gdk_cairo_create(gtk_widget_get_window(overview_canvas));
+  store.drawable = gdk_cairo_create(gtk_native_get_surface(nat));
 
   return &store;
 #endif /* 0 */
@@ -384,10 +388,10 @@ bool mapview_is_frozen(void)
 /**********************************************************************//**
   Update on canvas widget size change
 **************************************************************************/
-void map_canvas_configure(GtkWidget *w, GdkRectangle *allocation,
-                          gpointer data)
+void map_canvas_resize(GtkWidget *w, int width, int height,
+                       gpointer data)
 {
-  map_canvas_resized(allocation->width, allocation->height);
+  map_canvas_resized(width, height);
 }
 
 /**********************************************************************//**
@@ -409,29 +413,13 @@ void map_canvas_draw(GtkDrawingArea *w, cairo_t *cr,
 }
 
 /**********************************************************************//**
-  Flush the given part of the canvas buffer (if there is one) to the
-  screen.
-**************************************************************************/
-void flush_mapcanvas(int canvas_x, int canvas_y,
-                     int pixel_width, int pixel_height)
-{
-  GdkRectangle rectangle = {canvas_x, canvas_y, pixel_width, pixel_height};
-  if (gtk_widget_get_realized(map_canvas) && !mapview_is_frozen()) {
-    gdk_window_invalidate_rect(gtk_widget_get_window(map_canvas), &rectangle, FALSE);
-  }
-}
-
-/**********************************************************************//**
   Mark the rectangular region as "dirty" so that we know to flush it
   later.
 **************************************************************************/
 void dirty_rect(int canvas_x, int canvas_y,
                 int pixel_width, int pixel_height)
 {
-  GdkRectangle rectangle = {canvas_x, canvas_y, pixel_width, pixel_height};
-  if (gtk_widget_get_realized(map_canvas)) {
-    gdk_window_invalidate_rect(gtk_widget_get_window(map_canvas), &rectangle, FALSE);
-  }
+  dirty_all();
 }
 
 /**********************************************************************//**
@@ -440,7 +428,7 @@ void dirty_rect(int canvas_x, int canvas_y,
 void dirty_all(void)
 {
   if (gtk_widget_get_realized(map_canvas)) {
-    gdk_window_invalidate_rect(gtk_widget_get_window(map_canvas), NULL, FALSE);
+    gtk_widget_queue_draw(map_canvas);
   }
 }
 
@@ -472,9 +460,9 @@ void update_city_descriptions(void)
 }
 
 /**********************************************************************//**
-  Fill image with unit gfx
+  Fill picture with unit gfx
 **************************************************************************/
-void put_unit_image(struct unit *punit, GtkImage *p, int height)
+void put_unit_picture(struct unit *punit, GtkPicture *p, int height)
 {
   struct canvas store = FC_STATIC_CANVAS_INIT;
   int width;
@@ -489,7 +477,7 @@ void put_unit_image(struct unit *punit, GtkImage *p, int height)
 
   put_unit(punit, &store, 1.0, 0, 0);
 
-  image_set_from_surface(p, store.surface);
+  picture_set_from_surface(p, store.surface);
   cairo_surface_destroy(store.surface);
 }
 
@@ -497,11 +485,11 @@ void put_unit_image(struct unit *punit, GtkImage *p, int height)
   FIXME:
   For now only two food, two gold one shield and two masks can be drawn per
   unit, the proper way to do this is probably something like what Civ II does.
-  (One food/shield/mask drawn N times, possibly one top of itself. -- SKi 
+  (One food/shield/mask drawn N times, possibly one top of itself. -- SKi
 **************************************************************************/
-void put_unit_image_city_overlays(struct unit *punit, GtkImage *p,
-                                  int height,
-                                  int *upkeep_cost, int happy_cost)
+void put_unit_picture_city_overlays(struct unit *punit, GtkPicture *p,
+                                    int height,
+                                    int *upkeep_cost, int happy_cost)
 {
   struct canvas store = FC_STATIC_CANVAS_INIT;
   int width = tileset_full_tile_width(tileset);
@@ -514,17 +502,18 @@ void put_unit_image_city_overlays(struct unit *punit, GtkImage *p,
   put_unit_city_overlays(punit, &store, 0, tileset_unit_layout_offset_y(tileset),
                          upkeep_cost, happy_cost);
 
-  image_set_from_surface(p, store.surface);
+  picture_set_from_surface(p, store.surface);
   cairo_surface_destroy(store.surface);
 }
 
 /**********************************************************************//**
   Put overlay tile to pixmap
 **************************************************************************/
-void pixmap_put_overlay_tile(GdkWindow *pixmap, float zoom,
+void pixmap_put_overlay_tile(GdkSurface *pixmap, float zoom,
                              int canvas_x, int canvas_y,
                              struct sprite *ssprite)
 {
+#if 0
   cairo_t *cr;
   GdkDrawingContext *ctx;
 
@@ -539,6 +528,7 @@ void pixmap_put_overlay_tile(GdkWindow *pixmap, float zoom,
   cairo_set_source_surface(cr, ssprite->surface, canvas_x, canvas_y);
   cairo_paint(cr);
   gdk_window_end_draw_frame(pixmap, ctx);
+#endif
 }
 
 /**********************************************************************//**
@@ -551,6 +541,7 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
 {
   cairo_t *cr;
   int sswidth, ssheight;
+  const double bright = 0.65; /* Fogged brightness compared to unfogged */
 
   if (!ssprite) {
     return;
@@ -559,31 +550,34 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
   get_sprite_dimensions(ssprite, &sswidth, &ssheight);
 
   if (fog) {
-    struct color *fogcol = color_alloc(0.0, 0.0, 0.0);
+    struct color *fogcol = color_alloc(0.0, 0.0, 0.0); /* black */
     cairo_surface_t *fog_surface;
     struct sprite *fogged;
     unsigned char *mask_in;
     unsigned char *mask_out;
     int i, j;
 
-    /* Create sprites fully transparent */
+    /* Create sprites initially fully transparent */
     fogcol->color.alpha = 0.0;
     fogged = create_sprite(sswidth, ssheight, fogcol);
     fog_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, sswidth, ssheight);
 
-    /* Calculate black fog mask from the original sprite,
-     * we don't want to blacken transparent parts of the sprite */
+    /* Calculate black fog mask from the original sprite's alpha channel;
+     * we don't want to blacken transparent parts of the sprite. */
     mask_in = cairo_image_surface_get_data(ssprite->surface);
     mask_out = cairo_image_surface_get_data(fog_surface);
 
     for (i = 0; i < sswidth; i++) {
       for (j = 0; j < ssheight; j++) {
+        /* In order to darken pixels of ssprite to 'bright' fraction of
+         * their original value, we need to overlay blackness of
+         * (1-bright) transparency. */
         if (!is_bigendian()) {
           mask_out[(j * sswidth + i) * 4 + 3]
-            = 0.65 * mask_in[(j * sswidth + i) * 4 + 3];
+            = (1-bright) * mask_in[(j * sswidth + i) * 4 + 3];
         } else {
           mask_out[(j * sswidth + i) * 4 + 0]
-            = 0.65 * mask_in[(j * sswidth + i) * 4 + 0];
+            = (1-bright) * mask_in[(j * sswidth + i) * 4 + 0];
         }
       }
     }
@@ -595,7 +589,7 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
     cairo_set_source_surface(cr, ssprite->surface, 0, 0);
     cairo_paint(cr);
 
-    /* Then apply created fog to the intermediate sprite */
+    /* Then apply created fog to the intermediate sprite to darken it */
     cairo_set_source_surface(cr, fog_surface, 0, 0);
     cairo_paint(cr);
     cairo_destroy(cr);
@@ -622,7 +616,9 @@ void put_cross_overlay_tile(struct tile *ptile)
   float canvas_x, canvas_y;
 
   if (tile_to_canvas_pos(&canvas_x, &canvas_y, ptile)) {
-    pixmap_put_overlay_tile(gtk_widget_get_window(map_canvas), map_zoom,
+    GtkNative *nat = gtk_widget_get_native(map_canvas);
+
+    pixmap_put_overlay_tile(gtk_native_get_surface(nat), map_zoom,
 			    canvas_x / map_zoom, canvas_y / map_zoom,
 			    get_attention_crosshair_sprite(tileset));
   }
@@ -681,8 +677,10 @@ void update_map_canvas_scrollbars_size(void)
   map_hadj = gtk_adjustment_new(-1, xmin, xmax, xstep, xsize, xsize);
   map_vadj = gtk_adjustment_new(-1, ymin, ymax, ystep, ysize, ysize);
 
-  gtk_range_set_adjustment(GTK_RANGE(map_horizontal_scrollbar), map_hadj);
-  gtk_range_set_adjustment(GTK_RANGE(map_vertical_scrollbar), map_vadj);
+  gtk_scrollbar_set_adjustment(GTK_SCROLLBAR(map_horizontal_scrollbar),
+                               map_hadj);
+  gtk_scrollbar_set_adjustment(GTK_SCROLLBAR(map_vertical_scrollbar),
+                               map_vadj);
 
   g_signal_connect(map_hadj, "value_changed",
 	G_CALLBACK(scrollbar_jump_callback),
@@ -725,11 +723,12 @@ void scrollbar_jump_callback(GtkAdjustment *adj, gpointer hscrollbar)
 **************************************************************************/
 void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
 {
+#if 0
   double dashes[2] = {4.0, 4.0};
   struct color *pcolor;
   cairo_t *cr;
   GdkDrawingContext *ctx;
-  GdkWindow *wndw;
+  GdkSurface *wndw;
 
   if (w == 0 || h == 0) {
     return;
@@ -740,7 +739,7 @@ void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
     return;
   }
 
-  wndw = gtk_widget_get_window(map_canvas);
+  wndw = gtk_native_get_surface(gtk_widget_get_native(map_canvas));
   ctx = gdk_window_begin_draw_frame(wndw, NULL,
                                     gdk_window_get_clip_region(wndw));
   cr = gdk_drawing_context_get_cairo_context(ctx);
@@ -751,6 +750,7 @@ void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
   cairo_rectangle(cr, canvas_x, canvas_y, w, h);
   cairo_stroke(cr);
   gdk_window_end_draw_frame(wndw, ctx);
+#endif
 }
 
 /**********************************************************************//**
@@ -767,11 +767,14 @@ void tileset_changed(void)
   /* keep the icon of the executable on Windows (see PR#36491) */
 #ifndef FREECIV_MSWINDOWS
   {
-    GdkPixbuf *pixbuf = sprite_get_pixbuf(get_icon_sprite(tileset, ICON_FREECIV));
-
     /* Only call this after tileset_load_tiles is called. */
-    gtk_window_set_icon(GTK_WINDOW(toplevel), pixbuf);
-    g_object_unref(pixbuf);
+    gtk_window_set_icon_name(GTK_WINDOW(toplevel), "freeciv");
   }
 #endif /* FREECIV_MSWINDOWS */
 }
+
+/**********************************************************************//**
+  New turn callback
+**************************************************************************/
+void start_turn(void)
+{}

@@ -81,9 +81,8 @@ static char *astr_buffer = NULL;
 static size_t astr_buffer_alloc = 0;
 
 static inline char *astr_buffer_get(size_t *alloc);
-static inline char *astr_buffer_grow(size_t *alloc);
+static inline char *astr_buffer_grow(size_t request, size_t *alloc);
 static void astr_buffer_free(void);
-
 
 /************************************************************************//**
   Returns the astring buffer. Create it if necessary.
@@ -91,7 +90,13 @@ static void astr_buffer_free(void);
 static inline char *astr_buffer_get(size_t *alloc)
 {
   if (!astr_buffer) {
+#ifndef HAVE_VA_COPY
+    /* This buffer will never be grown, so it should be big enough
+     * from the beginning. */
     astr_buffer_alloc = 65536;
+#else
+    astr_buffer_alloc = 4096;
+#endif
     astr_buffer = fc_malloc(astr_buffer_alloc);
     atexit(astr_buffer_free);
   }
@@ -103,9 +108,18 @@ static inline char *astr_buffer_get(size_t *alloc)
 /************************************************************************//**
   Grow the astring buffer.
 ****************************************************************************/
-static inline char *astr_buffer_grow(size_t *alloc)
+static inline char *astr_buffer_grow(size_t request, size_t *alloc)
 {
-  astr_buffer_alloc *= 2;
+  if (request > astr_buffer_alloc) {
+    /* We simply set buffer size to the requested one here.
+     * Old implementation went on by doubling the buffer size,
+     * presumably to match what low level memory handling does
+     * anyway. But need to increase the buffer size is so rare
+     * that we can as well call this function again, even when
+     * the increase would fall within limits of what doubling
+     * would have given us. */
+    astr_buffer_alloc = request;
+  }
   astr_buffer = fc_realloc(astr_buffer, astr_buffer_alloc);
 
   *alloc = astr_buffer_alloc;
@@ -162,7 +176,7 @@ char *astr_to_str(struct astring *astr)
 ****************************************************************************/
 void astr_reserve(struct astring *astr, size_t n)
 {
-  int n1;
+  unsigned int n1;
   bool was_null = (astr->n == 0);
 
   fc_assert_ret(NULL != astr);
@@ -195,27 +209,47 @@ void astr_clear(struct astring *astr)
 }
 
 /************************************************************************//**
-  Add the text to the string.
+  Helper: add the text to the specified place in the string.
 ****************************************************************************/
-static void astr_vadd(struct astring *astr, size_t at,
-                      const char *format, va_list ap)
+static inline void astr_vadd_at(struct astring *astr, size_t at,
+                                const char *format, va_list ap)
 {
   char *buffer;
   size_t buffer_size;
-  size_t new_len;
+  size_t req_len;
+
+#ifdef HAVE_VA_COPY
+  va_list copy;
 
   buffer = astr_buffer_get(&buffer_size);
-  for (;;) {
-    new_len = fc_vsnprintf(buffer, buffer_size, format, ap);
-    if (new_len < buffer_size && (size_t) -1 != new_len) {
-      break;
+
+  va_copy(copy, ap);
+
+  req_len = fc_vsnprintf(buffer, buffer_size, format, ap);
+  if (req_len > buffer_size) {
+    buffer = astr_buffer_grow(req_len, &buffer_size);
+    /* Even if buffer is *still* too small, we fill what we can */
+    req_len = fc_vsnprintf(buffer, buffer_size, format, copy);
+    if (req_len > buffer_size) {
+      /* What we actually got */
+      req_len = buffer_size;
     }
-    buffer = astr_buffer_grow(&buffer_size);
   }
+  va_end(copy);
+#else  /* HAVE_VA_COPY */
+  buffer = astr_buffer_get(&buffer_size);
 
-  new_len += at + 1;
+  req_len = fc_vsnprintf(buffer, buffer_size, format, ap);
 
-  astr_reserve(astr, new_len);
+  if (req_len > buffer_size) {
+    /* What we actually got */
+    req_len = buffer_size;
+  }
+#endif /* HAVE_VA_COPY */
+
+  req_len += at + 1;
+
+  astr_reserve(astr, req_len);
   fc_strlcpy(astr->str + at, buffer, astr->n_alloc - at);
 }
 
@@ -227,10 +261,17 @@ void astr_set(struct astring *astr, const char *format, ...)
   va_list args;
 
   va_start(args, format);
-  astr_vadd(astr, 0, format, args);
+  astr_vadd_at(astr, 0, format, args);
   va_end(args);
 }
 
+/************************************************************************//**
+  Add the text to the string (varargs version).
+****************************************************************************/
+void astr_vadd(struct astring *astr, const char *format, va_list ap)
+{
+  astr_vadd_at(astr, astr_len(astr), format, ap);
+}
 
 /************************************************************************//**
   Add the text to the string.
@@ -240,7 +281,7 @@ void astr_add(struct astring *astr, const char *format, ...)
   va_list args;
 
   va_start(args, format);
-  astr_vadd(astr, astr_len(astr), format, args);
+  astr_vadd_at(astr, astr_len(astr), format, args);
   va_end(args);
 }
 
@@ -254,10 +295,10 @@ void astr_add_line(struct astring *astr, const char *format, ...)
 
   va_start(args, format);
   if (0 < len) {
-    astr_vadd(astr, len + 1, format, args);
+    astr_vadd_at(astr, len + 1, format, args);
     astr->str[len] = '\n';
   } else {
-    astr_vadd(astr, len, format, args);
+    astr_vadd_at(astr, len, format, args);
   }
   va_end(args);
 }

@@ -16,6 +16,8 @@
 #endif
 
 /* utility */
+#include "fciconv.h"
+#include "netfile.h"
 #include "shared.h"
 
 /* common */
@@ -26,8 +28,9 @@
 #include "fc_interface.h"
 
 /* Struct with functions pointers; the functions are defined in
-   ./client/client_main.c:init_client_functions() and
-   ./server/srv_main.c:init_server_functions(). */
+   ./client/client_main.c:init_client_functions(),
+   ./server/srv_main.c:init_server_functions(), and
+   ./tools/shared/tools_fc_interface.c(). */
 struct functions fc_functions;
 
 /* The functions are accessed via this pointer. */
@@ -38,43 +41,48 @@ bool fc_funcs_defined = FALSE;
 
 /************************************************************************//**
   Return the function pointer. Only possible before interface_init() was
-  called (fc_funcs_defined == FALSE).
+  called (fc_funcs_defined FALSE).
 ****************************************************************************/
 struct functions *fc_interface_funcs(void)
 {
-  fc_assert_exit(fc_funcs_defined == FALSE);
+  fc_assert_exit(!fc_funcs_defined);
 
   return &fc_functions;
 }
 
 /************************************************************************//**
-  Test and initialize the functions. The existence of all functions should
-  be checked!
+  Initialize libfreeciv.
+  With check_fc_interface, also tests and initialize the functions.
 ****************************************************************************/
-void fc_interface_init(void)
+void libfreeciv_init(bool check_fc_interface)
 {
-  fc_funcs = &fc_functions;
+  fc_support_init();
+  init_nls();
 
-  /* Test the existence of each required function here! */
-  fc_assert_exit(fc_funcs->server_setting_by_name);
-  fc_assert_exit(fc_funcs->server_setting_name_get);
-  fc_assert_exit(fc_funcs->server_setting_type_get);
-  fc_assert_exit(fc_funcs->server_setting_val_bool_get);
-  fc_assert_exit(fc_funcs->player_tile_vision_get);
-  fc_assert_exit(fc_funcs->player_tile_city_id_get);
-  fc_assert_exit(fc_funcs->gui_color_free);
+  if (check_fc_interface) {
+    fc_funcs = &fc_functions;
 
-  fc_funcs_defined = TRUE;
+    /* Test the existence of each required function here! */
+    fc_assert_exit(fc_funcs->server_setting_by_name);
+    fc_assert_exit(fc_funcs->server_setting_name_get);
+    fc_assert_exit(fc_funcs->server_setting_type_get);
+    fc_assert_exit(fc_funcs->server_setting_val_bool_get);
+    fc_assert_exit(fc_funcs->server_setting_val_int_get);
+    fc_assert_exit(fc_funcs->server_setting_val_bitwise_get);
+    fc_assert_exit(fc_funcs->player_tile_vision_get);
+    fc_assert_exit(fc_funcs->player_tile_city_id_get);
+    fc_assert_exit(fc_funcs->gui_color_free);
 
-  fc_strAPI_init();
+    fc_funcs_defined = TRUE;
 
-  setup_real_activities_array();
+    setup_real_activities_array();
+  }
 }
 
 /************************************************************************//**
   Free misc resources allocated for libfreeciv.
 ****************************************************************************/
-void free_libfreeciv(void)
+void libfreeciv_free(void)
 {
   diplrel_mess_close();
   free_data_dir_names();
@@ -82,5 +90,8 @@ void free_libfreeciv(void)
   free_freeciv_storage_dir();
   free_user_home_dir();
   free_fileinfo_data();
-  fc_strAPI_free();
+  netfile_free();
+  free_nls();
+  fc_iconv_close();
+  fc_support_free();
 }

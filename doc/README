@@ -1,5 +1,5 @@
 ===================
-Freeciv Version 3.1
+Freeciv Version 3.2
 ===================
 
 Welcome to Freeciv!
@@ -40,7 +40,7 @@ Web site:
 
 Freeciv's web site is here:
 
-  http://www.freeciv.org/
+  https://www.freeciv.org/
 
 We invite you to visit.  You can get the latest Freeciv news, releases
 and patches, find out about the Freeciv mailing lists, and see the
@@ -80,23 +80,21 @@ a game is in progress, there will be one server program running, and as many
 client programs as there are human players.  The server does not use a gui,
 but the clients do.  The clients come in many flavors:
 
-freeciv-gtk3:  This uses the GTK+ 3 libraries. To install, see section 1b of
-  the INSTALL document.
-
-freeciv-gtk3.22:  This uses the GTK+ 3 libraries. Version 3.22 is required.
-  To install, see section 1c of the INSTALL document.
+freeciv-gtk3.22:  This uses the GTK+ 3 libraries. Version 3.22 or 3.24
+  is required. To install, see section 1a of the INSTALL document.
   This client is better supported and more developed than the others,
   as such it is considered to be the default interface throughout the rest of
   this document.
 
-freeciv-qt:  This uses the QT library. Development of this client has recently
-  reached the state where it's considered generally usable, but it still lacks
+freeciv-qt:  This uses the QT library, either Qt5 or Qt6.
+  This client is considered generally usable, but it still lacks
   number of features gtk-clients have.
 
-freeciv-sdl2: This uses Simple DirectMedia Layer libraries version 2.
+freeciv-sdl2:  This uses Simple DirectMedia Layer libraries version 2.
 
-freeciv-gtk3x: This uses GTK+ 3.90+ libraries. This is development version of
-  a client to get turned to use gtk4 once it's released.
+freeciv-gtk4:  This uses GTK 4 libraries. This client is expected later to
+  replace freeciv-gtk3.22, but it's still lacking some of the functionality
+  of the freeciv-gtk3.22.
 
 
 Starting a game:
@@ -104,11 +102,11 @@ Starting a game:
 
   NOTE:
   The following examples assume that Freeciv has been installed on
-  your system, and that the directory containing the "freeciv-gtk3"
+  your system, and that the directory containing the "freeciv-gtk3.22"
   and "freeciv-server" programs is in your PATH.  If Freeciv is not
   installed, then you may want to use the "fcgui" and "fcser" programs,
   which can be found in the top Freeciv directory.  They are used
-  in exactly the same fashion as "freeciv-gtk3" and "freeciv-server".
+  in exactly the same fashion as "freeciv-gtk3.22" and "freeciv-server".
 
 Running Freeciv involves starting the server, then the client(s)
 and AI(s), then telling the server to start the game.  Here are the
@@ -178,7 +176,7 @@ Client:
   Now all the human players should join, by running the Freeciv
   client:
 
-  |  % freeciv-gtk3
+  |  % freeciv-gtk3.22
 
   This assumes the server is running on the same machine.  If not, you
   can either specify it on the command line with the '--server' option,
@@ -187,13 +185,13 @@ Client:
   For example, suppose the server is running on a different machine
   called 'neptune'.  Then players would join with a command like:
 
-  |  % freeciv-gtk3 --server neptune
+  |  % freeciv-gtk3.22 --server neptune
 
   If you're the only human player, then only one client needs to be
   started.  In standard Unix fashion you can start the client
   "in the background" by appending an ampersand:
 
-  |  % freeciv-gtk3 &
+  |  % freeciv-gtk3.22 &
 
   Another option for the client you may like to try is the '--tiles'
   option, which can be used to select different "tilesets" (that is,
@@ -203,22 +201,23 @@ Client:
   - isotrident: An isometric tileset similar in shape to the one in Civ 2.
   - cimpletoon: amplio2 with alternative units that display direction they
                 are facing.
-  - trident: a Civ 1-style tileset with 30x30 tiles.
-  - hexemplio: an isometric hexagonal tileset with larger tiles derived
+  - trident: a Civ 1-style ('overhead') tileset with 30x30 tiles.
+  - hexemplio: an iso-hexagonal tileset with larger tiles derived
                from amplio2
   - toonhex: tileset combining hexemplio tiles with cimpletoon units
-  - isophex: an isometric hexagonal tileset
-  - hex2t: an overhead hexagonal tileset
-  - alio: an isometric hexagonal tileset with suitable graphics for alien
+  - isophex: an iso-hexagonal tileset
+  - hex2t: a hexagonal tileset
+  - alio: an iso-hexagonal tileset with suitable graphics for alien
           ruleset
 
-  In this release the amplio2 tileset is the default tileset.
+  In this release, each map topology has its own default tileset; with
+  default settings, amplio2 is the default tileset.
   To try another one, for instance the trident tileset, start the
   client with:
 
-  |  % freeciv-gtk3 --tiles trident
+  |  % freeciv-gtk3.22 --tiles trident
 
-  Other tilesets are available from http://www.freeciv.org/wiki/Tilesets
+  Other tilesets are available from https://www.freeciv.org/wiki/Tilesets
 
 
   Clients can be authorized to issue server commands.  To allow them
@@ -282,7 +281,7 @@ Announcing the game:
 If you do not want to limit your opponents to local friends or AI players,
 visit the Freeciv metaserver:
 
-  http://meta.freeciv.org/
+  https://meta.freeciv.org/
 
 It is a list of Freeciv servers.  To make your own server announce itself
 there, start freeciv-server with the '--meta' option, or just '-m' for short.
@@ -294,7 +293,7 @@ Caveats:
     incompatible with any 2.4.x or earlier versions.
 
  2) If the Metaserver button in the connection dialog doesn't work,
-    check if your ISP uses a mandatory WWW proxy and make freeciv-gtk3
+    check if your ISP uses a mandatory WWW proxy and make freeciv-gtk3.22
     use it through the $http_proxy environment variable.  For instance,
     if the proxy is proxy.myisp.com port 8888, set $http_proxy
     to http://proxy.myisp.com:8888/ before starting the client.
@@ -315,7 +314,7 @@ like so:
 (If your server is compiled with compression support, and the
 'compresstype' server option is set to other than PLAIN, then the
 file written may be compressed and called 'mygame.sav.gz', 'mygame.sav.bz2',
-or 'mygame.sav.xz' depending on the setting.)
+'mygame.sav.xz', or 'mygame.sav.zstd' depending on the setting.)
 
 The Freeciv client works pretty much as you would expect from a
 multiplayer civilization game.  That is, the human players all move
@@ -370,7 +369,7 @@ For lots more information about the client, the server, and the
 concepts and rules of the game, see the Freeciv manual, available
 at the wiki:
 
-  http://www.freeciv.org/wiki/Manual
+  https://www.freeciv.org/wiki/Manual
 
 
 Ending the game:
@@ -415,7 +414,7 @@ or, if the save-file was created by a server that compressed it:
 
 Now the players can rejoin the game:
 
-  |  % freeciv-gtk3 -n Alexander
+  |  % freeciv-gtk3.22 -n Alexander
 
 Notice how the player-name is specified with the -n option. It's vital
 that the player uses the same name as they had when the game was running,
@@ -433,7 +432,7 @@ You may choose which local language to use by specifying a "locale".
 Each locale has a standard name (e.g., 'de' for German).  If you have
 installed Freeciv, you may choose a locale by setting the environment
 variable LANG to that locale's standard name before running freeciv-server
-and freeciv-gtk3.
+and freeciv-gtk3.22.
 
 For example, assuming you wish to use the German localization, you
 would do:
@@ -494,7 +493,7 @@ level messages.
 
 Example:
 
-  |  % freeciv-gtk3 --debug fatal
+  |  % freeciv-gtk3.22 --debug fatal
 
 This suppresses all non-fatal client log messages.
 
@@ -537,25 +536,22 @@ We maintain 4 mailing lists:
   freeciv-dev@freelists.org
                    Freeciv development.
                    Subscribe: https://www.freelists.org/list/freeciv-dev
-  freeciv-commits@gna.org
-                   Notifications of changes to the code repository.
-                   This is a "Read Only" list, carrying automated messages.
-                   In other words you can't mail this list, just read it.
-                   (At the time of writing, gna.org is expected to shut
-                   down soon; we're not yet sure what arrangements we'll
-                   have for a replacement commits mailing list.)
+  freeciv-tickets@lists.osdn.me
+                   Automated notifications about updates to
+                   bug and patch tickets.
+                   Subscribe: https://lists.osdn.me/mailman/listinfo/freeciv-tickets
 
 All lists are open to the general public and everyone is welcome to join.
-Only maintainers may post to the -announce and -commits lists.
+Only maintainers may post to the -announce list.
 
 
 Internet Relay Chat (IRC)
 =========================
 
 Several players and developers hang out on #freeciv and #freeciv-dev
-channels on the freenode network. Try connecting to the server
+channels on the Libera.Chat network. Try connecting to the server
 
-        irc.freenode.net
+        irc.libera.chat
 
 
 And finally:

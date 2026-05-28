@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -19,7 +19,7 @@ x_top_left = 2
 y_top_left = 2
 dx = 128
 dy = 64
-pixel_border=2
+pixel_border = 2
 
 tiles = { "row", "column", "tag"
 

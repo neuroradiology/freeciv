@@ -8,6 +8,7 @@ docs =				\
 	FAQ			\
 	HACKING			\
 	INSTALL.Cygwin		\
+	INSTALL.meson		\
 	HOWTOPLAY		\
 	README.achievements     \
 	README.actions		\
@@ -15,16 +16,19 @@ docs =				\
 	README.AI		\
 	README.AI_modules	\
 	README.attributes 	\
+	README.crosser		\
 	README.delta		\
 	README.effects		\
 	README.fcdb		\
 	README.governor		\
 	README.graphics		\
+	README.modpack_installer	\
 	README.msys2		\
 	README.nations		\
 	README.packaging	\
 	README.rulesets		\
 	README.tilesets		\
+	README.scenarios	\
 	README.scorelog		\
 	README.sound		\
 	TODO

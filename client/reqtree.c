@@ -173,39 +173,44 @@ static void node_rectangle_minimum_size(struct tree_node *node,
                       (research_get(client_player()), node->tech));
     *width += 2;
     *height += 8;
-    
+
     max_icon_height = 0;
     icons_width_sum = 5;
-    
+
     if (gui_options.reqtree_show_icons) {
-      /* units */
-      unit_type_iterate(unit) {
-        if (advance_number(unit->require_advance) != node->tech) {
+      /* Units */
+      unit_type_iterate(utype) {
+
+        if (!is_tech_req_for_utype(utype, advance_by_number(node->tech))) {
           continue;
         }
-        sprite = get_unittype_sprite(tileset, unit, direction8_invalid());
+
+        sprite = get_unittype_sprite(tileset, utype,
+                                     ACTIVITY_LAST, direction8_invalid());
         get_sprite_dimensions(sprite, &swidth, &sheight);
         max_icon_height = MAX(max_icon_height, sheight);
         icons_width_sum += swidth + 2;
       } unit_type_iterate_end;
-    
-      /* buildings */
+
+      /* Buildings */
       improvement_iterate(pimprove) {
-        requirement_vector_iterate(&(pimprove->reqs), preq) {
-          if (VUT_ADVANCE == preq->source.kind
-	   && advance_number(preq->source.value.advance) == node->tech) {
-	    sprite = get_building_sprite(tileset, pimprove);
-            /* Improvement icons are not guaranteed to exist */
-            if (sprite) {
-              get_sprite_dimensions(sprite, &swidth, &sheight);
-              max_icon_height = MAX(max_icon_height, sheight);
-              icons_width_sum += swidth + 2;
+        if (valid_improvement(pimprove)) {
+          requirement_vector_iterate(&(pimprove->reqs), preq) {
+            if (VUT_ADVANCE == preq->source.kind
+                && advance_number(preq->source.value.advance) == node->tech) {
+              sprite = get_building_sprite(tileset, pimprove);
+              /* Improvement icons are not guaranteed to exist */
+              if (sprite) {
+                get_sprite_dimensions(sprite, &swidth, &sheight);
+                max_icon_height = MAX(max_icon_height, sheight);
+                icons_width_sum += swidth + 2;
+              }
             }
-	  }
-        } requirement_vector_iterate_end;
+          } requirement_vector_iterate_end;
+        }
       } improvement_iterate_end;
-    
-      /* governments */
+
+      /* Governments */
       governments_iterate(gov) {
         requirement_vector_iterate(&(gov->reqs), preq) {
           if (VUT_ADVANCE == preq->source.kind
@@ -392,9 +397,10 @@ static struct reqtree *create_dummy_reqtree(struct player *pplayer,
   struct reqtree *tree = fc_malloc(sizeof(*tree));
   int j;
   struct tree_node *nodes[advance_count()];
+  Tech_type_id ac = advance_count();
 
   nodes[A_NONE] = NULL;
-  advance_index_iterate(A_FIRST, tech) {
+  advance_index_iterate_max(A_FIRST, tech, ac) {
     if (!valid_advance_by_number(tech)) {
       nodes[tech] = NULL;
       continue;
@@ -402,16 +408,16 @@ static struct reqtree *create_dummy_reqtree(struct player *pplayer,
     if (pplayer && !show_all
         && !research_invention_reachable(presearch, tech)) {
       /* Reqtree requested for particular player and this tech is
-       * unreachable to him/her. */
+       * unreachable to them. */
       nodes[tech] = NULL;
       continue;
     }
     nodes[tech] = new_tree_node();
     nodes[tech]->is_dummy = FALSE;
     nodes[tech]->tech = tech;
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 
-  advance_index_iterate(A_FIRST, tech) {
+  advance_index_iterate_max(A_FIRST, tech, ac) {
     struct advance *padvance = valid_advance_by_number(tech);
     Tech_type_id tech_one, tech_two;
 
@@ -443,18 +449,18 @@ static struct reqtree *create_dummy_reqtree(struct player *pplayer,
         add_requirement(nodes[tech], nodes[tech_two]);
       }
     }
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 
   /* Copy nodes from local array to dynamically allocated one. 
    * Skip non-existing entries */
   tree->nodes = fc_calloc(advance_count(), sizeof(*tree->nodes));
   j = 0;
-  advance_index_iterate(A_FIRST, tech) {
+  advance_index_iterate_max(A_FIRST, tech, ac) {
     if (nodes[tech]) {
       fc_assert_action(valid_advance_by_number(nodes[tech]->tech), continue);
       tree->nodes[j++] = nodes[tech];
     }
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
   tree->num_nodes = j;
   tree->layers = NULL;
 
@@ -864,7 +870,7 @@ void get_reqtree_dimensions(struct reqtree *reqtree,
   if (width) {
     *width = reqtree->diagram_width;
   }
-  if (height){
+  if (height) {
     *height = reqtree->diagram_height;
   }
 }
@@ -1079,38 +1085,43 @@ void draw_reqtree(struct reqtree *tree, struct canvas *pcanvas,
 			text);
  	icon_startx = startx + 5;
 	
-	if (gui_options.reqtree_show_icons) {
- 	  unit_type_iterate(unit) {
-            if (advance_number(unit->require_advance) != node->tech) {
-	      continue;
-	    }
- 	    sprite = get_unittype_sprite(tileset, unit, direction8_invalid());
- 	    get_sprite_dimensions(sprite, &swidth, &sheight);
- 	    canvas_put_sprite_full(pcanvas,
- 	                           icon_startx,
- 				   starty + text_h + 4
- 				   + (height - text_h - 4 - sheight) / 2,
- 				   sprite);
- 	    icon_startx += swidth + 2;
+        if (gui_options.reqtree_show_icons) {
+          unit_type_iterate(utype) {
+
+            if (!is_tech_req_for_utype(utype, advance_by_number(node->tech))) {
+              continue;
+            }
+
+            sprite = get_unittype_sprite(tileset, utype,
+                                         ACTIVITY_LAST, direction8_invalid());
+            get_sprite_dimensions(sprite, &swidth, &sheight);
+            canvas_put_sprite_full(pcanvas,
+                                   icon_startx,
+                                   starty + text_h + 4
+                                   + (height - text_h - 4 - sheight) / 2,
+                                   sprite);
+            icon_startx += swidth + 2;
  	  } unit_type_iterate_end;
-       
+
           improvement_iterate(pimprove) {
-            requirement_vector_iterate(&(pimprove->reqs), preq) {
-              if (VUT_ADVANCE == preq->source.kind
-	       && advance_number(preq->source.value.advance) == node->tech) {
- 	        sprite = get_building_sprite(tileset, pimprove);
-                /* Improvement icons are not guaranteed to exist */
-                if (sprite) {
-                  get_sprite_dimensions(sprite, &swidth, &sheight);
-                  canvas_put_sprite_full(pcanvas,
-                                         icon_startx,
-                                         starty + text_h + 4
-                                         + (height - text_h - 4 - sheight) / 2,
-                                         sprite);
-                  icon_startx += swidth + 2;
+            if (valid_improvement(pimprove)) {
+              requirement_vector_iterate(&(pimprove->reqs), preq) {
+                if (VUT_ADVANCE == preq->source.kind
+                    && advance_number(preq->source.value.advance) == node->tech) {
+                  sprite = get_building_sprite(tileset, pimprove);
+                  /* Improvement icons are not guaranteed to exist */
+                  if (sprite) {
+                    get_sprite_dimensions(sprite, &swidth, &sheight);
+                    canvas_put_sprite_full(pcanvas,
+                                           icon_startx,
+                                           starty + text_h + 4
+                                           + (height - text_h - 4 - sheight) / 2,
+                                           sprite);
+                    icon_startx += swidth + 2;
+                  }
                 }
- 	      }
- 	    } requirement_vector_iterate_end;
+              } requirement_vector_iterate_end;
+            }
           } improvement_iterate_end;
 
           governments_iterate(gov) {
@@ -1136,11 +1147,12 @@ void draw_reqtree(struct reqtree *tree, struct canvas *pcanvas,
       starty = node->node_y + node->node_height / 2;
       for (k = 0; k < node->nprovide; k++) {
 	struct tree_node *dest_node = node->provide[k];
+
 	color = get_color(tileset, edge_color(node, dest_node));
 
 	endx = dest_node->node_x;
 	endy = dest_node->node_y + dest_node->node_height / 2;
-	
+
         if (gui_options.reqtree_curved_lines) {
           canvas_put_curved_line(pcanvas, color, LINE_GOTO,
                                  startx, starty, endx - startx,

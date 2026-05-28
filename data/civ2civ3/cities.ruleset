@@ -8,9 +8,9 @@
 ; use your new customized file.
 
 [datafile]
-description="Civ2Civ3 cities data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02 web-compatible"
-format_version=20
+description = "Civ2Civ3 cities data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02 web-compatible"
+format_version = 30
 
 ; /* <-- avoid gettext warnings
 ;
@@ -107,6 +107,8 @@ pop_report_zeroes    = 4        ; Population in reports in tens of thousands
 
 [citizen]
 nationality          = TRUE     ; account for the nationality of the citizens
+ubuilder_nationality = FALSE    ; does pop_cost unit get builder`s nationality,
+                                ; or that of the majority of the citizens in the city
 convert_speed        = 50       ; base probability 50/1000 -> once every 20 turns
 partisans_pct        = 75       ; percentage of own nationality to inspire partisans
                                 ; if 0, original city owner information is used instead
@@ -135,5 +137,5 @@ food_wipe         = TRUE
 gold_wipe         = TRUE
 
 shield_protected  = "EvacuateFirst"
-shield_unit_act   = "Help Wonder", "Recycle Unit", "Disband Unit"
+shield_unit_act   = "Help Wonder", "Disband Unit Recover", "Disband Unit"
 shield_wipe       = FALSE

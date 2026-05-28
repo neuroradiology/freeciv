@@ -134,27 +134,28 @@ void create_tmap(bool real)
       tmap(ptile) = t;
     } else {
       /* high land can be 30% cooler */
-      float height = - 0.3 * MAX(0, hmap(ptile) - hmap_shore_level) 
-	  / (hmap_max_level - hmap_shore_level); 
+      float height = - 0.3 * MAX(0, hmap(ptile) - hmap_shore_level)
+          / (hmap_max_level - hmap_shore_level);
+      int tcn = count_terrain_class_near_tile(ptile, FALSE, TRUE, TC_OCEAN);
       /* near ocean temperature can be 15% more "temperate" */
       float temperate = (0.15 * (wld.map.server.temperature / 100 - t
                                  / MAX_COLATITUDE)
-                         * 2 * MIN(50, count_terrain_class_near_tile(ptile,
-                                                                     FALSE,
-                                                                     TRUE,
-                                                                     TC_OCEAN))
+                         * 2 * MIN(50, tcn)
                          / 100);
 
       tmap(ptile) =  t * (1.0 + temperate) * (1.0 + height);
     }
   } whole_map_iterate_end;
-  /* adjust to get well sizes frequencies */
-  /* Notice: if colatitude is loaded from a scenario never call adjust.
-             Scenario may have an odd colatitude distribution and adjust will
-	     break it */
-  if (!wld.map.server.alltemperate) {
-    adjust_int_map(temperature_map, MAX_COLATITUDE);
+
+  /* adjust to get evenly distributed frequencies
+   * Only call adjust when the colatitude range is large enough for this to
+   * make sense - if most variation comes from height and coast, don't try
+   * to squish that back into its original narrow range */
+  if (REAL_COLATITUDE_RANGE(wld.map) >= MAX_COLATITUDE * 2 / 5) {
+    adjust_int_map(temperature_map, MIN_REAL_COLATITUDE(wld.map),
+                   MAX_REAL_COLATITUDE(wld.map));
   }
+
   /* now simplify to 4 base values */ 
   for (i = 0; i < MAP_INDEX_SIZE; i++) {
     int t = temperature_map[i];

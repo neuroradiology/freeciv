@@ -19,6 +19,9 @@
 #include "game.h"
 #include "government.h"
 
+/* client */
+#include "control.h"
+
 /* gui main header */
 #include "gui_stub.h"
 
@@ -233,7 +236,7 @@ void popdown_all_game_dialogs(void)
 **************************************************************************/
 int action_selection_actor_unit(void)
 {
-  /* PORTME */    
+  /* PORTME */
   return IDENTITY_NUMBER_ZERO;
 }
 
@@ -328,7 +331,7 @@ void show_tech_gained_dialog(Tech_type_id tech)
 /**********************************************************************//**
   Show tileset error dialog.
 **************************************************************************/
-void show_tileset_error(const char *msg)
+void show_tileset_error(const char *tset_name, const char *msg)
 {
   /* PORTME */
 }
@@ -361,14 +364,12 @@ void gui_popup_combat_info(int attacker_unit_id, int defender_unit_id,
 {
 }
 
-/***************************************************************************
-  Popup dialog showing given image and text,
-  start playing given sound, stop playing sound when popup is closed.
-  Take all space available to show image if fullsize is set.
-  If there are other the same popups show them in queue.
-***************************************************************************/
-void show_img_play_snd(const char *img_path, const char *snd_path,
-                       const char *desc, bool fullsize)
+/**********************************************************************//**
+  Common code wants confirmation for an action.
+**************************************************************************/
+void gui_request_action_confirmation(const char *expl,
+                                     struct act_confirmation_data *data)
 {
-  /* PORTME */
+  /* Just confirm */
+  action_confirmation(data, TRUE);
 }

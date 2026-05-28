@@ -47,7 +47,7 @@
 #include "stdinhand.h"
 
 /* server/scripting */
-#include "tolua_server_gen.h"
+#include <tolua_server_gen.h> /* <> so looked from the build directory first. */
 
 #include "script_server.h"
 
@@ -306,7 +306,7 @@ bool script_server_init(void)
   }
 
   tolua_common_a_open(fcl_main->state);
-  api_specenum_open(fcl_main->state);
+  api_game_specenum_open(fcl_main->state);
   tolua_game_open(fcl_main->state);
   tolua_signal_open(fcl_main->state);
 
@@ -340,7 +340,7 @@ bool script_server_init(void)
   }
 
   tolua_common_a_open(fcl_unsafe->state);
-  api_specenum_open(fcl_unsafe->state);
+  api_game_specenum_open(fcl_unsafe->state);
   tolua_game_open(fcl_unsafe->state);
 
 #ifdef MESON_BUILD
@@ -419,7 +419,7 @@ void script_server_signal_emit(const char *signal_name, ...)
 ***************************************************************************/
 static void script_server_signals_create(void)
 {
-  signal_deprecator *depr;
+  struct signal_deprecator *depr;
 
   luascript_signal_create(fcl_main, "turn_begin", 2,
                           API_TYPE_INT, API_TYPE_INT);
@@ -428,7 +428,14 @@ static void script_server_signals_create(void)
    * starting from 0. */
   depr = luascript_signal_create(fcl_main, "turn_started", 2,
                                  API_TYPE_INT, API_TYPE_INT);
-  deprecate_signal(depr, "turn_started", "turn_begin", "3.0");
+  deprecate_signal(depr, "turn_started", "turn_begin", "3.0", NULL);
+
+  luascript_signal_create(fcl_main, "player_phase_begin", 2,
+                          API_TYPE_PLAYER, API_TYPE_BOOL);
+  luascript_signal_create(fcl_main, "player_alive_phase_end", 1,
+                          API_TYPE_PLAYER);
+  luascript_signal_create(fcl_main, "player_phase_end", 1,
+                          API_TYPE_PLAYER);
 
   luascript_signal_create(fcl_main, "unit_moved", 3,
                           API_TYPE_UNIT, API_TYPE_TILE, API_TYPE_TILE);
@@ -443,7 +450,7 @@ static void script_server_signals_create(void)
   /* Deprecated form of the 'city_size_change' signal for the case of growth. */
   depr = luascript_signal_create(fcl_main, "city_growth", 2,
                                  API_TYPE_CITY, API_TYPE_INT);
-  deprecate_signal(depr, "city_growth", "city_size_change", "2.6");
+  deprecate_signal(depr, "city_growth", "city_size_change", "2.6", NULL);
 
   /* Only includes units built in cities, for now. */
   luascript_signal_create(fcl_main, "unit_built", 2,
@@ -490,7 +497,7 @@ static void script_server_signals_create(void)
    * conquest. */
   depr = luascript_signal_create(fcl_main, "city_lost", 3,
                                  API_TYPE_CITY, API_TYPE_PLAYER, API_TYPE_PLAYER);
-  deprecate_signal(depr, "city_lost", "city_transferred", "2.6");
+  deprecate_signal(depr, "city_lost", "city_transferred", "2.6", NULL);
 
   luascript_signal_create(fcl_main, "hut_enter", 2,
                           API_TYPE_UNIT, API_TYPE_STRING);
@@ -506,11 +513,11 @@ static void script_server_signals_create(void)
   luascript_signal_create(fcl_main, "nuke_exploded", 2, API_TYPE_TILE,
                           API_TYPE_PLAYER);
 
-  /* Deprecated form of the 'disaster_occurred' signal without 'had_internal_effct'
+  /* Deprecated form of the 'disaster_occurred' signal without 'had_internal_effect'
    * support. */
   depr = luascript_signal_create(fcl_main, "disaster", 2,
                           API_TYPE_DISASTER, API_TYPE_CITY);
-  deprecate_signal(depr, "disaster", "disaster_occurred", "2.6");
+  deprecate_signal(depr, "disaster", "disaster_occurred", "2.6", NULL);
 
   luascript_signal_create(fcl_main, "achievement_gained", 3,
                           API_TYPE_ACHIEVEMENT, API_TYPE_PLAYER,
@@ -524,26 +531,54 @@ static void script_server_signals_create(void)
                           API_TYPE_ACTION,
                           API_TYPE_UNIT, API_TYPE_UNIT);
 
+  luascript_signal_create(fcl_main, "action_finished_unit_unit", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_UNIT);
+
   luascript_signal_create(fcl_main, "action_started_unit_units", 3,
                           API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_units", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
                           API_TYPE_UNIT, API_TYPE_TILE);
 
   luascript_signal_create(fcl_main, "action_started_unit_city", 3,
                           API_TYPE_ACTION,
                           API_TYPE_UNIT, API_TYPE_CITY);
 
+  luascript_signal_create(fcl_main, "action_finished_unit_city", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_CITY);
+
   luascript_signal_create(fcl_main, "action_started_unit_tile", 3,
                           API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_tile", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_started_unit_extras", 3,
+                          API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_extras", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
                           API_TYPE_UNIT, API_TYPE_TILE);
 
   luascript_signal_create(fcl_main, "action_started_unit_self", 2,
                           API_TYPE_ACTION,
                           API_TYPE_UNIT);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_self", 3,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT);
 }
 
 /***********************************************************************//**
   Add server callback functions; these must be defined in the lua script
-  '<rulesetdir>/script.lua':
+  '[rulesetdir]/script.lua':
 
   respawn_callback (optional):
     - callback lua function for the respawn command

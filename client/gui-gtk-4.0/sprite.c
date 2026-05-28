@@ -65,7 +65,7 @@ struct sprite *crop_sprite(struct sprite *source,
   cr = cairo_create(new->surface);
   cairo_rectangle(cr, 0, 0, width, height);
   cairo_clip(cr);
-  
+
   cairo_set_source_surface(cr, source->surface, -x, -y);
   cairo_paint(cr);
   if (mask) {
@@ -163,9 +163,9 @@ static void surf_destroy_callback(void *data)
 }
 
 /************************************************************************//**
-  Load the given graphics file into a sprite.  This function loads an
+  Load the given graphics file into a sprite. This function loads an
   entire image file, which may later be broken up into individual sprites
-  with crop_sprite.
+  with crop_sprite().
 ****************************************************************************/
 struct sprite *load_gfxfile(const char *filename)
 {
@@ -189,6 +189,8 @@ struct sprite *load_gfxfile(const char *filename)
   }
 
   spr = fc_malloc(sizeof(*spr));
+  spr->surface = NULL;
+
   width = gdk_pixbuf_get_width(pb);
   height = gdk_pixbuf_get_height(pb);
   pbdata = gdk_pixbuf_get_pixels(pb);
@@ -199,7 +201,8 @@ struct sprite *load_gfxfile(const char *filename)
   cairo_stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
   if (cairo_stride <= 0) {
     log_error("Cairo does not give stride for width %d", width);
-    free(spr);
+    free_sprite(spr);
+
     return NULL;
   }
 
@@ -221,8 +224,10 @@ struct sprite *load_gfxfile(const char *filename)
           data[j * 4 + 0] = tmp;
         } else {
           tmp = MULTI_UNc(pbdata[j * channels + 2], pbdata[j * channels + 3]);
-          data[j * 4 + 1] = MULTI_UNc(pbdata[j * channels + 1], pbdata[j * channels + 3]);
-          data[j * 4 + 2] = MULTI_UNc(pbdata[j * channels + 0], pbdata[j * channels + 3]);
+          data[j * 4 + 1] = MULTI_UNc(pbdata[j * channels + 1],
+                                      pbdata[j * channels + 3]);
+          data[j * 4 + 2] = MULTI_UNc(pbdata[j * channels + 0],
+                                      pbdata[j * channels + 3]);
           data[j * 4 + 0] = tmp;
           data[j * 4 + 3] = pbdata[j * channels + 3];
         }
@@ -245,9 +250,10 @@ struct sprite *load_gfxfile(const char *filename)
 
   spr->surface = cairo_image_surface_create_for_data(cairo_data, CAIRO_FORMAT_ARGB32,
                                                      width, height, cairo_stride);
-  if (spr->surface == NULL || cairo_surface_status(spr->surface) != CAIRO_STATUS_SUCCESS) {
+  if (spr->surface == NULL
+      || cairo_surface_status(spr->surface) != CAIRO_STATUS_SUCCESS) {
     log_error("Cairo image surface creation error");
-    free(spr);
+    free_sprite(spr);
     free(cairo_data);
 
     return NULL;
@@ -271,7 +277,10 @@ struct sprite *load_gfxfile(const char *filename)
 ****************************************************************************/
 void free_sprite(struct sprite * s)
 {
-  cairo_surface_destroy(s->surface);
+  if (s->surface != NULL) {
+    cairo_surface_destroy(s->surface);
+  }
+
   free(s);
 }
 
@@ -287,7 +296,7 @@ struct sprite *sprite_scale(struct sprite *src, int new_w, int new_h)
 
   get_sprite_dimensions(src, &width, &height);
 
-  new->surface = cairo_surface_create_similar(src->surface, 
+  new->surface = cairo_surface_create_similar(src->surface,
       CAIRO_CONTENT_COLOR_ALPHA, new_w, new_h);
 
   cr = cairo_create(new->surface);
@@ -511,6 +520,8 @@ GdkPixbuf *create_extra_pixbuf(const struct extra_type *pextra)
   return pixbuf;
 }
 
+/* TODO: Remove as unused */
+#if 0
 /************************************************************************//**
   Create a GtkImage from cairo surface.
 ****************************************************************************/
@@ -542,4 +553,68 @@ void image_set_from_surface(GtkImage *image, cairo_surface_t *surf)
 
   gtk_image_set_from_pixbuf(image, pb);
   g_object_unref(pb);
+}
+#endif /* Unused GtkImage stuff */
+
+/************************************************************************//**
+  Create a GtkPicture from cairo surface.
+****************************************************************************/
+GtkWidget *picture_new_from_surface(cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+  GtkWidget *pic;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  pic = gtk_picture_new_for_pixbuf(pb);
+  g_object_unref(pb);
+
+  return pic;
+}
+
+/************************************************************************//**
+  Set a GtkPicture from cairo surface.
+****************************************************************************/
+void picture_set_from_surface(GtkPicture *pic, cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  gtk_picture_set_pixbuf(pic, pb);
+  g_object_unref(pb);
+}
+
+/************************************************************************//**
+  Return a sprite image of a number.
+****************************************************************************/
+struct sprite *load_gfxnumber(int num)
+{
+  int width, height;
+  char buf[10];
+  struct sprite *spr;
+  struct color *sprcolor = color_alloc(0xff, 0xff, 0x00);
+  struct color *textcolor = color_alloc(0x00, 0x00, 0x00);
+  cairo_t *cr;
+  int border = 2;
+
+  fc_snprintf(buf, sizeof(buf), "%d", num);
+  get_text_size(&width, &height, FONT_CITY_PROD, buf);
+
+  spr = create_sprite(width + border * 2, height + border * 2, sprcolor);
+
+  cr = cairo_create(spr->surface);
+
+  surface_put_text(cr, border, border, 1.0, FONT_CITY_PROD, textcolor, buf);
+
+  cairo_destroy(cr);
+
+  color_free(textcolor);
+  color_free(sprcolor);
+
+  return spr;
 }

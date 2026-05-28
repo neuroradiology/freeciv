@@ -30,18 +30,23 @@
 #include "ai.h"
 #include "achievements.h"
 #include "actions.h"
+#include "actres.h"
 #include "city.h"
 #include "connection.h"
+#include "counters.h"
+#include "diptreaty.h"
 #include "disaster.h"
 #include "extras.h"
 #include "government.h"
 #include "idex.h"
 #include "map.h"
+#include "modpack.h"
 #include "multipliers.h"
 #include "nation.h"
 #include "packets.h"
 #include "player.h"
 #include "research.h"
+#include "rgbcolor.h"
 #include "spaceship.h"
 #include "specialist.h"
 #include "style.h"
@@ -59,15 +64,9 @@ struct world wld;
 
 bool am_i_server = FALSE;
 
-static void game_defaults(bool keep_ruleset_value);
+bool _ruleset_compat_mode = FALSE;
 
-/**********************************************************************//**
-  Is program type server?
-**************************************************************************/
-bool is_server(void)
-{
-  return am_i_server;
-}
+static void game_defaults(bool keep_ruleset_value);
 
 /**********************************************************************//**
   Set program type to server.
@@ -90,13 +89,14 @@ void i_am_client(void)
 **************************************************************************/
 int civ_population(const struct player *pplayer)
 {
-  int ppl=0;
-  city_list_iterate(pplayer->cities, pcity)
-    ppl+=city_population(pcity);
-  city_list_iterate_end;
+  int ppl = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    ppl += city_population(pcity);
+  } city_list_iterate_end;
+
   return ppl;
 }
-
 
 /**********************************************************************//**
   Find city with given name from any player.
@@ -246,10 +246,12 @@ static void game_defaults(bool keep_ruleset_value)
   game.control.num_achievement_types   = 0;
   game.control.num_styles              = 0;
   game.control.num_music_styles        = 0;
+  game.control.num_nation_groups       = 0;
+  game.control.num_nation_sets         = 0;
   game.control.preferred_tileset[0]    = '\0';
   game.control.preferred_soundset[0]   = '\0';
   game.control.preferred_musicset[0]   = '\0';
-  game.control.styles_count            = 0;
+  game.control.num_city_styles         = 0;
   game.control.terrain_count           = 0;
 
   game.ruleset_summary       = NULL;
@@ -283,6 +285,7 @@ static void game_defaults(bool keep_ruleset_value)
   game.info.globalwarming    = 0;
   game.info.global_warming   = GAME_DEFAULT_GLOBAL_WARMING;
   game.info.gold             = GAME_DEFAULT_GOLD;
+  game.info.infrapoints      = GAME_DEFAULT_INFRA;
   game.info.revolentype      = GAME_DEFAULT_REVOLENTYPE;
   game.info.default_government_id = G_LAST;
   game.info.government_during_revolution_id = G_LAST;
@@ -303,7 +306,6 @@ static void game_defaults(bool keep_ruleset_value)
   game.info.sciencebox       = GAME_DEFAULT_SCIENCEBOX;
   game.info.shieldbox        = GAME_DEFAULT_SHIELDBOX;
   game.info.skill_level      = GAME_DEFAULT_SKILL_LEVEL;
-  game.info.slow_invasions   = RS_DEFAULT_SLOW_INVASIONS;
   game.info.victory_conditions = GAME_DEFAULT_VICTORY_CONDITIONS;
   game.info.team_pooled_research = GAME_DEFAULT_TEAM_POOLED_RESEARCH;
   game.info.tech             = GAME_DEFAULT_TECHLEVEL;
@@ -316,7 +318,9 @@ static void game_defaults(bool keep_ruleset_value)
   game.info.turn             = 0;
   game.info.warminglevel     = 0; /* set later */
   game.info.year_0_hack      = FALSE;
-  game.info.year             = GAME_START_YEAR;
+  game.info.year             = GAME_DEFAULT_START_YEAR;
+  game.info.top_cities_count = GAME_DEFAULT_TOP_CITIES_COUNT;
+  BV_CLR_ALL(game.info.diplchance_initial_odds);
 
   /* The scenario packets. */
   game.scenario.is_scenario = FALSE;
@@ -359,6 +363,8 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.diplchance        = GAME_DEFAULT_DIPLCHANCE;
     game.server.diplbulbcost      = GAME_DEFAULT_DIPLBULBCOST;
     game.server.diplgoldcost      = GAME_DEFAULT_DIPLGOLDCOST;
+    game.server.incite_gold_loss_chance = GAME_DEFAULT_INCITE_GOLD_LOSS_CHANCE;
+    game.server.incite_gold_capt_chance = GAME_DEFAULT_INCITE_GOLD_CAPT_CHANCE;
     game.server.dispersion        = GAME_DEFAULT_DISPERSION;
     game.server.endspaceship      = GAME_DEFAULT_END_SPACESHIP;
     game.server.end_turn          = GAME_DEFAULT_END_TURN;
@@ -417,8 +423,8 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.scoreturn         = GAME_DEFAULT_SCORETURN - 1;
     game.server.seed              = GAME_DEFAULT_SEED;
     sz_strlcpy(game.server.start_units, GAME_DEFAULT_START_UNITS);
-    game.server.spaceship_travel_time = GAME_DEFAULT_SPACESHIP_TRAVEL_TIME;
-    game.server.start_year        = GAME_START_YEAR;
+    game.server.spaceship_travel_pct = GAME_DEFAULT_SPACESHIP_TRAVEL_PCT;
+    game.server.start_year        = GAME_DEFAULT_START_YEAR;
     game.server.tcptimeout        = GAME_DEFAULT_TCPTIMEOUT;
     game.server.techlost_donor    = GAME_DEFAULT_TECHLOST_DONOR;
     game.server.techlost_recv     = GAME_DEFAULT_TECHLOST_RECV;
@@ -432,6 +438,7 @@ static void game_defaults(bool keep_ruleset_value)
     game.server.turnblock         = GAME_DEFAULT_TURNBLOCK;
     game.server.unitwaittime      = GAME_DEFAULT_UNITWAITTIME;
     game.server.plr_colors        = NULL;
+    game.server.random_move_time  = NULL;
   } else {
     /* Client side takes care of itself in client_main() */
   }
@@ -444,6 +451,7 @@ static void game_defaults(bool keep_ruleset_value)
 **************************************************************************/
 void game_init(bool keep_ruleset_value)
 {
+  modpacks_init();
   game_defaults(keep_ruleset_value);
   player_slots_init();
   map_init(&wld.map, is_server());
@@ -453,6 +461,7 @@ void game_init(bool keep_ruleset_value)
   cm_init();
   researches_init();
   universal_found_functions_init();
+  treaties_init();
 }
 
 /**********************************************************************//**
@@ -474,6 +483,7 @@ void game_map_init(void)
 **************************************************************************/
 void game_free(void)
 {
+  treaties_free();
   player_slots_free();
   main_map_free();
   free_city_map_index();
@@ -482,6 +492,7 @@ void game_free(void)
   game_ruleset_free();
   researches_free();
   cm_free();
+  modpacks_free();
 }
 
 /**********************************************************************//**
@@ -518,6 +529,7 @@ void game_ruleset_init(void)
   ruleset_cache_init();
   disaster_types_init();
   achievements_init();
+  actres_init();
   actions_init();
   trade_route_types_init();
   terrains_init();
@@ -532,10 +544,12 @@ void game_ruleset_init(void)
   user_unit_type_flags_init();
   user_terrain_flags_init();
   user_extra_flags_init();
+  user_impr_flags_init();
   tech_classes_init();
   user_tech_flags_init();
   multipliers_init();
   clause_infos_init();
+  counters_init();
 
   if (is_server()) {
     game.server.luadata = NULL;
@@ -586,16 +600,19 @@ void game_ruleset_free(void)
   city_styles_free();
   styles_free();
   actions_free();
+  actres_free();
   achievements_free();
   disaster_types_free();
   terrains_free();
   user_tech_flags_free();
   extra_flags_free();
+  impr_flags_free();
   user_terrain_flags_free();
   ruleset_cache_free();
   nation_sets_groups_free();
   multipliers_free();
   clause_infos_free();
+  counters_free();
 
   /* Destroy the default veteran system. */
   veteran_system_destroy(game.veteran);
@@ -769,10 +786,10 @@ static char *year_suffix(void)
   Generate a default save file name and place it in the provided buffer.
   Within the name the following custom formats are allowed:
 
-    %R = <reason>
-    %S = <suffix>
-    %T = <game.info.turn>
-    %Y = <game.info.year>
+    %R = reason
+    %S = suffix
+    %T = game.info.turn
+    %Y = game.info.year
 
   Examples:
     'freeciv-T%04T-Y%+04Y-%R' => 'freeciv-T0099-Y-0050-manual'

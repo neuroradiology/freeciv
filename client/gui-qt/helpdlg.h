@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,20 +14,20 @@
 #ifndef FC__HELPDLG_H
 #define FC__HELPDLG_H
 
-// common
-#include "extras.h"
-
 // Qt
 #include <QDialog>
 #include <QHash>
 #include <QList>
 
+// common
+#include "extras.h"
+
+// client
+#include "helpdlg_g.h"
+
 // gui-qt
 #include "dialogs.h"
 
-extern "C" {
-#include "helpdlg_g.h"
-}
 
 // Forward declarations
 struct canvas;
@@ -93,7 +93,7 @@ class help_widget : public QWidget
   void setup_ui();
   void set_main_widget(QWidget *main_widget);
 
-  void do_layout();
+  void do_layout(bool horizontal);
   void undo_layout();
 
   void show_info_panel();
@@ -124,7 +124,7 @@ class help_widget : public QWidget
   void set_topic_building(const help_item *item, const char *title);
   void set_topic_tech(const help_item *item, const char *title);
   void set_topic_terrain(const help_item *item, const char *title);
-  void set_topic_extra(const help_item *item, const char *title);
+  bool set_topic_extra(const help_item *item, const char *title);
   void set_topic_specialist(const help_item *item, const char *title);
   void set_topic_government(const help_item *item, const char *title);
   void set_topic_nation(const help_item *item, const char *title);
@@ -150,4 +150,4 @@ public:
 
 void update_help_fonts();
 
-#endif /* FC__HELPDLG_H */
+#endif // FC__HELPDLG_H

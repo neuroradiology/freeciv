@@ -12,9 +12,9 @@
 ; than minor changes.
 
 [datafile]
-description="Alien World cities data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Alien World cities data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02"
+format_version = 30
 
 ; /* <-- avoid gettext warnings
 ;
@@ -105,6 +105,8 @@ pop_report_zeroes    = 2        ; Population in reports in hundreds
 
 [citizen]
 nationality          = TRUE     ; account for the nationality of the citizens
+ubuilder_nationality = FALSE    ; does pop_cost unit get builder`s nationality,
+                                ; or that of the majority of the citizens in the city
 convert_speed        = 50       ; base probability 50/1000 -> once every 20 turns
 partisans_pct        = 0        ; percentage of own nationality to inspire partisans
                                 ; if 0, original city owner information is used instead
@@ -122,16 +124,14 @@ conquest_convert_pct = 0        ; percentage which converts to the new nation
 ; X_wipe       - wipe the unit if it survived performing the actions listed
 ;                above.
 
-food_protected    = "EvacuateFirst"
+; food_protected    = "EvacuateFirst"
 ; food_unit_act   =
 food_wipe         = TRUE
 
-; TODO: Should missing gold upkeep really be able to kill units with the
-; EvacuateFirst unit type flag?
 ; gold_protected  =
 ; gold_unit_act   =
 gold_wipe         = TRUE
 
-shield_protected  = "EvacuateFirst"
-shield_unit_act   = "Help Wonder", "Recycle Unit", "Disband Unit"
+; shield_protected  = "EvacuateFirst"
+shield_unit_act   = "Help Wonder", "Disband Unit Recover", "Disband Unit"
 shield_wipe       = FALSE

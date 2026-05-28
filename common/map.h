@@ -22,14 +22,16 @@ extern "C" {
 /* utility */
 #include "bitvector.h"
 #include "iterator.h"
-#include "log.h"                /* fc_assert */
+#include "log.h"                /* fc_assert() */
 
 /* common */
 #include "fc_types.h"
 #include "game.h"
 #include "map_types.h"
-#include "tile.h"
 #include "packets.h"
+#include "world_object.h"
+
+struct tile;
 
 /* Parameters for terrain counting functions. */
 static const bool C_ADJACENT = FALSE;
@@ -40,9 +42,13 @@ static const bool C_PERCENT = TRUE;
 #define MAP_IS_ISOMETRIC (CURRENT_TOPOLOGY & (TF_ISO + TF_HEX))
 
 #define CURRENT_TOPOLOGY (wld.map.topology_id)
+#define CURRENT_WRAP (wld.map.wrap_id)
 
 #define topo_has_flag(topo, flag) (((topo) & (flag)) != 0)
 #define current_topo_has_flag(flag) topo_has_flag((CURRENT_TOPOLOGY), (flag))
+
+#define wrap_has_flag(wrap, flag) (((wrap) & (flag)) != 0)
+#define current_wrap_has_flag(flag) wrap_has_flag((CURRENT_WRAP), (flag))
 
 #define ALL_DIRECTIONS_CARDINAL() topo_has_flag((CURRENT_TOPOLOGY), TF_HEX)
 
@@ -356,11 +362,12 @@ extern struct terrain_misc terrain_control;
 
 /* See iterate_outward_dxy() */
 #define iterate_outward(nmap, start_tile, max_dist, itr_tile)            \
-  iterate_outward_dxy(nmap, start_tile, max_dist, itr_tile, _dx_itr, _dy_itr)
+  iterate_outward_dxy(nmap, start_tile, max_dist, itr_tile,              \
+                      _dx_itr##itr_tile, _dy_itr##itr_tile)
 
 #define iterate_outward_end iterate_outward_dxy_end
 
-/* 
+/*
  * Iterate through all tiles in a square with given center and radius.
  * The position (x_itr, y_itr) that is returned will be normalized;
  * unreal positions will be automatically discarded. (dx_itr, dy_itr)
@@ -443,8 +450,8 @@ extern struct terrain_misc terrain_control;
 /* Iterate itr_tile through all map tiles cardinally adjacent to the given
  * center map position, with normalization.  Does not include the center
  * position.  The order of positions is unspecified. */
-#define cardinal_adjc_iterate(nmap, center_tile, itr_tile)                  \
-  adjc_dirlist_iterate(nmap, center_tile, itr_tile, _dir_itr##center_tile,  \
+#define cardinal_adjc_iterate(nmap, center_tile, itr_tile)                \
+  adjc_dirlist_iterate(nmap, center_tile, itr_tile, _dir_itr##itr_tile,   \
 		       wld.map.cardinal_dirs, wld.map.num_cardinal_dirs)
 
 #define cardinal_adjc_iterate_end adjc_dirlist_iterate_end
@@ -553,13 +560,41 @@ BV_DEFINE(dir_vector, 8);
 
 enum direction8 dir_cw(enum direction8 dir);
 enum direction8 dir_ccw(enum direction8 dir);
-const char* dir_get_name(enum direction8 dir);
+const char *dir_get_name(enum direction8 dir);
 bool map_untrusted_dir_is_valid(enum direction8 dir);
 bool is_valid_dir(enum direction8 dir);
 bool is_cardinal_dir(enum direction8 dir);
 
 extern const int DIR_DX[8];
 extern const int DIR_DY[8];
+
+/* Latitude granularity, irrespective of map/generator settings */
+#define MAP_MAX_LATITUDE           1000
+
+#define MAP_MAX_LATITUDE_BOUND     (MAP_MAX_LATITUDE)
+#define MAP_MIN_LATITUDE_BOUND     (-MAP_MAX_LATITUDE)
+#define MAP_DEFAULT_NORTH_LATITUDE MAP_MAX_LATITUDE_BOUND
+#define MAP_DEFAULT_SOUTH_LATITUDE MAP_MIN_LATITUDE_BOUND
+
+/* Northernmost and southernmost latitude for the given map */
+#define MAP_NORTH_LATITUDE(_nmap) ((_nmap).north_latitude)
+#define MAP_SOUTH_LATITUDE(_nmap) ((_nmap).south_latitude)
+
+/* Maximum and minimum latitude present in the given map */
+#define MAP_MAX_REAL_LATITUDE(_nmap) \
+  MAX(MAP_NORTH_LATITUDE(_nmap), MAP_SOUTH_LATITUDE(_nmap))
+#define MAP_MIN_REAL_LATITUDE(_nmap) \
+  MIN(MAP_NORTH_LATITUDE(_nmap), MAP_SOUTH_LATITUDE(_nmap))
+#define MAP_REAL_LATITUDE_RANGE(_nmap) \
+  (MAP_MAX_REAL_LATITUDE(_nmap) - MAP_MIN_REAL_LATITUDE(_nmap))
+
+/* Maximum and minimum absolute latitude */
+#define MAP_MAX_ABS_LATITUDE(_nmap) \
+  MAX(MAP_MAX_REAL_LATITUDE(_nmap), -MAP_MIN_REAL_LATITUDE(_nmap))
+#define MAP_MIN_ABS_LATITUDE(_nmap) \
+  MAX(0, MAX(MAP_MIN_REAL_LATITUDE(_nmap), -MAP_MAX_REAL_LATITUDE(_nmap)))
+
+int map_signed_latitude(const struct tile *ptile);
 
 /* Used for network transmission; do not change. */
 #define MAP_TILE_OWNER_NULL	 MAX_UINT8
@@ -580,7 +615,7 @@ extern const int DIR_DY[8];
 #ifdef FREECIV_WEB
 #define MAP_DEFAULT_SIZE         3
 #define MAP_MIN_SIZE             0
-#define MAP_MAX_SIZE             18
+#define MAP_MAX_SIZE             38
 #else  /* FREECIV_WEB */
 #define MAP_DEFAULT_SIZE         4
 #define MAP_MIN_SIZE             0
@@ -611,9 +646,11 @@ moves. Includes MAP_MAX_LINEAR_SIZE because a map can be non wrapping. */
 #define MAP_ORIGINAL_TOPO        TF_WRAPX
 #ifdef FREECIV_WEB
 /* Freeciv-web doesn't support isometric maps yet. */
-#define MAP_DEFAULT_TOPO         TF_WRAPX
+#define MAP_DEFAULT_TOPO         0
+#define MAP_DEFAULT_WRAP         WRAP_X
 #else /* FREECIV_WEB */
-#define MAP_DEFAULT_TOPO         (TF_WRAPX|TF_ISO|TF_HEX)
+#define MAP_DEFAULT_TOPO         (TF_ISO|TF_HEX)
+#define MAP_DEFAULT_WRAP         (WRAP_X)
 #endif /* FREECIV_WEB */
 
 #define MAP_DEFAULT_SEED         0
@@ -651,14 +688,6 @@ moves. Includes MAP_MAX_LINEAR_SIZE because a map can be non wrapping. */
 #define MAP_DEFAULT_FLATPOLES     100
 #define MAP_MIN_FLATPOLES         0
 #define MAP_MAX_FLATPOLES         100
-
-#define MAP_DEFAULT_SINGLE_POLE    FALSE
-#define MAP_MIN_SINGLE_POLE        FALSE
-#define MAP_MAX_SINGLE_POLE        TRUE
-
-#define MAP_DEFAULT_ALLTEMPERATE   FALSE
-#define MAP_MIN_ALLTEMPERATE       FALSE
-#define MAP_MAX_ALLTEMPERATE       TRUE
 
 #define MAP_DEFAULT_TEMPERATURE   50
 #define MAP_MIN_TEMPERATURE       0

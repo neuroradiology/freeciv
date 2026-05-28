@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,8 @@
 // Qt
 #include <QDialog>
 
+class QLineEdit;
+class QSpinBox;
 class QToolButton;
 
 class ruledit_gui;
@@ -36,11 +38,23 @@ class edit_utype : public QDialog
   private:
     ruledit_gui *ui;
     struct unit_type *utype;
-    QToolButton *req_button;
+    QSpinBox *bcost;
+    QSpinBox *attack;
+    QSpinBox *defense;
+    QSpinBox *move_rate;
+    QLineEdit *gfx_tag;
+    QLineEdit *gfx_tag_alt;
+
+  protected:
+    void closeEvent(QCloseEvent *cevent);
 
   private slots:
-    void req_menu(QAction *action);
+    void set_bcost_value(int value);
+    void set_attack_value(int value);
+    void set_defense_value(int value);
+    void set_move_rate(int value);
+    void gfx_tag_given();
+    void gfx_tag_alt_given();
 };
-
 
 #endif // FC__EDIT_UTYPE_H

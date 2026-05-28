@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -65,17 +65,17 @@ tab_extras::tab_extras(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
   extra_layout->addWidget(label, 0, 0);
   extra_layout->addWidget(rname, 0, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
   extra_layout->addWidget(label, 1, 0);
   extra_layout->addWidget(same_name, 1, 1);
@@ -100,6 +100,7 @@ tab_extras::tab_extras(ruledit_gui *ui_in) : QWidget()
   show_experimental(delete_button);
 
   refresh();
+  update_extra_info(nullptr);
 
   main_layout->addLayout(extra_layout);
 
@@ -144,8 +145,8 @@ void tab_extras::update_extra_info(struct extra_type *pextra)
       name->setEnabled(true);
     }
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
     same_name->setChecked(true);
     name->setEnabled(false);
   }
@@ -159,7 +160,10 @@ void tab_extras::select_extra()
   QList<QListWidgetItem *> select_list = extra_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_extra_info(extra_type_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray en_bytes;
+
+    en_bytes = select_list.at(0)->text().toUtf8();
+    update_extra_info(extra_type_by_rule_name(en_bytes.data()));
   }
 }
 
@@ -169,9 +173,13 @@ void tab_extras::select_extra()
 void tab_extras::name_given()
 {
   if (selected != nullptr) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
     extra_type_iterate(pextra) {
       if (pextra != selected && !pextra->ruledit_disabled) {
-        if (!strcmp(extra_rule_name(pextra), rname->text().toUtf8().data())) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(extra_rule_name(pextra), rname_bytes.data())) {
           ui->display_msg(R__("An extra with that rule name already exists!"));
           return;
         }
@@ -182,9 +190,11 @@ void tab_extras::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }

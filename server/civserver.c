@@ -45,7 +45,6 @@
 #include "fcintl.h"
 #include "log.h"
 #include "support.h"
-#include "timing.h"
 
 /* common */
 #include "capstr.h"
@@ -59,77 +58,14 @@
 #include "meta.h"
 #include "sernet.h"
 #include "srv_main.h"
+#include "srv_signal.h"
 
 #ifdef GENERATING_MAC
 static void Mac_options(int argc);  /* don't need argv */
 #endif
 
-#ifdef HAVE_SIGNAL_H
-#  define USE_INTERRUPT_HANDLERS
-#endif
-
-#ifdef USE_INTERRUPT_HANDLERS
-#define save_and_exit(sig)              \
-if (S_S_RUNNING == server_state()) {    \
-  save_game_auto(#sig, AS_INTERRUPT);   \
-}                                       \
-exit(EXIT_SUCCESS);
-
 /**********************************************************************//**
-  This function is called when a SIGINT (ctrl-c) is received.  It will exit
-  only if two SIGINTs are received within a second.
-**************************************************************************/
-static void signal_handler(int sig)
-{
-  static struct timer *timer = NULL;
-
-  switch (sig) {
-  case SIGINT:
-    if (timer && timer_read_seconds(timer) <= 1.0) {
-      save_and_exit(SIGINT);
-    } else {
-      if (game.info.timeout == -1) {
-        log_normal(_("Setting timeout to 0. Autogame will stop."));
-        game.info.timeout = 0;
-      }
-      if (!timer) {
-        log_normal(_("You must interrupt Freeciv twice "
-                     "within one second to make it exit."));
-      }
-    }
-    timer = timer_renew(timer, TIMER_USER, TIMER_ACTIVE);
-    timer_start(timer);
-    break;
-
-#ifdef SIGHUP
-  case SIGHUP:
-    save_and_exit(SIGHUP);
-    break;
-#endif /* SIGHUP */
-
-  case SIGTERM:
-    save_and_exit(SIGTERM);
-    break;
-
-#ifdef SIGPIPE
-  case SIGPIPE:
-    if (signal(SIGPIPE, signal_handler) == SIG_ERR) {
-      /* Because the signal may have interrupted arbitrary code, we use
-       * fprintf() and _exit() here instead of log_*() and exit() so
-       * that we don't accidentally call any "unsafe" functions here
-       * (see the manual page for the signal function). */
-      fprintf(stderr, "\nFailed to reset SIGPIPE handler "
-              "while handling SIGPIPE.\n");
-      _exit(EXIT_FAILURE);
-    }
-    break;
-#endif /* SIGPIPE */
-  }
-}
-#endif /* USE_INTERRUPT_HANDLERS */
-
-/**********************************************************************//**
- Entry point for Freeciv server.  Basically, does two things:
+ Entry point for Freeciv server. Basically, does two things:
   1. Parses command-line arguments (possibly dialog, on mac).
   2. Calls the main server-loop routine.
 **************************************************************************/
@@ -140,7 +76,7 @@ int main(int argc, char *argv[])
   bool showvers = FALSE;
   char *option = NULL;
 
-  /* Load win32 post-crash debugger */
+  /* Load Windows post-crash debugger */
 #ifdef FREECIV_MSWINDOWS
 # ifndef FREECIV_NDEBUG
   if (LoadLibrary("exchndl.dll") == NULL) {
@@ -151,37 +87,7 @@ int main(int argc, char *argv[])
 # endif /* FREECIV_NDEBUG */
 #endif /* FREECIV_MSWINDOWS */
 
-#ifdef USE_INTERRUPT_HANDLERS
-  if (SIG_ERR == signal(SIGINT, signal_handler)) {
-        fc_fprintf(stderr, _("Failed to install SIGINT handler: %s\n"),
-                   fc_strerror(fc_get_errno()));
-    exit(EXIT_FAILURE);
-  }
-
-#ifdef SIGHUP
-  if (SIG_ERR == signal(SIGHUP, signal_handler)) {
-        fc_fprintf(stderr, _("Failed to install SIGHUP handler: %s\n"),
-                   fc_strerror(fc_get_errno()));
-    exit(EXIT_FAILURE);
-  }
-#endif /* SIGHUP */
-
-  if (SIG_ERR == signal(SIGTERM, signal_handler)) {
-        fc_fprintf(stderr, _("Failed to install SIGTERM handler: %s\n"),
-                   fc_strerror(fc_get_errno()));
-    exit(EXIT_FAILURE);
-  }
-
-#ifdef SIGPIPE
-  /* Ignore SIGPIPE, the error is handled by the return value
-   * of the write call. */
-  if (SIG_ERR == signal(SIGPIPE, signal_handler)) {
-    fc_fprintf(stderr, _("Failed to ignore SIGPIPE: %s\n"),
-               fc_strerror(fc_get_errno()));
-    exit(EXIT_FAILURE);
-  }
-#endif /* SIGPIPE */
-#endif /* USE_INTERRUPT_HANDLERS */
+  setup_interrupt_handlers();
 
   /* initialize server */
   srv_init();
@@ -298,12 +204,12 @@ int main(int argc, char *argv[])
     } else if (is_option("--version", argv[inx])) {
       showvers = TRUE;
     } else if ((option = get_option_malloc("--Announce", argv, &inx, argc, FALSE))) {
-      if (!strcasecmp(option, "ipv4")) {
+      if (!fc_strcasecmp(option, "ipv4")) {
         srvarg.announce = ANNOUNCE_IPV4;
-      } else if (!strcasecmp(option, "none")) {
+      } else if (!fc_strcasecmp(option, "none")) {
         srvarg.announce = ANNOUNCE_NONE;
 #ifdef FREECIV_IPV6_SUPPORT
-      } else if (!strcasecmp(option, "ipv6")) {
+      } else if (!fc_strcasecmp(option, "ipv6")) {
         srvarg.announce = ANNOUNCE_IPV6;
 #endif /* IPv6 support */
       } else {
@@ -335,7 +241,7 @@ int main(int argc, char *argv[])
   con_write(C_VERSION, _("This is the server for %s"), freeciv_name_version());
   /* TRANS: No full stop after the URL, could cause confusion. */
   con_write(C_COMMENT, _("You can learn a lot about Freeciv at %s"),
-	    WIKI_URL);
+	    HOMEPAGE_URL);
 
   if (showhelp) {
     struct cmdhelp *help = cmdhelp_new(argv[0]);
@@ -368,13 +274,13 @@ int main(int argc, char *argv[])
     cmdhelp_add(help, "d",
                 /* TRANS: "debug" is exactly what user must type, do not translate. */
                 _("debug LEVEL"),
-                _("Set debug log level (%d to %d, or %d:file1,min,max:...)"),
-                LOG_FATAL, LOG_DEBUG, LOG_DEBUG);
+                _("Set debug log level (one of f,e,w,n,v,d, or "
+                  "d:file1,min,max:...)"));
 #else  /* FREECIV_DEBUG */
     cmdhelp_add(help, "d",
                 /* TRANS: "debug" is exactly what user must type, do not translate. */
                 _("debug LEVEL"),
-                _("Set debug log level (%d to %d)"), LOG_FATAL, LOG_VERBOSE);
+                _("Set debug log level (one of f,e,w,n,v)"));
 #endif /* FREECIV_DEBUG */
 #ifndef FREECIV_NDEBUG
     cmdhelp_add(help, "F",
@@ -508,7 +414,7 @@ static void Mac_options(int argc)
     short the_type;
     Handle the_handle;
     Rect the_rect;
-    short the_item, old_item=16;
+    short the_item, old_item = 16;
     int done = false;
     Str255 the_string;
 
@@ -533,11 +439,11 @@ static void Mac_options(int argc)
       exit(EXIT_FAILURE);
     }
     /* insert default highlight draw code? */
-    err=SetDialogCancelItem(optptr, 2);
+    err = SetDialogCancelItem(optptr, 2);
     if (err != 0) {
       exit(EXIT_FAILURE);
     }
-    err=SetDialogTracksCursor(optptr, true);
+    err = SetDialogTracksCursor(optptr, true);
     if (err != 0) {
       exit(EXIT_FAILURE);
     }
@@ -558,7 +464,7 @@ static void Mac_options(int argc)
         break;
         case 13:
           GetDItem(optptr, 13, &the_type, &the_handle, &the_rect);
-          srvarg.metaserver_no_send=GetCtlValue((ControlHandle)the_handle);
+          srvarg.metaserver_no_send = GetCtlValue((ControlHandle)the_handle);
           SetCtlValue((ControlHandle)the_handle, !srvarg.metaserver_no_send);
         break;
         case 15:
@@ -566,7 +472,7 @@ static void Mac_options(int argc)
         case 17:
           GetDItem(optptr, old_item, &the_type, &the_handle, &the_rect);
           SetCtlValue((ControlHandle)the_handle, false);
-          old_item=the_item;
+          old_item = the_item;
           GetDItem(optptr, the_item, &the_type, &the_handle, &the_rect);
           SetCtlValue((ControlHandle)the_handle, true);
         break;

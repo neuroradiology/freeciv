@@ -32,6 +32,7 @@
 #include "idex.h"
 #include "improvement.h"
 #include "map.h"
+#include "nation.h"
 #include "research.h"
 #include "rgbcolor.h"
 #include "tech.h"
@@ -66,8 +67,7 @@ static void player_diplstate_destroy(const struct player *plr1,
 ***********************************************************************/
 enum diplstate_type cancel_pact_result(enum diplstate_type oldstate)
 {
-  switch(oldstate) {
-  case DS_NO_CONTACT: /* possible if someone declares war on our ally */
+  switch (oldstate) {
   case DS_WAR: /* no change */
   case DS_ARMISTICE:
   case DS_CEASEFIRE:
@@ -77,17 +77,23 @@ enum diplstate_type cancel_pact_result(enum diplstate_type oldstate)
     return DS_ARMISTICE;
   case DS_TEAM: /* no change */
     return DS_TEAM;
-  default:
-    log_error("non-pact diplstate %d in cancel_pact_result", oldstate);
-    return DS_WAR; /* arbitrary */
+  case DS_NO_CONTACT:     /* Possible if someone declares war on our ally */
+    return DS_NO_CONTACT; /* Can't cancel lack of contact */
+  case DS_LAST:
+    fc_assert(oldstate != DS_LAST);
+    return DS_WAR; /* Arbitrary */
   }
+
+  fc_assert(FALSE);
+
+  return DS_WAR; /* Arbitrary */
 }
 
 /*******************************************************************//**
-  The senate may not allow you to break the treaty.  In this 
-  case you must first dissolve the senate then you can break 
-  it.  This is waived if you have statue of liberty since you 
-  could easily just dissolve and then recreate it. 
+  The senate may not allow you to break the treaty. In this
+  case you must first dissolve the senate then you can break
+  it. This is waived if you have statue of liberty since you
+  could easily just dissolve and then recreate it.
 ***********************************************************************/
 enum dipl_reason pplayer_can_cancel_treaty(const struct player *p1,
                                            const struct player *p2)
@@ -108,21 +114,22 @@ enum dipl_reason pplayer_can_cancel_treaty(const struct player *p1,
       && get_player_bonus(p1, EFT_NO_ANARCHY) <= 0) {
     return DIPL_SENATE_BLOCKING;
   }
+
   return DIPL_OK;
 }
 
 /*******************************************************************//**
-  Returns true iff p1 can be in alliance with p2.
+  Returns TRUE iff p1 can be in alliance with p2.
 
-  Check that we are not at war with any of p2's allies. Note 
-  that for an alliance to be made, we need to check this both 
+  Check that we are not at war with any of p2's allies. Note
+  that for an alliance to be made, we need to check this both
   ways.
 
-  The reason for this is to avoid the dread 'love-love-hate' 
+  The reason for this is to avoid the dread 'love-love-hate'
   triad, in which p1 is allied to p2 is allied to p3 is at
   war with p1. These lead to strange situations.
 ***********************************************************************/
-static bool is_valid_alliance(const struct player *p1, 
+static bool is_valid_alliance(const struct player *p1,
                               const struct player *p2)
 {
   players_iterate_alive(pplayer) {
@@ -130,7 +137,7 @@ static bool is_valid_alliance(const struct player *p1,
 
     if (pplayer != p1
         && pplayer != p2
-        && ds == DS_WAR /* do not count 'never met' as war here */
+        && ds == DS_WAR /* Do not count 'never met' as war here */
         && pplayers_allied(p2, pplayer)) {
       return FALSE;
     }
@@ -140,7 +147,8 @@ static bool is_valid_alliance(const struct player *p1,
 }
 
 /*******************************************************************//**
-  Returns true iff p1 can make given treaty with p2.
+  Returns the reason p1 can't make given treaty with p2,
+  or DIPL_OK if they can.
 
   We cannot regress in a treaty chain. So we cannot suggest
   'Peace' if we are in 'Alliance'. Then you have to cancel.
@@ -162,17 +170,17 @@ enum dipl_reason pplayer_can_make_treaty(const struct player *p1,
       || get_player_bonus(p2, EFT_NO_DIPLOMACY) > 0) {
     return DIPL_ERROR;
   }
-  if (treaty == DS_WAR 
-      || treaty == DS_NO_CONTACT 
-      || treaty == DS_ARMISTICE 
+  if (treaty == DS_WAR
+      || treaty == DS_NO_CONTACT
+      || treaty == DS_ARMISTICE
       || treaty == DS_TEAM
       || treaty == DS_LAST) {
-    return DIPL_ERROR; /* these are not negotiable treaties */
+    return DIPL_ERROR; /* These are not negotiable treaties */
   }
   if (treaty == DS_CEASEFIRE && existing != DS_WAR) {
-    return DIPL_ERROR; /* only available from war */
+    return DIPL_ERROR; /* Only available from war */
   }
-  if (treaty == DS_PEACE 
+  if (treaty == DS_PEACE
       && (existing != DS_WAR && existing != DS_CEASEFIRE)) {
     return DIPL_ERROR;
   }
@@ -185,15 +193,16 @@ enum dipl_reason pplayer_can_make_treaty(const struct player *p1,
       return DIPL_ALLIANCE_PROBLEM_THEM;
     }
   }
-  /* this check must be last: */
+  /* This check must be last: */
   if (treaty == existing) {
     return DIPL_ERROR;
   }
+
   return DIPL_OK;
 }
 
 /*******************************************************************//**
-  Check if pplayer has an embassy with pplayer2.  We always have
+  Check if pplayer has an embassy with pplayer2. We always have
   an embassy with ourselves.
 ***********************************************************************/
 bool player_has_embassy(const struct player *pplayer,
@@ -202,6 +211,26 @@ bool player_has_embassy(const struct player *pplayer,
   return (pplayer == pplayer2
           || player_has_real_embassy(pplayer, pplayer2)
           || player_has_embassy_from_effect(pplayer, pplayer2));
+}
+
+/*******************************************************************//**
+  Check if team has an embassy with tgt_player. Team always has
+  an embassy with its members.
+***********************************************************************/
+bool team_has_embassy(const struct team *pteam, const struct player *tgt_player)
+{
+  if (tgt_player->team == pteam) {
+    return TRUE;
+  }
+
+  player_list_iterate(team_members(pteam), teammate) {
+    if (player_has_real_embassy(teammate, tgt_player)
+        || player_has_embassy_from_effect(teammate, tgt_player)) {
+      return TRUE;
+    }
+  } player_list_iterate_end;
+
+  return FALSE;
 }
 
 /*******************************************************************//**
@@ -245,6 +274,7 @@ bool player_can_invade_tile(const struct player *pplayer,
 
   return (!ptile_owner
           || ptile_owner == pplayer
+          || terrain_has_flag(tile_terrain(ptile), TER_ENTER_BORDERS)
           || !players_non_invade(pplayer, ptile_owner));
 }
 
@@ -540,6 +570,7 @@ static void player_defaults(struct player *pplayer)
   pplayer->phase_done = FALSE;
 
   pplayer->revolution_finishes = -1;
+  pplayer->primary_capital_id = 0;
 
   BV_CLR_ALL(pplayer->real_embassy);
   players_iterate(aplayer) {
@@ -560,6 +591,7 @@ static void player_defaults(struct player *pplayer)
   pplayer->economic.tax     = PLAYER_DEFAULT_TAX_RATE;
   pplayer->economic.science = PLAYER_DEFAULT_SCIENCE_RATE;
   pplayer->economic.luxury  = PLAYER_DEFAULT_LUXURY_RATE;
+  pplayer->economic.infra_points = 0;
 
   spaceship_init(&pplayer->spaceship);
 
@@ -582,7 +614,9 @@ static void player_defaults(struct player *pplayer)
   pplayer->is_connected = FALSE;
   pplayer->current_conn = NULL;
   pplayer->connections = conn_list_new();
+  pplayer->autoselect_weight = -1;
   BV_CLR_ALL(pplayer->gives_shared_vision);
+  BV_CLR_ALL(pplayer->gives_shared_tiles);
   for (i = 0; i < B_LAST; i++) {
     pplayer->wonders[i] = WONDER_NOT_BUILT;
   }
@@ -598,7 +632,6 @@ static void player_defaults(struct player *pplayer)
   pplayer->rgb = NULL;
 
   memset(pplayer->multipliers, 0, sizeof(pplayer->multipliers));
-  memset(pplayer->multipliers_target, 0, sizeof(pplayer->multipliers_target));
 
   /* pplayer->server is initialised in
       ./server/plrhand.c:server_player_init()
@@ -722,11 +755,21 @@ void player_destroy(struct player *pplayer)
   conn_list_destroy(pplayer->connections);
 
   players_iterate(aplayer) {
-    /* destroy the diplomatics states of this player with others ... */
+    /* Destroy the diplomatic states of this player with others ... */
     player_diplstate_destroy(pplayer, aplayer);
-    /* and of others with this player. */
+    /* ...and of others with this player. */
     if (aplayer != pplayer) {
       player_diplstate_destroy(aplayer, pplayer);
+
+      /* Check if any cities of the other player have been founded
+       * by the removed player. */
+      city_list_iterate(aplayer->cities, pcity) {
+        if (pcity->original == pplayer) {
+          /* Unknown origin is better than giving baseless
+           * benefits to current owner */
+          pcity->original = NULL;
+        }
+      } city_list_iterate_end;
     }
   } players_iterate_end;
   free(pplayer->diplstates);
@@ -782,7 +825,7 @@ int player_number(const struct player *pplayer)
   Return struct player pointer for the given player index.
 
   You can retrieve players that are not in the game (with IDs larger than
-  player_count).  An out-of-range player request will return NULL.
+  player_count). An out-of-range player request will return NULL.
 ***********************************************************************/
 struct player *player_by_number(const int player_id)
 {
@@ -934,7 +977,7 @@ bool can_player_see_hypotetic_units_at(const struct player *pplayer,
   struct city *pcity;
 
   if (!player_can_trust_tile_has_no_units(pplayer, ptile)) {
-    /* The existance of any units at all is hidden from the player. */
+    /* The existence of any units at all is hidden from the player. */
     return FALSE;
   }
 
@@ -945,7 +988,7 @@ bool can_player_see_hypotetic_units_at(const struct player *pplayer,
     return FALSE;
   }
 
-  /* Can't see non allied units in transports. */
+  /* Can't see non-allied units in transports. */
   unit_list_iterate(ptile->units, punit) {
     if (unit_type_get(punit)->transport_capacity > 0
         && unit_owner(punit) != pplayer) {
@@ -962,7 +1005,7 @@ bool can_player_see_hypotetic_units_at(const struct player *pplayer,
 
 /*******************************************************************//**
   Checks if a unit can be seen by pplayer at (x,y).
-  A player can see a unit if he:
+  A player can see a unit if they:
   (a) can see the tile AND
   (b) can see the unit at the tile (i.e. unit not invisible at this tile) AND
   (c) the unit is outside a city OR in an allied city AND
@@ -997,7 +1040,7 @@ bool can_player_see_unit_at(const struct player *pplayer,
 
   /* Units within some extras may be hidden. */
   if (!pplayers_allied(pplayer, ptile->extras_owner)) {
-    struct unit_type *ptype = unit_type_get(punit);
+    const struct unit_type *ptype = unit_type_get(punit);
 
     extra_type_list_iterate(extra_type_list_of_unit_hiders(), pextra) {
       if (tile_has_extra(ptile, pextra) && is_native_extra_to_utype(pextra, ptype)) {
@@ -1006,7 +1049,8 @@ bool can_player_see_unit_at(const struct player *pplayer,
     } extra_type_list_iterate_end;
   }
 
-  /* Allied or non-hiding units are always seen. */
+  /* Allied or non-hiding units are always seen.
+   * See also stealth unit hiding part in map_change_seen() */
   if (pplayers_allied(unit_owner(punit), pplayer)
       || !is_hiding_unit(punit)) {
     return TRUE;
@@ -1015,8 +1059,6 @@ bool can_player_see_unit_at(const struct player *pplayer,
   /* Hiding units are only seen by the V_INVIS fog layer. */
   return fc_funcs->player_tile_vision_get(ptile, pplayer,
                                           unit_type_get(punit)->vlayer);
-
-  return FALSE;
 }
 
 /*******************************************************************//**
@@ -1038,7 +1080,7 @@ bool can_player_see_unit(const struct player *pplayer,
   If the player can see units in the city, then the server sends the
   unit info for units in the city to the client.  The client uses the
   tile's unitlist to determine whether to show the city occupied flag.  Of
-  course the units will be visible to the player as well, if he clicks on
+  course the units will be visible to the player as well, if they click on
   them.
 
   If the player can't see units in the city, then the server doesn't send
@@ -1080,11 +1122,13 @@ bool can_player_see_city_internals(const struct player *pplayer,
   target_city.
 
   A city's external features are visible to its owner, to players that
-  currently sees the tile it is located at and to players that has it as
-  a trade partner.
+  currently sees the tile it is located at.
+  If ruleset has reveal_trade_partner enabled, also anyone trading
+  with the city sees it.
 ***********************************************************************/
 bool player_can_see_city_externals(const struct player *pow_player,
-                                   const struct city *target_city) {
+                                   const struct city *target_city)
+{
   fc_assert_ret_val(target_city, FALSE);
   fc_assert_ret_val(pow_player, FALSE);
 
@@ -1100,12 +1144,14 @@ bool player_can_see_city_externals(const struct player *pow_player,
 
   fc_assert_ret_val(target_city->routes, FALSE);
 
-  trade_partners_iterate(target_city, trade_city) {
-    if (city_owner(trade_city) == pow_player) {
-      /* Revealed because of the trade route. */
-      return TRUE;
-    }
-  } trade_partners_iterate_end;
+  if (game.info.reveal_trade_partner) {
+    trade_partners_iterate(target_city, trade_city) {
+      if (city_owner(trade_city) == pow_player) {
+        /* Revealed because of the trade route. */
+        return TRUE;
+      }
+    } trade_partners_iterate_end;
+  }
 
   return FALSE;
 }
@@ -1222,7 +1268,7 @@ int player_get_expected_income(const struct player *pplayer)
     case GOLD_UPKEEP_NATION:
       /* Nation pays for buildings (and units). */
       income -= city_total_impr_gold_upkeep(pcity);
-      /* No break. */
+      fc__fallthrough; /* No break. */
     case GOLD_UPKEEP_MIXED:
       /* Nation pays for units. */
       income -= city_total_unit_gold_upkeep(pcity);
@@ -1249,20 +1295,20 @@ bool player_knows_techs_with_flag(const struct player *pplayer,
 }
 
 /*******************************************************************//**
-  Locate the player capital city, (NULL Otherwise) 
+  Locate the player's primary capital city, (NULL Otherwise)
 ***********************************************************************/
-struct city *player_capital(const struct player *pplayer)
+struct city *player_primary_capital(const struct player *pplayer)
 {
+  struct city *capital;
+
   if (!pplayer) {
     /* The client depends on this behavior in some places. */
     return NULL;
   }
-  city_list_iterate(pplayer->cities, pcity) {
-    if (is_capital(pcity)) {
-      return pcity;
-    }
-  } city_list_iterate_end;
-  return NULL;
+
+  capital = player_city_by_number(pplayer, pplayer->primary_capital_id);
+
+  return capital;
 }
 
 /*******************************************************************//**
@@ -1405,6 +1451,14 @@ bool gives_shared_vision(const struct player *me, const struct player *them)
 }
 
 /*******************************************************************//**
+  Return TRUE iff the player me gives shared tiles to player them.
+***********************************************************************/
+bool gives_shared_tiles(const struct player *me, const struct player *them)
+{
+  return BV_ISSET(me->gives_shared_tiles, player_index(them));
+}
+
+/*******************************************************************//**
   Return TRUE iff the two diplstates are equal.
 ***********************************************************************/
 bool are_diplstates_equal(const struct player_diplstate *pds1,
@@ -1441,8 +1495,12 @@ bool is_diplrel_between(const struct player *player1,
     return gives_shared_vision(player2, player1);
   case DRO_HOSTS_EMBASSY:
     return player_has_embassy(player2, player1);
+  case DRO_HOSTS_TEAM_EMBASSY:
+    return team_has_embassy(player2->team, player1);
   case DRO_HAS_EMBASSY:
     return player_has_embassy(player1, player2);
+  case DRO_HAS_TEAM_EMBASSY:
+    return team_has_embassy(player1->team, player2);
   case DRO_HOSTS_REAL_EMBASSY:
     return player_has_real_embassy(player2, player1);
   case DRO_HAS_REAL_EMBASSY:
@@ -1536,6 +1594,48 @@ const char *diplrel_name_translation(int value)
   } else {
     return _(diplrel_other_name(value));
   }
+}
+
+/**************************************************************************
+  Return the Casus Belli range when offender performs paction to tgt_plr
+  at tgt_tile and the outcome is outcome.
+**************************************************************************/
+enum casus_belli_range casus_belli_range_for(const struct player *offender,
+                                             const struct unit_type *off_ut,
+                                             const struct player *tgt_plr,
+                                             const enum effect_type outcome,
+                                             const struct action *paction,
+                                             const struct tile *tgt_tile)
+{
+  int casus_belli_amount;
+
+  /* The victim gets a casus belli if CASUS_BELLI_VICTIM or above. Everyone
+   * gets a casus belli if CASUS_BELLI_OUTRAGE or above. */
+  casus_belli_amount =
+      get_target_bonus_effects(NULL,
+                               &(const struct req_context) {
+                                 .player = offender,
+                                 .city = tile_city(tgt_tile),
+                                 .tile = tgt_tile,
+                                 .unittype = off_ut,
+                                 .action = paction,
+                               },
+                               tgt_plr,
+                               outcome);
+
+  if (casus_belli_amount >= CASUS_BELLI_OUTRAGE) {
+    /* International outrage: This isn't just between the offender and the
+     * victim. */
+    return CBR_INTERNATIONAL_OUTRAGE;
+  }
+
+  if (casus_belli_amount >= CASUS_BELLI_VICTIM) {
+    /* In this situation the specified action provides a casus belli
+     * against the actor. */
+    return CBR_VICTIM_ONLY;
+  }
+
+  return CBR_NONE;
 }
 
 /* The number of mutually exclusive requirement sets that
@@ -1693,9 +1793,17 @@ bv_diplrel_all_reqs diplrel_req_contradicts(const struct requirement *req)
   /* Nothing is known to contradict the requirement yet. */
   BV_CLR_ALL(known);
 
-  if (req->source.kind != VUT_DIPLREL) {
+  if (!(req->source.kind == VUT_DIPLREL
+        || req->source.kind == VUT_DIPLREL_TILE
+        || req->source.kind == VUT_DIPLREL_TILE_O
+        || req->source.kind == VUT_DIPLREL_UNITANY
+        || req->source.kind == VUT_DIPLREL_UNITANY_O)) {
     /* No known contradiction of a requirement of any other kind. */
-    fc_assert(req->source.kind == VUT_DIPLREL);
+    fc_assert(req->source.kind == VUT_DIPLREL
+              || req->source.kind == VUT_DIPLREL_TILE
+              || req->source.kind == VUT_DIPLREL_TILE_O
+              || req->source.kind == VUT_DIPLREL_UNITANY
+              || req->source.kind == VUT_DIPLREL_UNITANY_O);
 
     return known;
   }
@@ -1813,7 +1921,7 @@ void player_set_ai_data(struct player *pplayer, const struct ai_type *ai,
 int player_multiplier_value(const struct player *pplayer,
                             const struct multiplier *pmul)
 {
-  return pplayer->multipliers[multiplier_index(pmul)];
+  return pplayer->multipliers[multiplier_index(pmul)].value;
 }
 
 /*******************************************************************//**
@@ -1836,7 +1944,7 @@ int player_multiplier_effect_value(const struct player *pplayer,
 int player_multiplier_target_value(const struct player *pplayer,
                                    const struct multiplier *pmul)
 {
-  return pplayer->multipliers_target[multiplier_index(pmul)];
+  return pplayer->multipliers[multiplier_index(pmul)].target;
 }
 
 /*******************************************************************//**

@@ -18,7 +18,11 @@
 #include <stdarg.h>
 
 #ifdef HAVE_MAPIMG_MAGICKWAND
+#ifdef FREECIV_MWAND7
+  #include <MagickWand/MagickWand.h>
+#else  /* FREECIV_MWAND7 */
   #include <wand/MagickWand.h>
+#endif /* FREECIV_MWAND7 */
 #endif /* HAVE_MAPIMG_MAGICKWAND */
 
 /* utility */
@@ -305,7 +309,6 @@ BV_DEFINE(bv_mapdef_arg, MAPDEF_COUNT);
 #define MAX_LEN_MAPARG MAX_LEN_MAPDEF
 #define MAX_NUM_MAPIMG 10
 
-static inline bool mapimg_initialised(void);
 static bool mapimg_test(int id);
 static bool mapimg_define_arg(struct mapdef *pmapdef, enum mapdef_arg arg,
                               const char *val, bool check);
@@ -386,7 +389,8 @@ struct img {
   const struct rgbcolor **map;
 };
 
-static struct img *img_new(struct mapdef *mapdef, int topo, int xsize, int ysize);
+static struct img *img_new(struct mapdef *mapdef, int topo, int wrap,
+                           int xsize, int ysize);
 static void img_destroy(struct img *pimg);
 static inline void img_set_pixel(struct img *pimg, const int mindex,
                                  const struct rgbcolor *pcolor);
@@ -640,11 +644,16 @@ char *mapimg_help(const char *cmdname)
   /* Possible 'show' settings. */
   for (showplr = show_player_begin(); showplr != show_player_end();
        showplr = show_player_next(showplr)) {
-    char name[10];
-    fc_snprintf(name, sizeof(name), "'%s'", show_player_name(showplr));
-    astr_add(&str_showplr, " - %-9s %s", name, showname_help(showplr));
-    if (showplr != show_player_max()) {
-      astr_add(&str_showplr, "\n");
+    const char *nameptr = show_player_name(showplr);
+
+    if (nameptr != NULL) {
+      char name[10];
+
+      fc_snprintf(name, sizeof(name), "'%s'", nameptr);
+      astr_add(&str_showplr, " - %-9s %s", name, showname_help(showplr));
+      if (showplr != show_player_max()) {
+        astr_add(&str_showplr, "\n");
+      }
     }
   }
 
@@ -1135,7 +1144,7 @@ struct mapdef *mapimg_isvalid(int id)
 }
 
 /************************************************************************//**
-  Return a list of all available tookits and formats for the client.
+  Return a list of all available toolkits and formats for the client.
 ****************************************************************************/
 const struct strvec *mapimg_get_format_list(void)
 {
@@ -1159,6 +1168,7 @@ const struct strvec *mapimg_get_format_list(void)
            format = imageformat_next(format)) {
         if (toolkit->formats & format) {
           char str_format[64];
+
           fc_snprintf(str_format, sizeof(str_format), "%s|%s",
                       imagetool_name(tool), imageformat_name(format));
           strvec_append(format_list, str_format);
@@ -1171,7 +1181,7 @@ const struct strvec *mapimg_get_format_list(void)
 }
 
 /************************************************************************//**
-  Return the default value of the tookit and the image format for the client.
+  Return the default value of the toolkit and the image format for the client.
 ****************************************************************************/
 const char *mapimg_get_format_default(void)
 {
@@ -1310,8 +1320,8 @@ bool mapimg_id2str(int id, char *str, size_t str_len)
 
 /************************************************************************//**
   Create the requested map image. The filename is created as
-  <basename as used for savegames>-<mapstr>.<mapext> where <mapstr>
-  contains the map definition and <mapext> the selected image extension.
+  [basename as used for savegames]-[mapstr].[mapext] where [mapstr]
+  contains the map definition and [mapext] the selected image extension.
   If 'force' is FALSE, the image is only created if game.info.turn is a
   multiple of the map setting turns.
 ****************************************************************************/
@@ -1349,13 +1359,13 @@ bool mapimg_create(struct mapdef *pmapdef, bool force, const char *savename,
   }
 
 #ifdef FREECIV_DEBUG
-  timer_cpu = timer_new(TIMER_CPU, TIMER_ACTIVE);
+  timer_cpu = timer_new(TIMER_CPU, TIMER_ACTIVE, "mapimg cpu");
   timer_start(timer_cpu);
-  timer_user = timer_new(TIMER_USER, TIMER_ACTIVE);
+  timer_user = timer_new(TIMER_USER, TIMER_ACTIVE, "mapimg user");
   timer_start(timer_user);
 #endif /* FREECIV_DEBUG */
 
-  /* create map */
+  /* Create map */
   switch (pmapdef->player.show) {
   case SHOW_PLRNAME: /* display player given by name */
   case SHOW_PLRID:   /* display player given by id */
@@ -1365,7 +1375,8 @@ bool mapimg_create(struct mapdef *pmapdef, bool force, const char *savename,
     generate_save_name(savename, mapimgfile, sizeof(mapimgfile),
                        mapimg_generate_name(pmapdef));
 
-    pimg = img_new(pmapdef, CURRENT_TOPOLOGY, wld.map.xsize, wld.map.ysize);
+    pimg = img_new(pmapdef, CURRENT_TOPOLOGY, CURRENT_WRAP,
+                   wld.map.xsize, wld.map.ysize);
     img_createmap(pimg);
     if (!img_save(pimg, mapimgfile, path)) {
       ret = FALSE;
@@ -1388,7 +1399,8 @@ bool mapimg_create(struct mapdef *pmapdef, bool force, const char *savename,
       generate_save_name(savename, mapimgfile, sizeof(mapimgfile),
                          mapimg_generate_name(pmapdef));
 
-      pimg = img_new(pmapdef, CURRENT_TOPOLOGY, wld.map.xsize, wld.map.ysize);
+      pimg = img_new(pmapdef, CURRENT_TOPOLOGY, CURRENT_WRAP,
+                     wld.map.xsize, wld.map.ysize);
       img_createmap(pimg);
       if (!img_save(pimg, mapimgfile, path)) {
         ret = FALSE;
@@ -1417,7 +1429,7 @@ bool mapimg_create(struct mapdef *pmapdef, bool force, const char *savename,
 /************************************************************************//**
   Create images which shows all map colors (playercolor, terrain colors). One
   image is created for each supported toolkit and image format. The filename
-  will be <basename as used for savegames>-colortest-<tookit>.<format>.
+  will be [basename as used for savegames]-colortest-[toolkit].[format].
 ****************************************************************************/
 bool mapimg_colortest(const char *savename, const char *path)
 {
@@ -1435,7 +1447,7 @@ bool mapimg_colortest(const char *savename, const char *path)
 #define SIZE_X 16
 #define SIZE_Y 5
 
-  pimg = img_new(pmapdef, 0, SIZE_X + 2,
+  pimg = img_new(pmapdef, 0, 0, SIZE_X + 2,
                  SIZE_Y * (max_playercolor / SIZE_X) + 2);
 
   pixel = pimg->pixel_tile(NULL, NULL, FALSE);
@@ -1499,11 +1511,16 @@ bool mapimg_colortest(const char *savename, const char *path)
          format = imageformat_next(format)) {
       if (toolkit->formats & format) {
         char buf[128];
+        const char *tname = imagetool_name(tool);
 
         /* Set the image format. */
         pmapdef->format = format;
 
-        fc_snprintf(buf, sizeof(buf), "colortest-%s", imagetool_name(tool));
+        if (tname != NULL) {
+          fc_snprintf(buf, sizeof(buf), "colortest-%s", tname);
+        } else {
+          fc_snprintf(buf, sizeof(buf), "colortest");
+        }
         /* filename for color test */
         generate_save_name(savename, mapimgfile, sizeof(mapimgfile), buf);
 
@@ -1531,7 +1548,7 @@ bool mapimg_colortest(const char *savename, const char *path)
 /************************************************************************//**
   Check if the map image subsustem is initialised.
 ****************************************************************************/
-static inline bool mapimg_initialised(void)
+bool mapimg_initialised(void)
 {
   return mapimg.init;
 }
@@ -1700,11 +1717,11 @@ static void mapimg_log(const char *file, const char *function, int line,
 /************************************************************************//**
   Generate an identifier for a map image.
 
-  M<map options>Z<zoom factor>P<players>
+  M[map options]Z[zoom factor]P[players]
 
-  <map options>    map options
-  <zoom factor>    zoom factor
-  <players>        player ID or vector of size MAX_NUM_PLAYER_SLOTS [0/1]
+  [map options]    map options
+  [zoom factor]    zoom factor
+  [players]        player ID or vector of size MAX_NUM_PLAYER_SLOTS [0/1]
 
   For the player bitvector all MAX_NUM_PLAYER_SLOTS values are used due to
   the possibility of additional players during the game (civil war,
@@ -1758,7 +1775,13 @@ static char *mapimg_generate_name(struct mapdef *pmapdef)
   for (layer = mapimg_layer_begin(); layer != mapimg_layer_end();
        layer = mapimg_layer_next(layer)) {
     if (pmapdef->layers[layer]) {
-      cat_snprintf(mapstr, sizeof(mapstr), "%s", mapimg_layer_name(layer));
+      const char *lname = mapimg_layer_name(layer);
+
+      if (lname != NULL) {
+        cat_snprintf(mapstr, sizeof(mapstr), "%s", lname);
+      } else {
+        cat_snprintf(mapstr, sizeof(mapstr), "-");
+      }
     } else {
       cat_snprintf(mapstr, sizeof(mapstr), "-");
     }
@@ -1843,7 +1866,8 @@ static const struct toolkit *img_toolkit_get(enum imagetool tool)
 /************************************************************************//**
   Create a new image.
 ****************************************************************************/
-static struct img *img_new(struct mapdef *mapdef, int topo, int xsize, int ysize)
+static struct img *img_new(struct mapdef *mapdef, int topo, int wrap,
+                           int xsize, int ysize)
 {
   struct img *pimg;
 
@@ -1874,8 +1898,8 @@ static struct img *img_new(struct mapdef *mapdef, int topo, int xsize, int ysize
                          * TILE_SIZE;
 
       /* magic for isohexa: change size if wrapping in only one direction */
-      if ((topo_has_flag(topo, TF_WRAPX) && !topo_has_flag(topo, TF_WRAPY))
-          || (!topo_has_flag(topo, TF_WRAPX) && topo_has_flag(topo, TF_WRAPY))) {
+      if ((wrap_has_flag(wrap, WRAP_X) && !wrap_has_flag(wrap, WRAP_Y))
+          || (!wrap_has_flag(wrap, WRAP_X) && wrap_has_flag(wrap, WRAP_Y))) {
         pimg->imgsize.y += (pimg->mapsize.x - pimg->mapsize.y / 2) / 2
                            * TILE_SIZE;
       }
@@ -2027,7 +2051,10 @@ static bool img_save(const struct img *pimg, const char *mapimgfile,
   }
 
   if (!path_is_absolute(mapimgfile) && path != NULL) {
-    make_dir(path);
+    if (!make_dir(path)) {
+      MAPIMG_LOG(_("can't create directory"));
+      return FALSE;
+    }
 
     sz_strlcpy(tmpname, path);
     if (tmpname[0] != '\0') {
@@ -2252,7 +2279,6 @@ static bool img_save_magickwand(const struct img *pimg,
         continue;
       }
 
-      pcolor = imgcolor_player(player_index(pplayer));
       cat_snprintf(comment, sizeof(comment), "%s\n", img_playerstr(pplayer));
     } players_iterate_end;
   }
@@ -2297,7 +2323,7 @@ static bool img_save_ppm(const struct img *pimg, const char *mapimgfile)
     return FALSE;
   }
 
-  fp = fopen(ppmname, "w");
+  fp = fc_fopen(ppmname, "w");
   if (!fp) {
     MAPIMG_LOG(_("could not open file: %s"), ppmname);
     return FALSE;
@@ -2315,7 +2341,6 @@ static bool img_save_ppm(const struct img *pimg, const char *mapimgfile)
         continue;
       }
 
-      pcolor = imgcolor_player(player_index(pplayer));
       fprintf(fp, "# %s\n", img_playerstr(pplayer));
     } players_iterate_end;
   } else {

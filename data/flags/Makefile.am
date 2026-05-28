@@ -169,6 +169,7 @@ flag_files =				\
 		finland.png		\
 		flanders.png		\
 		florence.png		\
+		florida.png		\
 		formosan.png		\
 		france_old.png		\
 		france.png		\
@@ -295,6 +296,7 @@ flag_files =				\
 		lippe.png		\
 		lithuania.png		\
 		lorraine.png		\
+		luik.png		\
 		luna.png		\
 		lusatia.png		\
 		luwian.png		\
@@ -349,6 +351,7 @@ flag_files =				\
 		muskogee.png		\
 		mwiska.png		\
 		myanmar.png		\
+		myanmar_old.png		\
 		nagorno_karabakh.png	\
 		namibia.png		\
 		naples.png		\
@@ -386,6 +389,7 @@ flag_files =				\
 		paeonia.png		\
 		pakistan.png		\
 		palatinate.png		\
+		palau.png		\
 		palestine.png		\
 		palmyra.png		\
 		panama.png		\
@@ -736,6 +740,7 @@ flag_files =				\
 		finland-large.png		\
 		flanders-large.png		\
 		florence-large.png		\
+		florida-large.png		\
 		formosan-large.png		\
 		france_old-large.png		\
 		france-large.png		\
@@ -862,6 +867,7 @@ flag_files =				\
 		lippe-large.png			\
 		lithuania-large.png		\
 		lorraine-large.png		\
+		luik-large.png			\
 		luna-large.png			\
 		lusatia-large.png		\
 		luwian-large.png		\
@@ -916,6 +922,7 @@ flag_files =				\
 		muskogee-large.png		\
 		mwiska-large.png		\
 		myanmar-large.png		\
+		myanmar_old-large.png		\
 		nagorno_karabakh-large.png	\
 		namibia-large.png		\
 		naples-large.png		\
@@ -953,6 +960,7 @@ flag_files =				\
 		paeonia-large.png		\
 		pakistan-large.png		\
 		palatinate-large.png		\
+		palau-large.png		\
 		palestine-large.png		\
 		palmyra-large.png		\
 		panama-large.png		\
@@ -1305,6 +1313,7 @@ shield_files =					\
 		finland-shield.png		\
 		flanders-shield.png		\
 		florence-shield.png		\
+		florida-shield.png		\
 		formosan-shield.png		\
 		france_old-shield.png		\
 		france-shield.png		\
@@ -1431,6 +1440,7 @@ shield_files =					\
 		lippe-shield.png		\
 		lithuania-shield.png		\
 		lorraine-shield.png		\
+		luik-shield.png			\
 		luna-shield.png			\
 		lusatia-shield.png		\
 		luwian-shield.png		\
@@ -1485,6 +1495,7 @@ shield_files =					\
 		muskogee-shield.png		\
 		mwiska-shield.png		\
 		myanmar-shield.png		\
+		myanmar_old-shield.png		\
 		nagorno_karabakh-shield.png	\
 		namibia-shield.png		\
 		naples-shield.png		\
@@ -1522,6 +1533,7 @@ shield_files =					\
 		paeonia-shield.png		\
 		pakistan-shield.png		\
 		palatinate-shield.png		\
+		palau-shield.png		\
 		palestine-shield.png		\
 		palmyra-shield.png		\
 		panama-shield.png		\
@@ -1872,6 +1884,7 @@ shield_files =					\
 		finland-shield-large.png		\
 		flanders-shield-large.png		\
 		florence-shield-large.png		\
+		florida-shield-large.png		\
 		formosan-shield-large.png		\
 		france_old-shield-large.png		\
 		france-shield-large.png		\
@@ -1998,6 +2011,7 @@ shield_files =					\
 		lippe-shield-large.png			\
 		lithuania-shield-large.png		\
 		lorraine-shield-large.png		\
+		luik-shield-large.png			\
 		luna-shield-large.png			\
 		lusatia-shield-large.png		\
 		luwian-shield-large.png			\
@@ -2052,6 +2066,7 @@ shield_files =					\
 		muskogee-shield-large.png		\
 		mwiska-shield-large.png		\
 		myanmar-shield-large.png		\
+		myanmar_old-shield-large.png		\
 		nagorno_karabakh-shield-large.png	\
 		namibia-shield-large.png		\
 		naples-shield-large.png		\
@@ -2089,6 +2104,7 @@ shield_files =					\
 		paeonia-shield-large.png		\
 		pakistan-shield-large.png		\
 		palatinate-shield-large.png		\
+		palau-shield-large.png		\
 		palestine-shield-large.png		\
 		palmyra-shield-large.png		\
 		panama-shield-large.png		\
@@ -2441,6 +2457,7 @@ svg_files = 				\
 		finland.svg		\
 		flanders.svg		\
 		florence.svg		\
+		florida.svg		\
 		formosan.svg		\
 		france_old.svg		\
 		france.svg		\
@@ -2567,6 +2584,7 @@ svg_files = 				\
 		lippe.svg		\
 		lithuania.svg		\
 		lorraine.svg		\
+		luik.svg		\
 		luna.svg		\
 		lusatia.svg		\
 		luwian.svg		\
@@ -2621,6 +2639,7 @@ svg_files = 				\
 		muskogee.svg		\
 		mwiska.svg		\
 		myanmar.svg		\
+		myanmar_old.svg		\
 		nagorno_karabakh.svg	\
 		namibia.svg		\
 		naples.svg		\
@@ -2658,6 +2677,7 @@ svg_files = 				\
 		paeonia.svg		\
 		pakistan.svg		\
 		palatinate.svg		\
+		palau.svg		\
 		palestine.svg		\
 		palmyra.svg		\
 		panama.svg		\
@@ -2846,4 +2866,5 @@ svg_files = 				\
 
 pkgdata_DATA = $(flag_files) $(shield_files)
 
-EXTRA_DIST = $(pkgdata_DATA) $(svg_files) credits convert_png mask.png
+EXTRA_DIST = $(pkgdata_DATA) $(svg_files) \
+             credits convert_png convert_png_legacy mask.png

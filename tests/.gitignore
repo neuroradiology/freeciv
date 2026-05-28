@@ -3,3 +3,6 @@
 /.deps
 /check-output
 /rulesets_not_broken.sh
+/rulesets_save.sh
+/rulesets_upgrade.sh
+/rulesets_autohelp.sh

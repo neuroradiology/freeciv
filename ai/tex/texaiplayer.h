@@ -20,7 +20,7 @@
 #include "player.h"
 
 /* ai/default */
-#include "aidata.h"
+#include "daidata.h"
 
 /* ai/tex */
 #include "texaimsg.h"
@@ -56,7 +56,7 @@ void texai_whole_map_copy(void);
 void texai_map_free(void);
 void texai_player_alloc(struct ai_type *ait, struct player *pplayer);
 void texai_player_free(struct ai_type *ait, struct player *pplayer);
-void texai_control_gained(struct ai_type *ait,struct player *pplayer);
+void texai_control_gained(struct ai_type *ait, struct player *pplayer);
 void texai_control_lost(struct ai_type *ait, struct player *pplayer);
 void texai_refresh(struct ai_type *ait, struct player *pplayer);
 
@@ -69,5 +69,7 @@ static inline struct texai_plr *texai_player_data(struct ai_type *ait,
 {
   return (struct texai_plr *)player_ai_data(pplayer, ait);
 }
+
+struct unit_list *texai_player_units(struct player *pplayer);
 
 #endif /* FC__TEXAIPLAYER_H */

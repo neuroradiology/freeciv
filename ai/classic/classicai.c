@@ -24,18 +24,17 @@
 #include "autosettlers.h"
 
 /* ai/default */
-#include "aicity.h"
-#include "aidata.h"
 #include "aiferry.h"
 #include "aihand.h"
-#include "ailog.h"
-#include "aiplayer.h"
-#include "aisettler.h"
 #include "aitools.h"
-#include "aiunit.h"
+#include "daicity.h"
+#include "daidata.h"
 #include "daidiplomacy.h"
 #include "daidomestic.h"
+#include "dailog.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
+#include "daisettler.h"
 
 #include "classicai.h"
 
@@ -324,7 +323,7 @@ static void cai_ferry_init_ferry(struct unit *ferry)
 /**********************************************************************//**
   Call default ai with classic ai type as parameter.
 **************************************************************************/
-static void cai_ferry_transformed(struct unit *ferry, struct unit_type *old)
+static void cai_ferry_transformed(struct unit *ferry, const struct unit_type *old)
 {
   struct ai_type *deftype = classic_ai_get_self();
 
@@ -514,12 +513,15 @@ static void cai_diplomacy_first_contact(struct player *pplayer,
 /**********************************************************************//**
   Call default ai with classic ai type as parameter.
 **************************************************************************/
-static void cai_incident(enum incident_type type, struct player *violator,
-                         struct player *victim)
+static void cai_incident(enum incident_type type,
+                         enum casus_belli_range scope,
+                         const struct action *paction,
+                         struct player *receiver,
+                         struct player *violator, struct player *victim)
 {
   struct ai_type *deftype = classic_ai_get_self();
 
-  dai_incident(deftype, type, violator, victim);
+  dai_incident(deftype, type, scope, paction, receiver, violator, victim);
 }
 
 /**********************************************************************//**

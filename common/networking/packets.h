@@ -17,14 +17,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
-struct connection;
-struct data_in;
-
 /* utility */
 #include "shared.h"		/* MAX_LEN_ADDR */
 
 /* common */
-#include "connection.h"		/* struct connection, MAX_LEN_* */
 #include "diptreaty.h"
 #include "effects.h"
 #include "events.h"
@@ -38,53 +34,39 @@ struct data_in;
 #include "unittype.h"
 #include "worklist.h"
 
+struct connection;
+struct data_in;
 
-/* Used in network protocol. */
-#define MAX_LEN_MSG             1536
-#define MAX_LEN_ROUTE		2000	  /* MAX_LEN_PACKET / 2 - header */
 
 #ifdef FREECIV_WEB
-#define web_send_packet(packetname, ...) \
-  send_packet_web_ ##packetname( __VA_ARGS__ )
-#define web_lsend_packet(packetname, ...) \
-  lsend_packet_web_ ##packetname( __VA_ARGS__ )
+#define web_send_packet(packetname, pconn, ...)         \
+do {                                                    \
+  if (conn_is_webclient(pconn)) {                       \
+    send_packet_web_ ##packetname(pconn, __VA_ARGS__ ); \
+  }                                                     \
+} while (FALSE)
+#define web_lsend_packet(packetname, pconn, pack, ...)  \
+do {                                                    \
+  const struct packet_web_ ##packetname *_pptr_ = pack; \
+  if (_pptr_ != NULL) {                                 \
+    lsend_packet_web_ ##packetname(pconn, _pptr_, ##__VA_ARGS__ );  \
+  }                                                     \
+} while (FALSE);
 #else  /* FREECIV_WEB */
-#define web_send_packet(packetname, ...)
+#define web_send_packet(packetname, pconn, ...)
 #define web_lsend_packet(packetname, ...)
 #endif /* FREECIV_WEB */
 
-/* The size of opaque (void *) data sent in the network packet.  To avoid
- * fragmentation issues, this SHOULD NOT be larger than the standard
- * ethernet or PPP 1500 byte frame size (with room for headers).
+/* Indicates that the player initiated a request.
  *
- * Do not spend much time optimizing, you have no idea of the actual dynamic
- * path characteristics between systems, such as VPNs and tunnels.
- *
- * Used in network protocol.
- */
-#define ATTRIBUTE_CHUNK_SIZE    (1400)
-
-/* Used in network protocol. */
-enum report_type {
-  REPORT_WONDERS_OF_THE_WORLD,
-  REPORT_TOP_5_CITIES,
-  REPORT_DEMOGRAPHIC,
-  REPORT_ACHIEVEMENTS
-};
+ * Used in network protocol. */
+#define REQEST_PLAYER_INITIATED (0)
 
 /* Used in network protocol. */
 enum unit_info_use {
   UNIT_INFO_IDENTITY,
   UNIT_INFO_CITY_SUPPORTED,
   UNIT_INFO_CITY_PRESENT
-};
-
-/* Used in network protocol. */
-enum authentication_type {
-  AUTH_LOGIN_FIRST,   /* request a password for a returning user */
-  AUTH_NEWUSER_FIRST, /* request a password for a new user */
-  AUTH_LOGIN_RETRY,   /* inform the client to try a different password */
-  AUTH_NEWUSER_RETRY  /* inform the client to try a different [new] password */
 };
 
 #include "packets_gen.h"
@@ -215,4 +197,4 @@ bool packet_check(struct data_in *din, struct connection *pc);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__PACKETS_H */
+#endif /* FC__PACKETS_H */

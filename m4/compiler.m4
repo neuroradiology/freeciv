@@ -97,6 +97,12 @@ LDFLAGS="$flags_save"
 # Sets variable cxx_works accordingly.
 AC_DEFUN([FC_WORKING_CXX],
 [
+if test "x$qt_ver" = "xQt5" ; then
+  AX_CXX_COMPILE_STDCXX([11], [], [optional])
+elif test "x$qt_ver" = "xQt6" ; then
+  AX_CXX_COMPILE_STDCXX([17], [], [optional])
+fi
+
 AC_MSG_CHECKING([whether C++ compiler works])
 
 AC_LANG_PUSH([C++])
@@ -110,4 +116,54 @@ AC_MSG_RESULT([not])
 cxx_works=no])
 
 AC_LANG_POP([C++])
+
+if test "x$qt_ver" = "xQt5" && test "x$HAVE_CXX11" = "x" ; then
+  dnl Qt5 requires C++11.
+  AC_MSG_WARN([The C++ compiler doesn't support C++11])
+  cxx_works=no
+elif test "x$qt_ver" = "xQt6" && test "x$HAVE_CXX17" = "x" ; then
+  dnl Qt6 requires C++17.
+  AC_MSG_WARN([The C++ compiler doesn't support C++17])
+  cxx_works=no
+fi
+])
+
+# Test suitability of a single printf() format specifier for
+# size_t variables. Helper for FC_SIZE_T_FORMAT
+#
+# $1 - Format string
+AC_DEFUN([_FC_SIZE_T_FORMAT_TEST],
+[
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>
+#if defined(__GNUC__)
+void fr(const char *form, ...)
+  __attribute__((__format__(__printf__, 1, 2)));
+#else
+#define fr(_a_,_b_) printf(_a_,_b_)
+#endif
+]],
+[[
+size_t var = 0;
+fr("$1", var);]])], [SIZE_T_PRINTF="$1"])
+])
+
+# Find out proper printf() format specifier for size_t variables
+AC_DEFUN([FC_SIZE_T_FORMAT],
+[
+  AC_MSG_CHECKING([format specifier for size_t])
+
+  for fmt in "%zu" "%ld" "%lld" "%I64d" "%I32d"
+  do
+    if test "x$SIZE_T_PRINTF" = "x" ; then
+      _FC_SIZE_T_FORMAT_TEST([${fmt}])
+    fi
+  done
+
+  if test "x$SIZE_T_PRINTF" = "x" ; then
+    AC_MSG_ERROR([Cannot find correct printf format specifier for size_t])
+  fi
+
+  AC_DEFINE_UNQUOTED([SIZE_T_PRINTF], ["$SIZE_T_PRINTF"], [Format specifier for size_t])
+
+  AC_MSG_RESULT([$SIZE_T_PRINTF])
 ])

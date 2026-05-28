@@ -176,6 +176,7 @@ pkgdata_DATA = \
 		finnish.ruleset \
 		flemish.ruleset \
 		florentine.ruleset \
+		florida.ruleset \
 		formosan.ruleset \
 		franconian.ruleset \
 		frankish.ruleset \
@@ -289,6 +290,7 @@ pkgdata_DATA = \
 		liburnian.ruleset \
 		libyan.ruleset \
 		liechtensteiner.ruleset \
+		liege.ruleset \
 		ligurian.ruleset \
 		lippe.ruleset \
 		lipkatatar.ruleset \
@@ -381,6 +383,7 @@ pkgdata_DATA = \
 		paeonian.ruleset \
 		pakistani.ruleset \
 		palatinate.ruleset \
+		palauan.ruleset \
 		palestinian.ruleset \
 		palmyrene.ruleset \
 		panamanian.ruleset \
@@ -563,7 +566,7 @@ pkgdata_DATA = \
 		zapotec.ruleset \
 		zhuang.ruleset \
 		zimbabwean.ruleset \
-		zulu.ruleset 
+		zulu.ruleset
 
 EXTRA_DIST = $(pkgdata_DATA) Makefile.am.sh
 

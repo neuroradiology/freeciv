@@ -8,9 +8,9 @@
 ; use your new customized file.
 
 [datafile]
-description="Civ1-style technology data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Civ1-style technology data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02"
+format_version = 30
 
 [control]
 ; Names for custom tech flags. There can be up to 8 of these.
@@ -78,7 +78,7 @@ format_version=20
 ;                 tech requirements because it is a requirement vector.
 ;                 See doc/README.effects to learn more about requirement
 ;                 vectors.
-;                 Requireing a tech here in stead of in req1, req2 or
+;                 Requiring a tech here instead of in req1, req2 or
 ;                 root_req is not supported yet.
 ;                 Requirements that may become fulfilled during the game
 ;                 when they weren't at the start of the game is not
@@ -102,9 +102,10 @@ format_version=20
 ; possible:
 ;
 ; "Bonus_Tech"          = player gets extra tech if reached first
-; "Bridge"              = "Settler" unit types can build roads with
-;                         "RequiresBridge" flag over roads with
-;                         "PreventsOtherRoads" flag (rivers)
+; "Bridge"              = "Settler" unit types can build extras that
+;                         require bridge when occurring with some other
+;                         extra. See "bridged_over" extra property in
+;                         terrain.ruleset.
 ; "Build_Airborne"      = from now on can build air units (for use by AI)
 ; "Claim_Ocean"         = Player claims ocean tiles even if they are not
 ;                         adjacent to border source
@@ -311,7 +312,7 @@ graphic_alt = "-"
 name     = _("Flight")
 req1     = "Combustion"
 req2     = "Physics"
-flags    = ""
+flags    = "Build_Airborne"
 graphic     = "a.flight"
 graphic_alt = "-"
 helptext = _("Decreases one-time revenue from new trade routes.")

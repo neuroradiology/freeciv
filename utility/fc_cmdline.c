@@ -109,7 +109,7 @@ void cmdline_option_values_free(void)
   Is option some form of option_name. option_name must be
   full length long version such as "--help"
 **************************************************************************/
-bool is_option(const char *option_name,char *option)
+bool is_option(const char *option_name, char *option)
 {
   return (strcmp(option_name, option) == 0
           || strncmp(option_name + 1, option, 2) == 0);
@@ -166,7 +166,7 @@ static size_t fc_strcspn(const char *s, const char *reject)
 int get_tokens(const char *str, char **tokens, size_t num_tokens,
                const char *delimiterset)
 {
-  int token;
+  unsigned int token;
 
   fc_assert_ret_val(NULL != str, -1);
 

@@ -18,6 +18,7 @@
 // Qt
 #include <QFontMetrics>
 #include <QPainter>
+#include <QPainterPath>
 
 // qt-client
 #include "canvas.h"
@@ -28,6 +29,7 @@
 #include "sprite.h"
 
 static QFont *get_font(enum client_font font);
+
 /************************************************************************//**
   Create a canvas of the given size.
 ****************************************************************************/
@@ -53,7 +55,7 @@ void qtg_canvas_free(struct canvas *store)
 ****************************************************************************/
 void qtg_canvas_set_zoom(struct canvas *store, float zoom)
 {
-  /* Qt-client has no zoom support */
+  // Qt-client has no zoom support
 }
 
 /************************************************************************//**
@@ -62,6 +64,13 @@ void qtg_canvas_set_zoom(struct canvas *store, float zoom)
 bool qtg_has_zoom_support()
 {
   return FALSE;
+}
+
+/************************************************************************//**
+  Initialize canvas as mapview.
+****************************************************************************/
+void qtg_canvas_mapview_init(struct canvas *store)
+{
 }
 
 /************************************************************************//**
@@ -109,7 +118,7 @@ void pixmap_copy(QPixmap *dest, QPixmap *src, int src_x, int src_y,
   Copies an area from the source image to the destination image.
 ****************************************************************************/
 void image_copy(QImage *dest, QImage *src, int src_x, int src_y,
-                 int dest_x, int dest_y, int width, int height)
+                int dest_x, int dest_y, int width, int height)
 {
   QRectF source_rect(src_x, src_y, width, height);
   QRectF dest_rect(dest_x, dest_y, width, height);
@@ -151,6 +160,25 @@ void qtg_canvas_put_sprite_full(struct canvas *pcanvas,
   get_sprite_dimensions(sprite, &width, &height);
   canvas_put_sprite(pcanvas, canvas_x, canvas_y, sprite,
                     0, 0, width, height);
+}
+
+/************************************************************************//**
+  Draw a full sprite onto the canvas, scaled to the canvas size.
+****************************************************************************/
+void qtg_canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                       int canvas_x, int canvas_y,
+                                       int canvas_w, int canvas_h,
+                                       struct sprite *sprite)
+{
+  QPainter p;
+  int width, height;
+
+  get_sprite_dimensions(sprite, &width, &height);
+
+  p.begin(&pcanvas->map_pixmap);
+  p.drawPixmap(canvas_x, canvas_y, canvas_w, canvas_h,
+               *sprite->pm, 0, 0, width, height);
+  p.end();
 }
 
 /************************************************************************//**
@@ -301,7 +329,7 @@ void qtg_canvas_put_curved_line(struct canvas *pcanvas, struct color *pcolor,
   may be NULL in which case those values simply shouldn't be filled out.
 ****************************************************************************/
 void qtg_get_text_size(int *width, int *height,
-                        enum client_font font, const char *text)
+                       enum client_font font, const char *text)
 {
   QFont *afont;
   QFontMetrics *fm;
@@ -309,7 +337,7 @@ void qtg_get_text_size(int *width, int *height,
   afont = get_font(font);
   fm = new QFontMetrics(*afont);
   if (width) {
-    *width = fm->width(QString::fromUtf8(text));
+    *width = fm->horizontalAdvance(QString::fromUtf8(text));
   }
 
   if (height) {

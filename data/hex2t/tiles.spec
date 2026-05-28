@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -144,7 +144,7 @@ tiles = { "row", "column","tag"
   7, 2, "mask.tile"
   7, 3, "t.coast_color"
 
-  7, 4, "user.attention"
+  7, 4, "user.attention", "user.infratile"
   7, 5, "tx.fog"
 
 ; darkness

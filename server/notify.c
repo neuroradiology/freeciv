@@ -328,7 +328,7 @@ void notify_embassies(const struct player *pplayer,
   va_end(args);
 
   players_iterate(other_player) {
-    if (player_has_embassy(other_player, pplayer)
+    if (team_has_embassy(other_player->team, pplayer)
         && pplayer != other_player) {
       notify_conn_packet(other_player->connections, &genmsg, FALSE);
       players = event_cache_player_add(players, other_player);
@@ -451,7 +451,7 @@ void notify_research_embassies(const struct research *presearch,
     }
 
     research_players_iterate(presearch, rplayer) {
-      if (player_has_embassy(aplayer, rplayer)) {
+      if (team_has_embassy(aplayer->team, rplayer)) {
         lsend_packet_chat_msg(aplayer->connections, &genmsg);
         players = event_cache_player_add(players, aplayer);
         break;
@@ -748,7 +748,7 @@ static bool event_cache_match(const struct event_cache_data *pdata,
 }
 
 /**********************************************************************//**
-  Send all available events.  If include_public is TRUE, also fully global
+  Send all available events. If include_public is TRUE, also fully global
   message will be sent.
 **************************************************************************/
 void send_pending_events(struct connection *pconn, bool include_public)
@@ -762,9 +762,11 @@ void send_pending_events(struct connection *pconn, bool include_public)
     if (event_cache_match(pdata, pplayer,
                           is_global_observer, include_public)) {
       if (game.server.event_cache.info) {
-        /* add turn and time to the message */
+        struct tm tr;
+
+        /* Add turn and time to the message */
         strftime(timestr, sizeof(timestr), "%H:%M:%S",
-                 localtime(&pdata->timestamp));
+                 fc_localtime(&pdata->timestamp, &tr));
         pcm = pdata->packet;
         fc_snprintf(pcm.message, sizeof(pcm.message), "(T%d - %s) %s",
                     pdata->packet.turn, timestr, pdata->packet.message);

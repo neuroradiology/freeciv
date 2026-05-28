@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
 
 struct connection;
 struct conn_list;
+struct nation_list;
 struct nation_type;
 struct player;
 struct rgbcolor;
@@ -40,9 +41,11 @@ void kill_player(struct player *pplayer);
 void update_revolution(struct player *pplayer);
 void government_change(struct player *pplayer, struct government *gov,
                        bool revolution_finished);
+void player_loot_player(struct player *pvictor, struct player *pvictim);
 int revolution_length(struct government *gov, struct player *plr);
+void update_capital(struct player *pplayer);
 
-struct player_economic player_limit_to_max_rates(struct player *pplayer);
+void player_limit_to_max_rates(struct player *pplayer);
 
 void server_player_set_name(struct player *pplayer, const char *name);
 bool server_player_set_name_full(const struct connection *caller,
@@ -105,7 +108,7 @@ do {\
 #define shuffled_players_iterate_end\
     }\
   }\
-} while (0)
+} while (FALSE)
 
 #define phase_players_iterate(pplayer)\
 do {\
@@ -167,4 +170,6 @@ void player_set_to_ai_mode(struct player *pplayer,
                            enum ai_level skill_level);
 void player_set_under_human_control(struct player *pplayer);
 
-#endif  /* FC__PLRHAND_H */
+void update_national_activities(struct player *pplayer, int old_gold);
+
+#endif /* FC__PLRHAND_H */

@@ -18,8 +18,8 @@
 /* client */
 #include "menu_g.h"
 
-GtkWidget *setup_menus(GtkWidget *window);
+void enable_menus(bool enable);
 
-extern GtkAccelGroup *toplevel_accel;
+void menus_set_initial_toggle_values(void);
 
-#endif  /* FC__MENU_H */
+#endif /* FC__MENU_H */

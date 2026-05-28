@@ -47,11 +47,11 @@
 
 #include "themespec.h"
 
-#define THEMESPEC_SDL2_CAPSTR "+Freeciv-2.6-sdl2-themespec duplicates_ok"
+#define THEMESPEC_SDL2_CAPSTR "+Freeciv-sdl2-3.2-themespec-Devel-2022-Jul-06 duplicates_ok"
 /*
  * Themespec capabilities acceptable to this program:
  *
- * +Freeciv-2.6-sdl2-themespec  -  basic format for Freeciv versions 2.6.x;
+ * +Freeciv-3.2-sdl2-themespec  -  basic format for Freeciv versions 3.2.x;
  *                                 required
  *
  * duplicates_ok  -  we can handle existence of duplicate tags
@@ -59,11 +59,11 @@
  *                   have duplicates should specify "+duplicates_ok")
  */
 
-#define SPEC_SDL2_CAPSTR "+Freeciv-2.6-sdl2-spec"
+#define SPEC_SDL2_CAPSTR "+Freeciv-sdl2-spec-Devel-2022-Dec-05"
 /*
  * Individual spec file capabilities acceptable to this program:
  *
- * +Freeciv-2.6-sdl2-spec  -  basic format for Freeciv versions 2.6.x; required
+ * +Freeciv-3.2-sdl2-spec  -  basic format for Freeciv versions 3.2.x; required
  */
 
 #define THEMESPEC_SUFFIX ".themespec"
@@ -151,7 +151,7 @@ struct theme {
   struct theme_color_system *color_system;
 };
 
-struct theme *theme = NULL;
+struct theme *active_theme = NULL;
 
 
 /************************************************************************//**
@@ -332,15 +332,15 @@ void theme_free(struct theme *ftheme)
 ****************************************************************************/
 void themespec_try_read(const char *theme_name)
 {
-  if (!(theme = theme_read_toplevel(theme_name))) {
+  if (!(active_theme = theme_read_toplevel(theme_name))) {
     struct strvec *list = fileinfolist(get_data_dirs(), THEMESPEC_SUFFIX);
 
     strvec_iterate(list, file) {
       struct theme *t = theme_read_toplevel(file);
 
       if (t) {
-        if (!theme || t->priority > theme->priority) {
-          theme = t;
+        if (active_theme == NULL || t->priority > active_theme->priority) {
+          active_theme = t;
         } else {
           theme_free(t);
         }
@@ -348,12 +348,12 @@ void themespec_try_read(const char *theme_name)
     } strvec_iterate_end;
     strvec_destroy(list);
 
-    if (!theme) {
+    if (active_theme == NULL) {
       log_fatal(_("No usable default theme found, aborting!"));
       exit(EXIT_FAILURE);
     }
 
-    log_verbose("Trying theme \"%s\".", theme->name);
+    log_verbose("Trying theme \"%s\".", active_theme->name);
   }
 /*  sz_strlcpy(gui_sdl2_default_theme_name, theme_get_name(theme));*/
 }
@@ -373,12 +373,12 @@ void themespec_reread(const char *new_theme_name)
 {
   struct tile *center_tile;
   enum client_states state = client_state();
-  const char *name = new_theme_name ? new_theme_name : theme->name;
-  char theme_name[strlen(name) + 1], old_name[strlen(theme->name) + 1];
+  const char *name = new_theme_name ? new_theme_name : active_theme->name;
+  char theme_name[strlen(name) + 1], old_name[strlen(active_theme->name) + 1];
 
   /* Make local copies since these values may be freed down below */
   sz_strlcpy(theme_name, name);
-  sz_strlcpy(old_name, theme->name);
+  sz_strlcpy(old_name, active_theme->name);
 
   log_normal(_("Loading theme \"%s\"."), theme_name);
 
@@ -392,22 +392,22 @@ void themespec_reread(const char *new_theme_name)
    *
    * We free all old data in preparation for re-reading it.
    */
-  theme_free_sprites(theme);
-  theme_free_toplevel(theme);
+  theme_free_sprites(active_theme);
+  theme_free_toplevel(active_theme);
 
   /* Step 2:  Read.
    *
    * We read in the new theme.  This should be pretty straightforward.
    */
-  if (!(theme = theme_read_toplevel(theme_name))) {
-    if (!(theme = theme_read_toplevel(old_name))) {
+  if (!(active_theme = theme_read_toplevel(theme_name))) {
+    if (!(active_theme = theme_read_toplevel(old_name))) {
       /* Always fails. */
-      fc_assert_exit_msg(NULL != theme,
+      fc_assert_exit_msg(NULL != active_theme,
                          "Failed to re-read the currently loaded theme.");
     }
   }
 /*  sz_strlcpy(gui_sdl2_default_theme_name, theme->name);*/
-  theme_load_sprites(theme);
+  theme_load_sprites(active_theme);
 
   /* Step 3: Setup
    *
@@ -470,13 +470,14 @@ static struct sprite *load_gfx_file(const char *gfx_filename)
   }
 
   log_error("Could not load gfx file \"%s\".", gfx_filename);
+
   return NULL;
 }
 
 /************************************************************************//**
   Ensure that the big sprite of the given spec file is loaded.
 ****************************************************************************/
-static void ensure_big_sprite(struct specfile *sf)
+static void theme_ensure_big_sprite(struct specfile *sf)
 {
   struct section_file *file;
   const char *gfx_filename;
@@ -486,7 +487,7 @@ static void ensure_big_sprite(struct specfile *sf)
     return;
   }
 
-  /* Otherwise load it.  The big sprite will sometimes be freed and will have
+  /* Otherwise load it. The big sprite will sometimes be freed and will have
    * to be reloaded, but most of the time it's just loaded once, the small
    * sprites are extracted, and then it's freed. */
   if (!(file = secfile_load(sf->file_name, TRUE))) {
@@ -508,6 +509,11 @@ static void ensure_big_sprite(struct specfile *sf)
               sf->file_name);
     exit(EXIT_FAILURE);
   }
+
+  /* We don't check unused fields here as most fields are only read
+   * at the specs scanning time. */
+  /*  secfile_check_unused(file); */
+
   secfile_destroy(file);
 }
 
@@ -532,8 +538,11 @@ static void scan_specfile(struct theme *t, struct specfile *sf,
     exit(EXIT_FAILURE);
   }
 
-  /* currently unused */
+  /* Currently unused */
   (void) secfile_entry_by_path(file, "info.artists");
+
+  /* This isn't used during the scan, only when the gfx is really loaded */
+  (void) secfile_entry_by_path(file, "file.gfx");
 
   sections = secfile_sections_by_name_prefix(file, "grid_");
 
@@ -856,7 +865,7 @@ static struct sprite *theme_load_sprite(struct theme *t, const char *tag_name)
     } else {
       int sf_w, sf_h;
 
-      ensure_big_sprite(ss->sf);
+      theme_ensure_big_sprite(ss->sf);
       get_sprite_dimensions(ss->sf->big_sprite, &sf_w, &sf_h);
       if (ss->x < 0 || ss->x + ss->width > sf_w
           || ss->y < 0 || ss->y + ss->height > sf_h) {
@@ -865,8 +874,8 @@ static struct sprite *theme_load_sprite(struct theme *t, const char *tag_name)
         return NULL;
       }
       ss->sprite =
-	crop_sprite(ss->sf->big_sprite, ss->x, ss->y, ss->width, ss->height,
-		    NULL, -1, -1, 1.0, FALSE);
+        crop_sprite(ss->sf->big_sprite, ss->x, ss->y, ss->width, ss->height,
+                    NULL, -1, -1, 1.0, FALSE);
     }
   }
 

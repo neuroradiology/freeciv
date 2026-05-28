@@ -137,7 +137,7 @@ static void refresh_all_buttons(struct editbar *eb)
     gtk_widget_set_sensitive(tb, editor_tool_has_mode(ett, i));
   }
 
-  if (0 <= ett && ett < NUM_EDITOR_TOOL_TYPES
+  if (ett < NUM_EDITOR_TOOL_TYPES
       && eb->tool_buttons[ett] != NULL) {
     tb = eb->tool_buttons[ett];
     disable_gobject_callback(G_OBJECT(tb),
@@ -159,7 +159,7 @@ static void editbar_mode_button_toggled(GtkToggleButton *tb,
   enum editor_tool_type ett;
 
   etm = GPOINTER_TO_INT(userdata);
-  if (!(0 <= etm && etm < NUM_EDITOR_TOOL_MODES)) {
+  if (!(etm < NUM_EDITOR_TOOL_MODES)) {
     return;
   }
 
@@ -176,7 +176,7 @@ static void editbar_mode_button_toggled(GtkToggleButton *tb,
 ****************************************************************************/
 static void try_to_set_editor_tool(enum editor_tool_type ett)
 {
-  if (!(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
 
@@ -360,7 +360,7 @@ static bool editgui_run_tool_selection(enum editor_tool_type ett)
   int res = -1;
 
   eb = editgui_get_editbar();
-  if (eb == NULL || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (eb == NULL || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
 
@@ -413,7 +413,7 @@ static void editbar_add_tool_button(struct editbar *eb,
   struct sprite *sprite;
   int i;
 
-  if (!eb || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!eb || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
 
@@ -483,7 +483,7 @@ static void editbar_add_mode_button(struct editbar *eb,
   struct sprite *sprite;
   const char *tooltip;
 
-  if (!eb || !(0 <= etm && etm < NUM_EDITOR_TOOL_MODES)) {
+  if (!eb || !(etm < NUM_EDITOR_TOOL_MODES)) {
     return;
   }
 
@@ -601,7 +601,6 @@ static struct editbar *editbar_create(void)
   g_signal_connect(button, "clicked",
                    G_CALLBACK(editbar_player_properties_button_clicked), eb);
   gtk_container_add(GTK_CONTAINER(hbox), button);
-  eb->player_properties_button = button;
 
   return eb;
 }
@@ -880,7 +879,8 @@ static void editbar_reload_tileset(struct editbar *eb)
                        TVS_COL_ID, utype_number(putype),
                        TVS_COL_NAME, utype_name_translation(putype),
                        -1);
-    sprite = get_unittype_sprite(tileset, putype, direction8_invalid());
+    sprite = get_unittype_sprite(tileset, putype, ACTIVITY_LAST,
+                                 direction8_invalid());
     if (sprite == NULL) {
       continue;
     }
@@ -1007,8 +1007,8 @@ create_tool_value_selector(struct editbar *eb,
 
   tvs->dialog = gtk_dialog_new_with_buttons(_("Select Tool Value"),
                                             GTK_WINDOW(toplevel), GTK_DIALOG_MODAL,
-                                            _("OK"), GTK_RESPONSE_ACCEPT,
-                                            _("Cancel"), GTK_RESPONSE_REJECT,
+                                            _("_OK"), GTK_RESPONSE_ACCEPT,
+                                            _("_Cancel"), GTK_RESPONSE_REJECT,
                                             NULL);
   vbox = gtk_dialog_get_content_area(GTK_DIALOG(tvs->dialog));
 
@@ -1435,7 +1435,8 @@ static GdkPixbuf *get_tool_value_pixbuf(enum editor_tool_type ett,
   case ETT_UNIT:
     putype = utype_by_number(value);
     if (putype) {
-      sprite = get_unittype_sprite(tileset, putype, direction8_invalid());
+      sprite = get_unittype_sprite(tileset, putype,
+                                   ACTIVITY_LAST, direction8_invalid());
     }
     break;
   case ETT_CITY:
@@ -1600,7 +1601,7 @@ static void editinfobox_refresh(struct editinfobox *ei)
 }
 
 /************************************************************************//**
-  Handle ctrl+<key> combinations.
+  Handle ctrl+[key] combinations.
 ****************************************************************************/
 static gboolean handle_edit_key_press_with_ctrl(GdkEventKey *ev)
 {
@@ -1608,7 +1609,7 @@ static gboolean handle_edit_key_press_with_ctrl(GdkEventKey *ev)
 }
 
 /************************************************************************//**
-  Handle shift+<key> combinations.
+  Handle shift+[key] combinations.
 ****************************************************************************/
 static gboolean handle_edit_key_press_with_shift(GdkEventKey *ev)
 {
@@ -1662,12 +1663,14 @@ gboolean handle_edit_key_press(GdkEventKey *ev)
 {
   enum editor_tool_type ett, new_ett = NUM_EDITOR_TOOL_TYPES;
 
-  if (ev->state & GDK_SHIFT_MASK) {
-    return handle_edit_key_press_with_shift(ev);
-  }
-
+  /* Check ctrl before shift - this is correct also for the case where
+   * they are both active. */
   if (ev->state & GDK_CONTROL_MASK) {
     return handle_edit_key_press_with_ctrl(ev);
+  }
+
+  if (ev->state & GDK_SHIFT_MASK) {
+    return handle_edit_key_press_with_shift(ev);
   }
 
   ett = editor_get_tool();
@@ -1832,6 +1835,14 @@ void editgui_create_widgets(void)
 void editgui_free(void)
 {
   struct editbar *eb = editgui_get_editbar();
+  struct editinfobox *ei = editgui_get_editinfobox();
+
+  if (ei != NULL) {
+    /* We have extra ref for ei->widget that has protected
+     * it from getting destroyed when editinfobox_refresh()
+     * moves widgets around. Free that extra ref here. */
+    g_object_unref(ei->widget);
+  }
 
   clear_tool_stores(eb);
 }

@@ -136,6 +136,8 @@ struct fc_settings
   QByteArray city_splitter3;
   QByteArray help_geometry;
   QByteArray help_splitter1;
+  QByteArray options_client_geometry;
+  QByteArray options_server_geometry;
   float unit_info_pos_fx;
   float unit_info_pos_fy;
   float minimap_x;
@@ -175,7 +177,6 @@ class fc_client : public QMainWindow,
 
   QGridLayout *pages_layout[PAGE_GAME + 2];
   QStackedLayout *central_layout;
-  QGridLayout *game_layout;
 
   QTextEdit *output_window;
   QTextEdit *scenarios_view;
@@ -213,7 +214,6 @@ class fc_client : public QMainWindow,
   QTimer *update_info_timer;
 
   QStatusBar *status_bar;
-  QSignalMapper *switch_page_mapper;
   QLabel *status_bar_label;
   info_tile *info_tile_wdg;
   choice_dialog *opened_dialog;
@@ -226,7 +226,7 @@ public:
   fc_client();
   ~fc_client();
 
-  void fc_main(QApplication *);
+  void fc_main(QApplication *qapp);
   map_view *mapview_wdg;
   fc_sidebar *sidebar_wdg;
   minimap_view *minimapview_wdg;
@@ -238,7 +238,7 @@ public:
 
   void set_status_bar(QString str, int timeout = 2000);
   int add_game_tab(QWidget *widget);
-  void rm_game_tab(int index); /* doesn't delete widget */
+  void rm_game_tab(int index); // Doesn't delete widget
   void update_start_page();
   void toggle_unit_sel_widget(struct tile *ptile);
   void update_unit_sel();
@@ -285,6 +285,7 @@ public:
   bool is_closing();
   void update_sidebar_tooltips();
   void reload_sidebar_icons();
+  void update_fonts();
 
 private slots:
   void send_fake_chat_message(const QString &message);
@@ -388,6 +389,4 @@ public slots:
 // Return fc_client instance. Implementation in gui_main.cpp
 class fc_client *gui();
 
-#endif /* FC__FC_CLIENT_H */
-
-
+#endif // FC__FC_CLIENT_H

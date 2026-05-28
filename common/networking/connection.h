@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#include <time.h>	/* time_t */
+#include <time.h>       /* time_t */
 
 #ifdef FREECIV_HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -47,18 +47,13 @@ extern "C" {
 /* common */
 #include "fc_types.h"
 
+/* common/networking */
+#include "conn_types.h"
+
 struct conn_pattern_list;
 struct genhash;
 struct packet_handlers;
 struct timer_list;
-
-/* Used in the network protocol. */
-#define MAX_LEN_PACKET   4096
-#define MAX_LEN_CAPSTR    512
-#define MAX_LEN_PASSWORD  512 /* do not change this under any circumstances */
-#define MAX_LEN_CONTENT  (MAX_LEN_PACKET - 20)
-
-#define MAX_LEN_BUFFER   (MAX_LEN_PACKET * 128)
 
 /****************************************************************************
   Command access levels for client-side use; at present, they are only
@@ -183,7 +178,7 @@ struct connection {
 
   enum gui_type client_gui;
 
-  void (*notify_of_writable_data) (struct connection * pc,
+  void (*notify_of_writable_data) (struct connection *pc,
                                    bool data_available_and_socket_full);
 
   union {
@@ -227,6 +222,9 @@ struct connection {
 
       /* The access level initially given to the client upon connection. */
       enum cmdlevel granted_access_level;
+
+      /* Server setting control packet already sent. */
+      bool settings_sent;
 
       /* The list of ignored connection patterns. */
       struct conn_pattern_list *ignore_list;
@@ -365,6 +363,8 @@ struct conn_pattern *conn_pattern_from_string(const char *pattern,
                                               size_t error_buf_len);
 
 bool conn_is_valid(const struct connection *pconn);
+
+#define conn_is_webclient(__pconn__) ((__pconn__)->client_gui == GUI_WEB)
 
 #ifdef __cplusplus
 }

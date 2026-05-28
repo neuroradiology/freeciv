@@ -6,12 +6,14 @@ noinst_LTLIBRARIES = \
 AM_CPPFLAGS = \
 	-I$(top_srcdir)/utility \
 	-I$(top_srcdir)/common \
+	-I$(top_srcdir)/common/aicore \
 	-I$(top_srcdir)/dependencies/tinycthread \
 	$(JANSSON_CFLAGS)
 
 libfcivnetwork_la_SOURCES = \
 	connection.c	\
 	connection.h	\
+	conn_types.h	\
 	dataio.h	\
 	dataio_json.c	\
 	dataio_json.h	\

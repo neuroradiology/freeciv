@@ -22,16 +22,16 @@
  * it can install SDL's own. */
 #ifdef SDL2_PLAIN_INCLUDE
 #include <SDL.h>
-#include <SDL_mixer.h>
-#else  /* PLAIN_INCLUDE */
+#else  // PLAIN_INCLUDE
 #include <SDL2/SDL.h>
-#endif /* PLAIN_INCLUDE */
-#endif /* AUDIO_SDL */
+#endif // PLAIN_INCLUDE
+#endif // AUDIO_SDL
 
 #include <stdio.h>
 
 // Qt
 #include <QApplication>
+#include <QLibraryInfo>
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QStyleFactory>
@@ -46,6 +46,7 @@
 #include "editgui_g.h"
 #include "options.h"
 #include "sprite.h"
+#include "svgflag.h"
 #include "themes_common.h"
 #include "tilespec.h"
 
@@ -70,12 +71,14 @@ static fc_client *freeciv_qt;
 static QApplication *qapp = nullptr;
 
 void reset_unit_table(void);
-static void apply_city_font(struct option *poption);
 static void apply_font(struct option *poption);
 static void apply_help_font(struct option *poption);
 static void apply_notify_font(struct option *poption);
 static void apply_sidebar(struct option *poption);
 static void apply_titlebar(struct option *poption);
+
+// Uncomment to enable svg flags
+//#define FC_QT_SVGFLAG
 
 /**********************************************************************//**
   Return fc_client instance
@@ -97,7 +100,12 @@ void qtg_ui_init()
 int main(int argc, char **argv)
 {
   setup_gui_funcs();
-  return client_main(argc, argv);
+
+#ifdef FC_QT_SVGFLAG
+  svg_flag_enable();
+#endif // FC_QT_SVGFLAG
+
+  return client_main(argc, argv, TRUE);
 }
 
 /**********************************************************************//**
@@ -106,19 +114,28 @@ int main(int argc, char **argv)
 **************************************************************************/
 static void print_usage()
 {
-  /* add client-specific usage information here */
+  // Add client-specific usage information here
   fc_fprintf(stderr,
              _("This client accepts the standard Qt command-line options\n"
                "after '--'. See the Qt documentation.\n\n"));
 
-  /* TRANS: No full stop after the URL, could cause confusion. */
+  fc_fprintf(stderr,
+             _("Other gui-specific options are:\n"));
+
+  fc_fprintf(stderr,
+             _("-s, --shortcutreset\tReset shortcut keys to "
+               "default values\n"));
+
+  fc_fprintf(stderr, "\n");
+
+  // TRANS: No full stop after the URL, could cause confusion.
   fc_fprintf(stderr, _("Report bugs at %s\n"), BUG_URL);
 }
 
 /**********************************************************************//**
-  Search for gui-specic command line options, that are not handled by Qt
+  Search for gui-specific command line options, that are not handled by Qt
   (QApplication). Returns true iff program is to be executed, and not
-  to exit after showing the results from option parsing. 
+  to exit after showing the results from option parsing.
 **************************************************************************/
 static bool parse_options(int argc, char **argv)
 {
@@ -128,6 +145,9 @@ static bool parse_options(int argc, char **argv)
     if (is_option("--help", argv[i])) {
       print_usage();
       return false;
+    }
+    if (is_option("--shortcutreset", argv[i])) {
+      shortcutreset();
     }
     // Can't check against unknown options, as those might be Qt options
 
@@ -142,38 +162,63 @@ static bool parse_options(int argc, char **argv)
 **************************************************************************/
 static void migrate_options_from_2_5()
 {
-  if (!gui_options.first_boot) {
-    log_normal(_("Migrating Qt-client options from freeciv-2.5 options."));
+  log_normal(_("Migrating Qt-client options from freeciv-2.5 options."));
 
-    gui_options.gui_qt_fullscreen = gui_options.migrate_fullscreen;
+  gui_options.gui_qt_fullscreen = gui_options.migrate_fullscreen;
 
-    gui_options.gui_qt_migrated_from_2_5 = TRUE;
-  }
+  gui_options.gui_qt_migrated_from_2_5 = TRUE;
 }
 
 /**********************************************************************//**
   The main loop for the UI.  This is called from main(), and when it
   exits the client will exit.
 **************************************************************************/
-void qtg_ui_main(int argc, char *argv[])
+int qtg_ui_main(int argc, char *argv[])
 {
   if (parse_options(argc, argv)) {
     qapp = new QApplication(argc, argv);
     QPixmap *qpm;
     QIcon app_icon;
+    int tsret;
+
+    tsret = default_tileset_select();
+    if (tsret != EXIT_SUCCESS) {
+      return tsret;
+    }
 
     tileset_init(tileset);
     tileset_load_tiles(tileset);
     qpm = get_icon_sprite(tileset, ICON_FREECIV)->pm;
     app_icon = ::QIcon(*qpm);
     qapp->setWindowIcon(app_icon);
-    if (!gui_options.gui_qt_migrated_from_2_5) {
+    if (gui_options.first_boot) {
+      /* We're using fresh defaults for this version of this client,
+       * so prevent any future migrations from other versions */
+      gui_options.gui_qt_migrated_from_2_5 = TRUE;
+    } else if (!gui_options.gui_qt_migrated_from_2_5) {
       migrate_options_from_2_5();
     }
-    load_theme(gui_options.gui_qt_default_theme_name);
+    if (!load_theme(gui_options.gui_qt_default_theme_name)) {
+      qtg_gui_clear_theme();
+    }
     freeciv_qt = new fc_client();
+
+    if (!gui_options.gui_qt_default_fonts_set) {
+      configure_fonts();
+      gui_options.gui_qt_default_fonts_set = TRUE;
+    }
+
+    // Initial fonts setup by forcing running change-callback for each
+    options_iterate(client_optset, poption) {
+      if (OT_FONT == option_type(poption)) {
+        option_changed(poption);
+      }
+    } options_iterate_end;
+
     freeciv_qt->fc_main(qapp);
   }
+
+  return EXIT_SUCCESS;
 }
 
 /**********************************************************************//**
@@ -205,13 +250,7 @@ void qtg_options_extra_init()
                           apply_font);
   option_var_set_callback(gui_qt_font_default,
                           apply_font);
-  option_var_set_callback(gui_qt_font_city_label,
-                          apply_city_font);
-  option_var_set_callback(gui_qt_font_help_label,
-                          apply_help_font);
   option_var_set_callback(gui_qt_font_help_text,
-                          apply_help_font);
-  option_var_set_callback(gui_qt_font_help_title,
                           apply_help_font);
   option_var_set_callback(gui_qt_font_chatline,
                           apply_font);
@@ -290,7 +329,7 @@ void qtg_remove_net_input()
 **************************************************************************/
 void qtg_set_unit_icon(int idx, struct unit *punit)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -302,7 +341,7 @@ void qtg_set_unit_icon(int idx, struct unit *punit)
 **************************************************************************/
 void qtg_set_unit_icons_more_arrow(bool onoff)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -315,6 +354,10 @@ void qtg_real_focus_units_changed(void)
   if (gui()->unit_sel != nullptr && gui()->unit_sel->isVisible()) {
     gui()->unit_sel->update_units();
   }
+
+  if (gui()->gtd != nullptr && gui()->gtd->isVisible()) {
+    gui()->gtd->update_dlg();
+  }
 }
 
 /**********************************************************************//**
@@ -324,7 +367,7 @@ void qtg_real_focus_units_changed(void)
 **************************************************************************/
 void qtg_add_idle_callback(void (callback)(void *), void *data)
 {
-  call_me_back *cb = new call_me_back; /* removed in mr_idler:idling() */
+  call_me_back *cb = new call_me_back; // Removed in mr_idler:idling()
 
   cb->callback = callback;
   cb->data = data;
@@ -345,7 +388,7 @@ void apply_titlebar(struct option *poption)
     return;
   }
 
-  if (val == true) {
+  if (val) {
     w = new QWidget();
     gui()->setWindowFlags(flags);
     delete gui()->corner_wid;
@@ -378,6 +421,7 @@ static void apply_font(struct option *poption)
   QString s;
 
   if (gui()) {
+    // FIXME: All this should be within gui()->update_fonts()
     f = new QFont;
     s = option_font_get(poption);
     f->fromString(s);
@@ -390,7 +434,10 @@ static void apply_font(struct option *poption)
     QApplication::setFont(*fc_font::instance()->get_font(fonts::default_font));
     real_science_report_dialog_update(nullptr);
     fc_font::instance()->get_mapfont_size();
+    gui()->update_fonts();
   }
+
+  apply_help_font(poption);
 }
 
 /**********************************************************************//**
@@ -423,13 +470,6 @@ static void apply_notify_font(struct option *poption)
     qtg_gui_update_font("notify_label", option_font_get(poption));
     restart_notify_dialogs();
   }
-}
-
-/**********************************************************************//**
-  Changes city label font
-**************************************************************************/
-void apply_city_font(option *poption)
-{
   if (gui() && qtg_get_current_client_page() == PAGE_GAME) {
     qtg_gui_update_font("city_label", option_font_get(poption));
     city_font_update();
@@ -505,7 +545,7 @@ enum gui_type qtg_get_gui_type()
 **************************************************************************/
 void reset_unit_table(void)
 {
- /* FIXME */
+  // FIXME
 }
 
 /**********************************************************************//**
@@ -513,27 +553,21 @@ void reset_unit_table(void)
 **************************************************************************/
 void popup_quit_dialog()
 {
-  hud_message_box ask(gui()->central_wdg);
-  int ret;
+  hud_message_box *ask = new hud_message_box(gui()->central_wdg);
 
-  ask.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
-  ask.setDefaultButton(QMessageBox::Cancel);
-  ask.set_text_title(_("Are you sure you want to quit?"),  _("Quit?"));
-  ret = ask.exec();
-
-  switch (ret) {
-  case QMessageBox::Cancel:
-    return;
-    break;
-  case QMessageBox::Ok:
+  ask->setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+  ask->setDefaultButton(QMessageBox::Cancel);
+  ask->set_text_title(_("Are you sure you want to quit?"),  _("Quit?"));
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  QObject::connect(ask, &hud_message_box::accepted, [=]() {
     start_quitting();
     if (client.conn.used) {
       disconnect_from_server();
     }
     gui()->write_settings();
     qapp->quit();
-    break;
-  }
+  });
+  ask->show();
 }
 
 /**********************************************************************//**
@@ -541,20 +575,16 @@ void popup_quit_dialog()
 **************************************************************************/
 void qtg_insert_client_build_info(char *outbuf, size_t outlen)
 {
-  /* There's separate entry about Qt in help menu.
-   * Should we enable this regardless? As then to place to find such information
-   * would be standard over clients. */
+  // There's also an separate entry about Qt in help menu.
 
-  /*
+  QByteArray ver = QLibraryInfo::version().toString().toLocal8Bit();
+
   cat_snprintf(outbuf, outlen, _("\nBuilt against Qt %s, using %s"),
-               QT_VERSION_STR, qVersion());
-  */
-}
+               QT_VERSION_STR, ver.data());
 
-/**********************************************************************//**
-  Make dynamic adjustments to first-launch default options.
-**************************************************************************/
-void qtg_adjust_default_options()
-{
-  /* Nothing in case of this gui */
+#ifndef FC_QT5_MODE
+  cat_snprintf(outbuf, outlen, _("\nBuilt in Qt6 mode."));
+#else  // FC_QT5_MODE
+  cat_snprintf(outbuf, outlen, _("\nBuilt in Qt5 mode."));
+#endif // FC_QT5_MODE
 }

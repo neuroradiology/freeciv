@@ -108,7 +108,7 @@ void make_random_hmap(int smooth)
     smooth_int_map(height_map, TRUE);
   }
 
-  adjust_int_map(height_map, hmap_max_level);
+  adjust_int_map(height_map, 0, hmap_max_level);
 }
 
 /**********************************************************************//**
@@ -181,13 +181,13 @@ static void gen5rec(int step, int xl, int yt, int xr, int yb)
 }
 
 /**********************************************************************//**
-Generator 5 makes earthlike worlds with one or more large continents and
-a scattering of smaller islands. It does so by dividing the world into
-blocks and on each block raising or lowering the corners, then the 
-midpoints and middle and so on recursively.  Fiddling with 'xdiv' and 
-'ydiv' will change the size of the initial blocks and, if the map does not 
-wrap in at least one direction, fiddling with 'avoidedge' will change the 
-liklihood of continents butting up to non-wrapped edges.
+  Generator 5 makes earthlike worlds with one or more large continents and
+  a scattering of smaller islands. It does so by dividing the world into
+  blocks and on each block raising or lowering the corners, then the
+  midpoints and middle and so on recursively.  Fiddling with 'xdiv' and
+  'ydiv' will change the size of the initial blocks and, if the map does not
+  wrap in at least one direction, fiddling with 'avoidedge' will change the
+  likelihood of continents butting up to non-wrapped edges.
 
   All X and Y values used in this function are in native coordinates.
 
@@ -196,14 +196,14 @@ liklihood of continents butting up to non-wrapped edges.
 **************************************************************************/
 void make_pseudofractal1_hmap(int extra_div)
 {
-  const bool xnowrap = !current_topo_has_flag(TF_WRAPX);
-  const bool ynowrap = !current_topo_has_flag(TF_WRAPY);
+  const bool xnowrap = !current_wrap_has_flag(WRAP_X);
+  const bool ynowrap = !current_wrap_has_flag(WRAP_Y);
 
-  /* 
+  /*
    * How many blocks should the x and y directions be divided into
-   * initially. 
+   * initially.
    */
-  const int xdiv = 5 + extra_div;		
+  const int xdiv = 5 + extra_div;
   const int ydiv = 5 + extra_div;
 
   int xdiv2 = xdiv + (xnowrap ? 1 : 0);
@@ -213,9 +213,9 @@ void make_pseudofractal1_hmap(int extra_div)
   int ymax = wld.map.ysize - (ynowrap ? 1 : 0);
   int x_current, y_current;
   /* just need something > log(max(xsize, ysize)) for the recursion */
-  int step = wld.map.xsize + wld.map.ysize; 
+  int step = wld.map.xsize + wld.map.ysize;
   /* edges are avoided more strongly as this increases */
-  int avoidedge = (100 - wld.map.server.landpercent) * step / 100 + step / 3; 
+  int avoidedge = (100 - wld.map.server.landpercent) * step / 100 + step / 3;
 
   height_map = fc_malloc(sizeof(*height_map) * MAP_INDEX_SIZE);
 
@@ -256,7 +256,7 @@ void make_pseudofractal1_hmap(int extra_div)
     hmap(ptile) = 8 * hmap(ptile) + fc_rand(4) - 2;
   } whole_map_iterate_end;
 
-  adjust_int_map(height_map, hmap_max_level);
+  adjust_int_map(height_map, 0, hmap_max_level);
 }
 
 /**********************************************************************//**

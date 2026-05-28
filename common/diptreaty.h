@@ -18,6 +18,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* utility */
+#include "requirements.h"
 #include "support.h"            /* bool type */
 
 /* Used in the network protocol */
@@ -42,6 +43,8 @@ extern "C" {
 #define SPECENUM_VALUE8NAME "Vision"
 #define SPECENUM_VALUE9 CLAUSE_EMBASSY
 #define SPECENUM_VALUE9NAME "Embassy"
+#define SPECENUM_VALUE10 CLAUSE_SHARED_TILES
+#define SPECENUM_VALUE10NAME "SharedTiles"
 #define SPECENUM_COUNT CLAUSE_COUNT
 #include "specenum_gen.h"
 
@@ -52,6 +55,8 @@ struct clause_info
 {
   enum clause_type type;
   bool enabled;
+  struct requirement_vector giver_reqs;
+  struct requirement_vector receiver_reqs;
 };
 
 /* For when we need to iterate over treaties */
@@ -94,6 +99,28 @@ void clear_treaty(struct Treaty *ptreaty);
 void clause_infos_init(void);
 void clause_infos_free(void);
 struct clause_info *clause_info_get(enum clause_type type);
+
+bool clause_enabled(enum clause_type type);
+
+#define SPECLIST_TAG treaty
+#define SPECLIST_TYPE struct Treaty
+#include "speclist.h"
+
+#define treaty_list_iterate(list, p) \
+    TYPED_LIST_ITERATE(struct Treaty, list, p)
+#define treaty_list_iterate_end  LIST_ITERATE_END
+
+void treaties_init(void);
+void treaties_free(void);
+void free_treaties(void);
+
+struct Treaty *find_treaty(struct player *plr0, struct player *plr1);
+
+void treaty_add(struct Treaty *ptreaty);
+void treaty_remove(struct Treaty *ptreaty);
+
+typedef void (*treaty_cb)(struct Treaty *, void *data);
+void treaties_iterate(treaty_cb cb, void *data);
 
 #ifdef __cplusplus
 }

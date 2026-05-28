@@ -42,6 +42,11 @@ struct adv_dipl {
   bool allied_with_enemy;
 };
 
+struct adv_area_info {
+  int size;
+  bool threat;
+};
+
 struct adv_data {
   /* Whether adv_data_phase_init() has been called or not. */
   bool phase_is_initialized;
@@ -53,14 +58,15 @@ struct adv_data {
   enum adv_improvement_status impr_calc[B_LAST];
   enum req_range impr_range[B_LAST];
 
+  struct adv_area_info *continents;
+  struct adv_area_info *oceans;
+
   /* Long-term threats, not to be confused with short-term danger */
   struct {
-    bool invasions;   /* check if we need to consider invasions */
-    bool *continent;  /* non-allied cities on continent? */
-    bool *ocean;      /* non-allied offensive ships in ocean? */
-    bool missile;     /* check for non-allied missiles */
-    int nuclear;      /* nuke check: 0=no, 1=capability, 2=built */
-    bool igwall;      /* enemies have igwall units */
+    bool invasions;      /* check if we need to consider invasions */
+    bool suicide_attack; /* check for non-allied missiles */
+    int nuclear;         /* nuke check: 0 = no, 1 = capability, 2 = built */
+    bool igwall;         /* enemies have igwall units */
   } threats;
 
   /* Keeps track of which continents are fully explored already */
@@ -77,7 +83,10 @@ struct adv_data {
     /* Counts of specific types of units. */
     struct {
       /* Unit-flag counts. */
-      int coast_strict, missiles, paratroopers, airliftable;
+      int coast_strict;
+
+      /* Unit can do action counts. */
+      int suicide_attackers, paratroopers, airliftable;
 
       int byclass[UCL_LAST];
 
@@ -92,8 +101,9 @@ struct adv_data {
   struct {
     struct adv_dipl **adv_dipl_slots;
 
-    struct player *spacerace_leader; /* who is leading the space pack */
-    struct player *production_leader;
+    struct player *spacerace_leader;  /* Who is leading the space pack */
+    struct player *tech_leader;       /* Who is first to get spacerace techs */
+    struct player *production_leader; /* Who is quickest to build spaceship */
   } dipl;
 
   int num_continents; /* last time we updated our continent data */
@@ -109,6 +119,7 @@ struct adv_data {
   int unhappy_priority;
   int angry_priority;
   int pollution_priority;
+  int infra_priority;
 
   /* Government data */
   adv_want *government_want;
@@ -146,6 +157,8 @@ void adv_data_analyze_rulesets(struct player *pplayer);
 
 struct adv_data *adv_data_get(struct player *pplayer, bool *close);
 
+adv_want adv_gov_action_immunity_want(struct government *gov);
+adv_want adv_gov_player_bonus_want(struct player *pplayer);
 void adv_best_government(struct player *pplayer);
 
 bool adv_wants_science(struct player *pplayer);

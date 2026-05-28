@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,17 +22,17 @@ extern "C" {
 #include "repodlgs_g.h"
 }
 
+// Qt
+#include <QLabel>
+#include <QPushButton>
+#include <QWidget>
+
 // client
 #include "climisc.h"
 
 // gui-qt
 #include "fonts.h"
 #include "mapview.h"
-
-// Qt
-#include <QLabel>
-#include <QPushButton>
-#include <QWidget>
 
 class progress_bar;
 class QComboBox;
@@ -72,7 +72,11 @@ private slots:
   void upgrade_units();
 
 protected:
+#ifndef FC_QT5_MODE
+  void enterEvent(QEnterEvent *event);
+#else  // FC_QT5_MODE
   void enterEvent(QEvent *event);
+#endif // FC_QT5_MODE
   void leaveEvent(QEvent *event);
   void paintEvent(QPaintEvent *event);
   void wheelEvent(QWheelEvent *event);
@@ -128,6 +132,7 @@ public:
   struct impr_type *timpr;
   struct government *tgov;
 };
+
 /****************************************************************************
   Custom widget representing research diagram in science_report
 ****************************************************************************/
@@ -136,7 +141,7 @@ class research_diagram: public QWidget
   Q_OBJECT
 
 public:
-  research_diagram(QWidget *parent = 0);
+  research_diagram(QWidget *parent = nullptr);
   ~research_diagram();
   void update_reqtree();
   void reset();
@@ -157,7 +162,6 @@ private:
   QPoint tooltip_pos;
   QString tooltip_text;
   QRect tooltip_rect;
-  
 };
 
 /****************************************************************************
@@ -184,7 +188,7 @@ public:
   science_report();
   ~science_report();
   void update_report();
-  void init(bool raise);
+  void init();
   void redraw();
   void reset_tree();
 
@@ -248,7 +252,6 @@ public:
 private:
   int index;
   int players;
-
 };
 
 
@@ -260,4 +263,4 @@ void popdown_endgame_report();
 void popup_endgame_report();
 void toggle_units_report(bool);
 
-#endif /* FC__REPODLGS_H */
+#endif // FC__REPODLGS_H

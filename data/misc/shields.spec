@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -36,7 +36,7 @@ sprites =
                 "f.shield.animals", "flags/animals-shield"
 		"f.shield.anishinaabe", "flags/anishinaabe-shield"
 		"f.shield.antarctica", "flags/antarctica-shield"
-;		"f.shield.antarctica_alt", "flags/antarctica_alt-shield"
+		"f.shield.antarctica_alt", "flags/antarctica_alt-shield"
 		"f.shield.antigua_and_barbuda", "flags/antigua_and_barbuda-shield"
 		"f.shield.apache", "flags/apache-shield"
 		"f.shield.arab", "flags/arab-shield"
@@ -177,6 +177,7 @@ sprites =
 		"f.shield.finland", "flags/finland-shield"
 		"f.shield.flanders", "flags/flanders-shield"
 		"f.shield.florence", "flags/florence-shield"
+		"f.shield.florida", "flags/florida-shield"
 		"f.shield.formosan", "flags/formosan-shield"
 		"f.shield.france", "flags/france-shield"
 		"f.shield.france_old", "flags/france_old-shield"
@@ -303,6 +304,7 @@ sprites =
 		"f.shield.lippe", "flags/lippe-shield"
 		"f.shield.lithuania", "flags/lithuania-shield"
 		"f.shield.lorraine", "flags/lorraine-shield"
+		"f.shield.luik", "flags/luik-shield"
 		"f.shield.luna", "flags/luna-shield"
 		"f.shield.lusatia", "flags/lusatia-shield"
 		"f.shield.luwian", "flags/luwian-shield"
@@ -357,6 +359,7 @@ sprites =
 		"f.shield.muskogee", "flags/muskogee-shield"
 		"f.shield.mwiska", "flags/mwiska-shield"
 		"f.shield.myanmar", "flags/myanmar-shield"
+		"f.shield.myanmar_old", "flags/myanmar_old-shield"
 		"f.shield.nagorno_karabakh", "flags/nagorno_karabakh-shield"
 		"f.shield.namibia", "flags/namibia-shield"
 		"f.shield.naples", "flags/naples-shield"
@@ -394,6 +397,7 @@ sprites =
 		"f.shield.paeonia", "flags/paeonia-shield"
 		"f.shield.pakistan", "flags/pakistan-shield"
 		"f.shield.palatinate", "flags/palatinate-shield"
+		"f.shield.palau", "flags/palau-shield"
 		"f.shield.palestine", "flags/palestine-shield"
 		"f.shield.palmyra", "flags/palmyra-shield"
 		"f.shield.panama", "flags/panama-shield"
@@ -579,6 +583,7 @@ sprites =
 		"f.shield.zhuang", "flags/zhuang-shield"
 		"f.shield.zimbabwe", "flags/zimbabwe-shield"
 		"f.shield.zulu", "flags/zulu-shield"
-	}
 
 *include "override/shields.spec"
+
+	}

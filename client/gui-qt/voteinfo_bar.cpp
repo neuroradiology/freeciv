@@ -119,15 +119,15 @@ void pregamevote::update_vote()
   vote_count = voteinfo_queue_size();
   vi = voteinfo_queue_get_current(&index);
   if (vi != NULL && vi->resolved && vi->passed) {
-    /* TRANS: Describing a vote that passed. */
+    // TRANS: Describing a vote that passed.
     fc_snprintf(status, sizeof(status), _("[passed]"));
     sz_strlcpy(color, "green");
   } else if (vi != NULL && vi->resolved && !vi->passed) {
-    /* TRANS: Describing a vote that failed. */
+    // TRANS: Describing a vote that failed.
     fc_snprintf(status, sizeof(status), _("[failed]"));
     sz_strlcpy(color, "red");
   } else if (vi != NULL && vi->remove_time > 0) {
-    /* TRANS: Describing a vote that was removed. */
+    // TRANS: Describing a vote that was removed.
     fc_snprintf(status, sizeof(status), _("[removed]"));
     sz_strlcpy(color, "grey");
   } else {
@@ -149,10 +149,11 @@ void pregamevote::update_vote()
       label_text->setText(buf);
     } else {
       label_text->setText(QString(_("<b>%1 called a vote for:</b>")).
-                          arg(vi->user));
+                          arg(QString(vi->user).toHtmlEscaped()));
     }
     label_vote_text->setText(QString("</b><p style=\"color:"
-                                     " red\"> %1</p></b>").arg(vi->desc));
+                                     " red\"> %1</p></b>")
+        .arg(QString(vi->desc).toHtmlEscaped()));
     voters->setText(QString(" /%1").arg(vi->num_voters));
   } else {
     label_text->setText("");

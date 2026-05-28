@@ -53,14 +53,12 @@
 #include "handicaps.h"
 
 /* ai/default */
-#include "aicity.h"
-#include "aidata.h"
-#include "ailog.h"
-#include "aiplayer.h"
 #include "aitech.h"
 #include "aitools.h"
-#include "aiunit.h"
+#include "daicity.h"
+#include "daidata.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
 
 #include "daidomestic.h"
 
@@ -136,7 +134,7 @@ static void dai_choose_help_wonder(struct ai_type *ait,
   /* Check if wonder needs a little help. */
   if (build_points_left(wonder_city)
       > utype_build_shield_cost_base(unit_type) * caravans) {
-    struct impr_type *wonder = wonder_city->production.value.building;
+    const struct impr_type *wonder = wonder_city->production.value.building;
     adv_want want = wonder_city->server.adv->building_want[improvement_index(wonder)];
     int dist = city_data->distance_to_wonder_city /
                unit_type->move_rate;
@@ -193,6 +191,7 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
   bool prefer_different_cont;
   int pct = 0;
   int trader_trait;
+  bool can_move_ic = FALSE, has_boats = TRUE;
   bool need_boat = FALSE;
   int trade_action;
 
@@ -208,8 +207,45 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
     return;
   }
 
+  unit_type = best_role_unit(pcity,
+                             action_id_get_role(ACTION_TRADE_ROUTE));
+
+  if (!unit_type) {
+    /* Can't establish trade route yet. What about entering a marketplace? */
+    /* TODO: Should a future unit capable of establishing trade routes be
+     * prioritized above a present unit capable of entering a market place?
+     * In that case this should be below the check for a future unit
+     * capable of establishing a trade route. */
+    unit_type = best_role_unit(pcity,
+                               action_id_get_role(ACTION_MARKETPLACE));
+  }
+
+  if (!unit_type) {
+    /* We cannot build such units yet
+     * but we will consider it to stimulate science */
+    unit_type = get_role_unit(action_id_get_role(ACTION_TRADE_ROUTE), 0);
+  }
+
+  if (!unit_type) {
+    /* We'll never be able to establish a trade route. Consider a unit that
+     * can enter the marketplace instead, to stimulate science. */
+    unit_type = get_role_unit(action_id_get_role(ACTION_MARKETPLACE), 0);
+  }
+
+  fc_assert_msg(unit_type,
+                "Non-existence of trade unit not caught");
+
+  if (unit_type) {
+    struct unit_class *pclass = utype_class(unit_type);
+
+    /* Hope there is no "water cities in lakes" ruleset? */
+    can_move_ic = pclass->adv.sea_move != MOVE_NONE;
+    has_boats = pclass->adv.ferry_types > 0;
+  }
+
   if (trade_route_type_trade_pct(TRT_NATIONAL_IC) >
-      trade_route_type_trade_pct(TRT_NATIONAL)) {
+      trade_route_type_trade_pct(TRT_NATIONAL)
+      && (can_move_ic || has_boats)) {
     prefer_different_cont = TRUE;
   } else {
     prefer_different_cont = FALSE;
@@ -221,13 +257,18 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
     /* National traderoutes have value */
     city_list_iterate(pplayer->cities, acity) {
       if (can_cities_trade(pcity, acity)) {
-        dest_city_found = TRUE;
         if (tile_continent(acity->tile) != continent) {
+          if (!(can_move_ic || has_boats)) {
+            /* FIXME: get by roads/rivers? */
+            continue;
+          }
+          dest_city_found = TRUE;
           dest_city_nat_different_cont = TRUE;
           if (prefer_different_cont) {
             break;
           }
         } else {
+          dest_city_found = TRUE;
           dest_city_nat_same_cont = TRUE;
           if (!prefer_different_cont) {
             break;
@@ -255,13 +296,18 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
       if (pplayers_allied(pplayer, aplayer)) {
         city_list_iterate(aplayer->cities, acity) {
           if (can_cities_trade(pcity, acity)) {
-            dest_city_found = TRUE;
             if (tile_continent(acity->tile) != continent) {
+              if (!(can_move_ic || has_boats)) {
+                /* FIXME: get by roads/rivers? */
+                continue;
+              }
+              dest_city_found = TRUE;
               dest_city_in_different_cont = TRUE;
               if (prefer_different_cont) {
                 break;
               }
             } else {
+              dest_city_found = TRUE;
               dest_city_in_same_cont = TRUE;
               if (!prefer_different_cont) {
                 break;
@@ -281,34 +327,6 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
     /* No proper destination city. */
     return;
   }
-
-  unit_type = best_role_unit(pcity,
-                             action_id_get_role(ACTION_TRADE_ROUTE));
-
-  if (!unit_type) {
-    /* Can't establish trade route yet. What about entering a marketplace? */
-    /* TODO: Should a future unit capable of establishing trade routes be
-     * prioritized above a present unit capable of entering a market place?
-     * In that case this should be below the check for a future unit
-     * capable of establishing a trade route. */
-    unit_type = best_role_unit(pcity,
-                               action_id_get_role(ACTION_MARKETPLACE));
-  }
-
-  if (!unit_type) {
-    /* We cannot build such units yet
-     * but we will consider it to stimulate science */
-    unit_type = get_role_unit(action_id_get_role(ACTION_TRADE_ROUTE), 0);
-  }
-
-  if (!unit_type) {
-    /* We'll never be able to establish a trade route. Consider a unit that
-     * can enter the marketplace in stead to stimulate science. */
-    unit_type = get_role_unit(action_id_get_role(ACTION_MARKETPLACE), 0);
-  }
-
-  fc_assert_msg(unit_type,
-                "Non existance of trade unit not caught");
 
   trade_routes = city_num_trade_routes(pcity);
   /* Count also caravans enroute to establish traderoutes */
@@ -332,8 +350,16 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
    * duplicated here because the city traded with is imaginary. */
 
   /* We assume that we are creating trade route to city with 75% of
-   * pcitys trade 10 squares away. */
-  income = (10 + 10) * (1.75 * pcity->surplus[O_TRADE]) / 24;
+   * pcitys trade 10 squares away (FIXME: another estimation?). */
+  if (CBS_LOGARITHMIC == game.info.caravan_bonus_style) {
+    int wd = ((100 - game.info.trade_world_rel_pct) * 10
+               + game.info.trade_world_rel_pct
+                 * (10 * 40 / MAX(wld.map.xsize, wld.map.ysize))) / 100;
+
+    income = pow(log(wd + 20 + 1.75 * max_trade_prod(pcity)) * 2, 2);
+  } else /* assume CBS_CLASSIC */ {
+    income = (10 + 10) * (1.75 * pcity->surplus[O_TRADE]) / 24;
+  }
 
   /* A ruleset may use the Trade_Revenue_Bonus effect to reduce the one
    * time bonus if no trade route is established. Make sure it gets the
@@ -341,12 +367,15 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
   trade_action = utype_can_do_action(unit_type, ACTION_TRADE_ROUTE) ?
         ACTION_TRADE_ROUTE : ACTION_MARKETPLACE;
   bonus = get_target_bonus_effects(NULL,
-                                   pplayer, NULL,
-                                   pcity, NULL,
-                                   city_tile(pcity),
-                                   NULL, NULL,
-                                   NULL, NULL,
-                                   action_by_number(trade_action),
+                                   &(const struct req_context) {
+                                     .player = pplayer,
+                                     .city = pcity,
+                                     .tile = city_tile(pcity),
+                                     .unittype = unit_type,
+                                     .action =
+                                       action_by_number(trade_action),
+                                   },
+                                   NULL,
                                    EFT_TRADE_REVENUE_BONUS);
 
   /* Be mercy full to players with small amounts. Round up. */
@@ -377,6 +406,7 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
     }
   }
 
+  need_boat = need_boat && !can_move_ic;
   income = pct * income / 100;
 
   want = income * ai->gold_priority + income * ai->science_priority;
@@ -410,7 +440,7 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
     want += trader_trait / 4;
   }
 
-  want -= utype_build_shield_cost(pcity, unit_type) * SHIELD_WEIGHTING / 150;
+  want -= utype_build_shield_cost(pcity, NULL, unit_type) * SHIELD_WEIGHTING / 150;
 
   /* Don't pile too many of them */
   if (unassigned_caravans * 10 > want && want > 0.0) {
@@ -437,7 +467,9 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
                                       want);
     }
 
-    if (unit_type != NULL) {
+    /* We don't want to build caravan that wouldn't be able to reach the
+     * destination by any means. It would be useless. */
+    if (unit_type != NULL && (!need_boat || has_boats)) {
       choice->want = want;
       choice->type = CT_CIVILIAN;
       choice->value.utype = unit_type;
@@ -454,7 +486,8 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
 
   If want is 0, this advisor doesn't want anything.
 ***************************************************************************/
-struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait, struct player *pplayer,
+struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait,
+                                                 struct player *pplayer,
                                                  struct city *pcity)
 {
   struct adv_data *adv = adv_data_get(pplayer, NULL);
@@ -468,8 +501,8 @@ struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait, struct pla
   /* Find out desire for workers (terrain improvers) */
   worker_type = city_data->worker_type;
 
-  /* The worker want is calculated in aicity.c called from
-   * dai_manage_cities.  The expand value is the % that the AI should
+  /* The worker want is calculated in daicity.c called from
+   * dai_manage_cities(). The expand value is the % that the AI should
    * value expansion (basically to handicap easier difficulty levels)
    * and is set when the difficulty level is changed (difficulty.c). */
   worker_want = city_data->worker_want * pplayer->ai_common.expand / 100;
@@ -505,7 +538,7 @@ struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait, struct pla
     founder_type = best_role_unit(pcity,
                                   action_id_get_role(ACTION_FOUND_CITY));
 
-    /* founder_want calculated in aisettlers.c */
+    /* founder_want calculated in daisettlers.c */
     founder_want = city_data->founder_want;
 
     if (adv->wonder_city == pcity->id) {
@@ -581,6 +614,8 @@ struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait, struct pla
     cur = adv_new_choice();
     adv_choice_set_use(cur, "improvement");
     building_advisor_choose(pcity, cur);
+    cur->want = cur->want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
+                                    / TRAIT_DEFAULT_VALUE / 2));
     choice = adv_better_choice_free(choice, cur);
 
     /* Consider building caravan-type units for trade route */

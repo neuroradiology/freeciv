@@ -31,142 +31,19 @@ int ice_base_colatitude = 0 ;
   Returns the colatitude of this map position.  This is a value in the
   range of 0 to MAX_COLATITUDE (inclusive).
   This function is wanted to concentrate the topology information
-  all generator code has to use  colatitude and others topology safe 
+  all generator code has to use  colatitude and others topology safe
   functions instead (x,y) coordinate to place terrains
   colatitude is 0 at poles and MAX_COLATITUDE at equator
 ****************************************************************************/
 int map_colatitude(const struct tile *ptile)
 {
-  double x, y;
-  int tile_x, tile_y;
-
+  int latitude;
   fc_assert_ret_val(ptile != NULL, MAX_COLATITUDE / 2);
 
-  if (wld.map.server.alltemperate) {
-    /* An all-temperate map has "average" temperature everywhere.
-     *
-     * TODO: perhaps there should be a random temperature variation. */
-    return MAX_COLATITUDE / 2;
-  }
+  latitude = map_signed_latitude(ptile);
+  latitude = MAX(latitude, -latitude);
 
-
-  index_to_map_pos(&tile_x, &tile_y, tile_index(ptile));
-  do_in_natural_pos(ntl_x, ntl_y, tile_x, tile_y) {
-    if (wld.map.server.single_pole) {
-      if (!current_topo_has_flag(TF_WRAPY)) {
-        /* Partial planetary map.  A polar zone is placed
-         * at the top and the equator is at the bottom. */
-        return MAX_COLATITUDE * ntl_y / (NATURAL_HEIGHT - 1);
-      }
-      if (!current_topo_has_flag(TF_WRAPX)) {
-        return MAX_COLATITUDE * ntl_x / (NATURAL_WIDTH -1);
-      }
-    }
-
-    /* Otherwise a wrapping map is assumed to be a global planetary map. */
-
-    /* we fold the map to get the base symmetries
-     *
-     * ...... 
-     * :c__c:
-     * :____:
-     * :____:
-     * :c__c:
-     * ......
-     *
-     * C are the corners.  In all cases the 4 corners have equal temperature.
-     * So we fold the map over in both directions and determine
-     * x and y vars in the range [0.0, 1.0].
-     *
-     * ...>x 
-     * :C_
-     * :__
-     * V
-     * y
-     *
-     * And now this is what we have - just one-quarter of the map.
-     */
-    x = ((ntl_x > (NATURAL_WIDTH / 2 - 1)
-	 ? NATURAL_WIDTH - 1.0 - (double)ntl_x
-	 : (double)ntl_x)
-	 / (NATURAL_WIDTH / 2 - 1));
-    y = ((ntl_y > (NATURAL_HEIGHT / 2 - 1)
-	  ? NATURAL_HEIGHT - 1.0 - (double)ntl_y
-	  : (double)ntl_y)
-	 / (NATURAL_HEIGHT / 2 - 1));
-  } do_in_natural_pos_end;
-
-  if (!current_topo_has_flag(TF_WRAPY)) {
-    /* In an Earth-like topology the polar zones are at north and south.
-     * This is equivalent to a Mercator projection. */
-    return MAX_COLATITUDE * y;
-  }
-
-  if (!current_topo_has_flag(TF_WRAPX) && current_topo_has_flag(TF_WRAPY)) {
-    /* In a Uranus-like topology the polar zones are at east and west.
-     * This isn't really the way Uranus is; it's the way Earth would look
-     * if you tilted your head sideways.  It's still a Mercator
-     * projection. */
-    return MAX_COLATITUDE * x;
-  }
-
-  /* Otherwise we have a torus topology.  We set it up as an approximation
-   * of a sphere with two circular polar zones and a square equatorial
-   * zone.  In this case north and south are not constant directions on the
-   * map because we have to use a more complicated (custom) projection.
-   *
-   * Generators 2 and 5 work best if the center of the map is free.  So
-   * we want to set up the map with the poles (N,S) along the sides and the
-   * equator (/,\) in between.
-   *
-   * ........
-   * :\ NN /:
-   * : \  / :
-   * :S \/ S:
-   * :S /\ S:
-   * : /  \ :
-   * :/ NN \:
-   * ''''''''
-   */
-
-  /* Remember that we've already folded the map into fourths:
-   *
-   * ....
-   * :\ N
-   * : \
-   * :S \
-   *
-   * Now flip it along the X direction to get this:
-   *
-   * ....
-   * :N /
-   * : /
-   * :/ S
-   */
-  x = 1.0 - x;
-
-  /* Since the north and south poles are equivalent, we can fold along the
-   * diagonal.  This leaves us with 1/8 of the map
-   *
-   * .....
-   * :P /
-   * : /
-   * :/
-   *
-   * where P is the polar regions and / is the equator. */
-  if (x + y > 1.0) {
-    x = 1.0 - x;
-    y = 1.0 - y;
-  }
-
-  /* This projection makes poles with a shape of a quarter-circle along
-   * "P" and the equator as a straight line along "/".
-   *
-   * This is explained more fully in RT 8624; the discussion can be found at
-   * http://thread.gmane.org/gmane.games.freeciv.devel/42648 */
-  return MAX_COLATITUDE * (1.5 * (x * x * y + x * y * y)
-                           - 0.5 * (x * x * x + y * y * y)
-                           + 1.5 * (x * x + y * y));
+  return colat_from_abs_lat(latitude);
 }
 
 /************************************************************************//**
@@ -257,8 +134,8 @@ static void set_sizes(double size, int Xratio, int Yratio)
 ****************************************************************************/
 static void get_ratios(int *x_ratio, int *y_ratio)
 {
-  if (current_topo_has_flag(TF_WRAPX)) {
-    if (current_topo_has_flag(TF_WRAPY)) {
+  if (current_wrap_has_flag(WRAP_X)) {
+    if (current_wrap_has_flag(WRAP_Y)) {
       /* Ratios for torus map. */
       *x_ratio = 1;
       *y_ratio = 1;
@@ -268,7 +145,7 @@ static void get_ratios(int *x_ratio, int *y_ratio)
       *y_ratio = 2;
     }
   } else {
-    if (current_topo_has_flag(TF_WRAPY)) {
+    if (current_wrap_has_flag(WRAP_Y)) {
       /* Ratios for uranus map. */
       *x_ratio = 2;
       *y_ratio = 3;
@@ -368,11 +245,16 @@ void generator_init_topology(bool autosize)
          + 2 * MAX_COLATITUDE * sqsize) / (100 * sqsize);
   }
 
-  /* correction for single pole (Flat Earth) */
-  if (wld.map.server.single_pole) {
-    if (!current_topo_has_flag(TF_WRAPY) || !current_topo_has_flag(TF_WRAPX)) {
-      ice_base_colatitude /= 2;
-    }
+  /* Correction for single-pole and similar map types
+   * The pole should be the same size relative to world size,
+   * so the smaller the actual latitude range,
+   * the smaller the ice base level has to be.
+   * However: Don't scale down by more than a half. */
+  if (MAP_REAL_LATITUDE_RANGE(wld.map) < (2 * MAP_MAX_LATITUDE)) {
+    ice_base_colatitude = (ice_base_colatitude
+                           * MAX(MAP_REAL_LATITUDE_RANGE(wld.map),
+                                 MAP_MAX_LATITUDE)
+                           / (2 * MAP_MAX_LATITUDE));
   }
 
   if (wld.map.server.huts_absolute >= 0) {

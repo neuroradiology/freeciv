@@ -17,19 +17,19 @@
 
 /* common */
 #include "ai.h"
+#include "world_object.h"
 
-/* default ai */
-#include "aicity.h"
-#include "aidata.h"
+/* ai/default */
 #include "aiferry.h"
 #include "aihand.h"
-#include "ailog.h"
-#include "aiplayer.h"
-#include "aisettler.h"
 #include "aitools.h"
+#include "daicity.h"
 #include "daidiplomacy.h"
 #include "daidomestic.h"
+#include "dailog.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
+#include "daisettler.h"
 
 /* tex ai */
 #include "texaicity.h"
@@ -311,7 +311,7 @@ static void texwai_ferry_init_ferry(struct unit *ferry)
   Call default ai with tex ai type as parameter.
 **************************************************************************/
 static void texwai_ferry_transformed(struct unit *ferry,
-                                     struct unit_type *old)
+                                     const struct unit_type *old)
 {
   TEXAI_AIT;
   TEXAI_DFUNC(dai_ferry_transformed, ferry, old);
@@ -489,11 +489,15 @@ static void texwai_diplomacy_first_contact(struct player *pplayer,
 /**********************************************************************//**
   Call default ai with tex ai type as parameter.
 **************************************************************************/
-static void texwai_incident(enum incident_type type, struct player *violator,
-                            struct player *victim)
+static void texwai_incident(enum incident_type type,
+                            enum casus_belli_range scope,
+                            const struct action *paction,
+                            struct player *receiver,
+                            struct player *violator, struct player *victim)
 {
   TEXAI_AIT;
-  TEXAI_DFUNC(dai_incident, type, violator, victim);
+  TEXAI_DFUNC(dai_incident, type, scope, paction,
+              receiver, violator, victim);
 }
 
 /**********************************************************************//**

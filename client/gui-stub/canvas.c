@@ -55,6 +55,13 @@ bool gui_has_zoom_support(void)
 }
 
 /************************************************************************//**
+  Initialize canvas as mapview.
+****************************************************************************/
+void gui_canvas_mapview_init(struct canvas *store)
+{
+}
+
+/************************************************************************//**
   Copies an area from the source canvas to the destination canvas.
 ****************************************************************************/
 void gui_canvas_copy(struct canvas *dest, struct canvas *src,
@@ -81,6 +88,17 @@ void gui_canvas_put_sprite(struct canvas *pcanvas,
 void gui_canvas_put_sprite_full(struct canvas *pcanvas,
                                 int canvas_x, int canvas_y,
                                 struct sprite *sprite)
+{
+  /* PORTME */
+}
+
+/************************************************************************//**
+  Draw a full sprite onto the canvas, scaled to the canvas size.
+****************************************************************************/
+void gui_canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                       int canvas_x, int canvas_y,
+                                       int canvas_w, int canvas_h,
+                                       struct sprite *sprite)
 {
   /* PORTME */
 }

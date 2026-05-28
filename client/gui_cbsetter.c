@@ -38,7 +38,7 @@
 /**********************************************************************//**
   Setup the gui callback table.
 **************************************************************************/
-void setup_gui_funcs()
+void setup_gui_funcs(void)
 {
   struct gui_funcs *funcs = get_gui_funcs();
 
@@ -48,13 +48,11 @@ void setup_gui_funcs()
 
   funcs->get_gui_type = gui_get_gui_type;
   funcs->insert_client_build_info = gui_insert_client_build_info;
-  funcs->adjust_default_options = gui_adjust_default_options;
 
   funcs->version_message = gui_version_message;
   funcs->real_output_window_append = gui_real_output_window_append;
 
   funcs->is_view_supported = gui_is_view_supported;
-  funcs->free_intro_radar_sprites = gui_free_intro_radar_sprites;
   funcs->load_gfxfile = gui_load_gfxfile;
   funcs->create_sprite = gui_create_sprite;
   funcs->get_sprite_dimensions = gui_get_sprite_dimensions;
@@ -68,6 +66,7 @@ void setup_gui_funcs()
   funcs->canvas_free = gui_canvas_free;
   funcs->canvas_set_zoom = gui_canvas_set_zoom;
   funcs->has_zoom_support = gui_has_zoom_support;
+  funcs->canvas_mapview_init = gui_canvas_mapview_init;
   funcs->canvas_copy = gui_canvas_copy;
   funcs->canvas_put_sprite = gui_canvas_put_sprite;
   funcs->canvas_put_sprite_full = gui_canvas_put_sprite_full;
@@ -106,6 +105,7 @@ void setup_gui_funcs()
 
   funcs->popup_combat_info = gui_popup_combat_info;
   funcs->update_timeout_label = gui_update_timeout_label;
+  funcs->start_turn = gui_start_turn;
   funcs->real_city_dialog_popup = gui_real_city_dialog_popup;
   funcs->real_city_dialog_refresh = gui_real_city_dialog_refresh;
   funcs->popdown_city_dialog = gui_popdown_city_dialog;
@@ -115,6 +115,8 @@ void setup_gui_funcs()
   funcs->city_dialog_is_open = gui_city_dialog_is_open;
 
   funcs->request_transport = gui_request_transport;
+
+  funcs->update_infra_dialog = gui_update_infra_dialog;
 
   funcs->gui_load_theme = gui_gui_load_theme;
   funcs->gui_clear_theme = gui_gui_clear_theme;

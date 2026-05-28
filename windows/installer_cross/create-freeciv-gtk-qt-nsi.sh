@@ -1,6 +1,23 @@
 #!/bin/sh
 
-# ./create-freeciv-gtk-qt-nsi.sh <Freeciv files directory> <version> <gtk2|gtk3|qt> <GTK+2|GTK+3|Qt> <win32|win64|win>
+# ./create-freeciv-gtk-qt-nsi.sh <Freeciv files dir> <Output dir> <version> <gtk3.22|qt5|qt6> <GTK+3|Qt5|Qt6> <win32|win64|win> [mp gui] [exe id] [unistall setup script]
+
+if test "$8" != "" ; then
+  EXE_ID="$8"
+else
+  EXE_ID="$4"
+fi
+
+if test "$7" != "" ; then
+  MPEXE_ID="$7"
+else
+  MPEXE_ID="$EXE_ID"
+fi
+
+if test "$9" != "" && ! test -x "$9" ; then
+  echo "$9 not an executable script" >&2
+  exit 1
+fi
 
 cat <<EOF
 ; Freeciv Windows installer script
@@ -10,10 +27,12 @@ Unicode true
 SetCompressor /SOLID lzma
 
 !define APPNAME "Freeciv"
-!define VERSION $2
-!define GUI_ID $3
-!define GUI_NAME $4
-!define WIN_ARCH $5
+!define VERSION $3
+!define GUI_ID $4
+!define EXE_ID $EXE_ID
+!define MPEXE_ID $MPEXE_ID
+!define GUI_NAME $5
+!define WIN_ARCH $6
 !define APPID "\${APPNAME}-\${VERSION}-\${GUI_ID}"
 
 !define MULTIUSER_EXECUTIONLEVEL Highest
@@ -32,7 +51,7 @@ SetCompressor /SOLID lzma
 ;General
 
 Name "\${APPNAME} \${VERSION} (\${GUI_NAME} client)"
-OutFile "Output/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
+OutFile "$2/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
 
 ;Variables
 
@@ -50,8 +69,8 @@ Page custom DefaultLanguage DefaultLanguageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 
 ;Start Menu Folder Page Configuration
-!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX" 
-!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}" 
+!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX"
+!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}"
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "\$(^Name)"
 
@@ -73,7 +92,7 @@ Page custom HelperScriptFunction
 
 EOF
 
-### required files ###
+### Required files ###
 
 cat <<EOF
 ; The stuff to install
@@ -84,14 +103,14 @@ Section "\${APPNAME} (required)"
   SetOutPath \$INSTDIR
 EOF
 
-  # find files and directories to exclude from default installation
+  # Find files and directories to exclude from default installation
 
   echo -n "  File /nonfatal /r "
 
-  # languages
+  # Languages
   echo -n "/x locale "
 
-  # soundsets
+  # Soundsets
   find $1/data -mindepth 1 -maxdepth 1 -name *.soundspec -printf %f\\n |
   sed 's|.soundspec||' |
   while read -r name
@@ -108,17 +127,18 @@ cat <<EOF
 
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
   CreateDirectory "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
-  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv.lnk" "\$INSTDIR\freeciv-\${GUI_ID}.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-\${GUI_ID}.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv.lnk" "\$INSTDIR\freeciv-\${EXE_ID}.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-\${EXE_ID}.exe" 0 SW_SHOWMINIMIZED
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Server.lnk" "\$INSTDIR\freeciv-server.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-server.exe" 0 SW_SHOWMINIMIZED
-  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-\${GUI_ID}.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-\${GUI_ID}.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-\${MPEXE_ID}.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-\${MPEXE_ID}.exe" 0 SW_SHOWMINIMIZED
 EOF
 
-if test "x$3" = "xqt" ; then
+if test "$4" = "qt5" || test "$4" = "qt6" ; then
     echo "  CreateShortCut \"\$SMPROGRAMS\\\$STARTMENU_FOLDER\\Freeciv Ruleset Editor.lnk\" \"\$INSTDIR\\\\freeciv-ruledit.cmd\" \"\$DefaultLanguageCode\" \"\$INSTDIR\\\\freeciv-ruledit.exe\" 0 SW_SHOWMINIMIZED"
 fi
 
 cat <<EOF
 
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Documentation.lnk" "\$INSTDIR\doc\freeciv"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Uninstall.lnk" "\$INSTDIR\uninstall.exe"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Website.lnk" "\$INSTDIR\Freeciv.url"
   !insertmacro MUI_STARTMENU_WRITE_END
@@ -129,13 +149,13 @@ cat <<EOF
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoModify" 1
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoRepair" 1
   WriteUninstaller "uninstall.exe"
-  
+
   SetOutPath \$INSTDIR
 SectionEnd
 
 EOF
 
-### soundsets ###
+### Soundsets ###
 
 cat <<EOF
 SectionGroup "Soundsets"
@@ -164,7 +184,7 @@ SectionGroupEnd
 
 EOF
 
-### additional languages ###
+### Additional languages ###
 
 cat <<EOF
 SectionGroup "Additional languages (translation %)"
@@ -271,23 +291,31 @@ Function HelperScriptFunction
 FunctionEnd
 
 Function RunFreeciv
-  nsExec::Exec '"\$INSTDIR\freeciv-\${GUI_ID}.cmd" \$DefaultLanguageCode'
+  nsExec::Exec '"\$INSTDIR\freeciv-\${EXE_ID}.cmd" \$DefaultLanguageCode'
 FunctionEnd
 
 EOF
 
-### uninstall section ###
+### Uninstall section ###
 
 cat <<EOF
-; special uninstall section.
+; Special uninstall section.
 Section "Uninstall"
 
-  ; remove files
+  ; Remove files
 EOF
 
 find $1 -type f |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
+while read -r name
+do
+echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
+done
+
+find $1 -type l |
+grep -v '/$' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
@@ -295,26 +323,30 @@ done
 
 find $1 -depth -type d |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  RMDir \"\$INSTDIR$name\"" | sed 's,/,\\,g'
 done
+
+if test "$9" != "" ; then
+  $9
+fi
 
 cat <<EOF
 
   ; MUST REMOVE UNINSTALLER, too
   Delete "\$INSTDIR\uninstall.exe"
 
-  ; remove install directory, if empty
+  ; Remove install directory, if empty
   RMDir "\$INSTDIR"
 
-  ; remove shortcuts, if any.
+  ; Remove shortcuts, if any.
   !insertmacro MUI_STARTMENU_GETFOLDER "Application" \$STARTMENU_FOLDER
   Delete "\$SMPROGRAMS\\\$STARTMENU_FOLDER\*.*"
   RMDir "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
 
-  ; remove registry keys
+  ; Remove registry keys
   DeleteRegKey "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}"
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}

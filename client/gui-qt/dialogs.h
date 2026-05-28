@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -32,12 +32,12 @@ extern "C" {
 #include "hudwidget.h"
 #include "mapview.h"
 
+class QButtonGroup;
 class QComboBox;
 class QGridLayout;
 class QGroupBox;
 class QItemSelection;
 class QRadioButton;
-class QSignalMapper;
 class QTableView;
 class QTableWidget;
 class QTextEdit;
@@ -55,11 +55,11 @@ class qdef_act
 
 private:
   explicit qdef_act();
-  static qdef_act* m_instance;
+  static qdef_act *m_instance;
   action_id vs_city;
   action_id vs_unit;
 public:
-  static qdef_act* action();
+  static qdef_act *action();
   static void drop();
   void vs_city_set(int i);
   void vs_unit_set(int i);
@@ -75,13 +75,14 @@ class qfc_dialog : public QDialog
   Q_OBJECT
 public:
   qfc_dialog(QWidget *parent);
+  void reactivate();
 private:
   int titlebar_height;
   QPoint point;
   bool moving_now;
   QPixmap close_pix;
 protected:
-  void paintEvent(QPaintEvent* event);
+  void paintEvent(QPaintEvent *event);
   void mouseMoveEvent(QMouseEvent *event);
   void mousePressEvent(QMouseEvent *event);
   void mouseReleaseEvent(QMouseEvent *event);
@@ -102,7 +103,7 @@ private slots:
 };
 
 /***************************************************************************
- Dialog for goto popup
+  Dialog for goto popup
 ***************************************************************************/
 class notify_goto : public QMessageBox
 {
@@ -122,7 +123,7 @@ private slots:
 };
 
 /***************************************************************************
- Dialog for selecting nation, style and leader leader
+  Dialog for selecting nation, style and leader leader
 ***************************************************************************/
 class races_dialog:public qfc_dialog
 {
@@ -133,6 +134,7 @@ class races_dialog:public qfc_dialog
   QTableWidget *selected_nation_tabs;
   QComboBox *leader_name;
   QComboBox *qnation_set;
+  QButtonGroup *sex_buttons;
   QRadioButton *is_male;
   QRadioButton *is_female;
   QTableWidget *styles;
@@ -160,14 +162,13 @@ private slots:
 private:
   int selected_nation;
   int selected_style;
-  int selected_sex;
   struct player *tplayer;
   int last_index;
 };
 
 /***************************************************************************
- Widget around map view to display informations like demographics report,
- top 5 cities, traveler's report.
+  Widget around map view to display informations like demographics report,
+  top cities, traveler's report.
 ***************************************************************************/
 class notify_dialog:public fcwidget
 {
@@ -196,14 +197,14 @@ private:
 };
 
 /***************************************************************************
- Transparent widget for selecting units
+  Transparent widget for selecting units
 ***************************************************************************/
 class units_select: public fcwidget
 {
   Q_OBJECT
   QPixmap *pix;
-  QPixmap *h_pix; /** pixmap for highlighting */
-  QSize item_size; /** size of each pixmap of unit */
+  QPixmap *h_pix; // pixmap for highlighting
+  QSize item_size; // size of each pixmap of unit
   QList<unit*> unit_list; /** storing units only for drawing, for rest units
                             * iterate utile->units */
   QFont ufont;
@@ -259,7 +260,6 @@ class choice_dialog: public QWidget
 {
   Q_OBJECT
   QPushButton *target_unit_button;
-  QSignalMapper *signal_mapper;
   QVBoxLayout *layout;
   QHBoxLayout *unit_skip;
   QList<Choice_dialog_button *> buttons_list;
@@ -282,8 +282,8 @@ public:
   Choice_dialog_button *get_identified_button(const int id);
   int unit_id;
   int target_id[ATK_COUNT];
-  int target_extra_id;
-  struct unit* targeted_unit;
+  int sub_target_id[ASTK_COUNT];
+  struct unit *targeted_unit;
   void update_dialog(const struct act_prob *act_probs);
 public slots:
   void execute_action(const int action);
@@ -292,11 +292,11 @@ private slots:
   void next_unit();
 };
 
-void popup_revolution_dialog(struct government *government = NULL);
-void revolution_response(struct government *government);
+void popup_revolution_dialog(struct government *gov = nullptr);
+void revolution_response(struct government *gov);
 void popup_upgrade_dialog(struct unit_list *punits);
 void popup_disband_dialog(struct unit_list *punits);
 bool try_default_unit_action(QVariant q1, QVariant q2);
 bool try_default_city_action(QVariant q1, QVariant q2);
 
-#endif /* FC__DIALOGS_H */
+#endif // FC__DIALOGS_H

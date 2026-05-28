@@ -6,6 +6,7 @@ noinst_LTLIBRARIES = \
 AM_CPPFLAGS = \
 	-I$(top_srcdir)/utility \
 	-I$(top_srcdir)/common \
+	-I$(top_srcdir)/common/aicore \
 	-I$(top_srcdir)/common/networking \
 	-I$(top_srcdir)/dependencies/tinycthread \
 	$(LUA_CFLAGS) $(LUASQL_CFLAGS) $(TOLUA_CFLAGS)
@@ -27,6 +28,8 @@ libscriptcore_la_SOURCES = \
 	api_game_specenum.h	\
 	api_signal_base.c	\
 	api_signal_base.h	\
+	api_specenum.c		\
+	api_specenum.h		\
 	luascript.c		\
 	luascript.h		\
 	luascript_func.c	\

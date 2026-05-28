@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -10,6 +10,7 @@ artists = "
     Tatu Rissanen <tatu.rissanen@hut.fi>
     Jeff Mallatt <jjm@codewell.com> (miscellaneous)
     GriffonSpade [GS]
+    Sveinung Kvilhaugsvik (action_decision_want)
 "
 
 [file]
@@ -43,7 +44,8 @@ tiles = { "row", "column", "tag"
   2, 3, "unit.patrol"
   2, 4, "unit.pillage"
 
-  3, 0, "unit.irrigate"
+  3, 0, "unit.cultivate",
+        "unit.irrigate" ; For rulesets still using this tag
   3, 1, "unit.plant"
   3, 2, "unit.transform"
   3, 3, "unit.pollution"
@@ -52,6 +54,7 @@ tiles = { "row", "column", "tag"
   4, 0, "unit.goto"
   4, 1, "unit.convert"
   4, 2, "unit.auto_explore"
+  4, 3, "unit.action_decision_want"
 
 ; [GS]
   5,  0, "unit.irrigation"

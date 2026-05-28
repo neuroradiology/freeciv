@@ -135,7 +135,7 @@ void make_fracture_map(void)
     }
   } whole_map_iterate_end;
 
-  adjust_int_map(height_map, hmap_max_level);
+  adjust_int_map(height_map, 0, hmap_max_level);
   free(landmass);
   free(fracture_points);
 }
@@ -260,8 +260,8 @@ static void fmfill(int x, int y, int c, int r)
 }
 
 /**********************************************************************//**
-    Determine the local average elevation. Used to determine where hills
-    and mountains are. 
+  Determine the local average elevation. Used to determine where hills
+  and mountains are.
 **************************************************************************/
 static int local_ave_elevation(struct tile *ptile)
 {
@@ -273,7 +273,10 @@ static int local_ave_elevation(struct tile *ptile)
     ele = ele + hmap(tile2);
     n++;
   } square_iterate_end;
-  ele /= n;
+
+  if (ele > 0) { /* Avoids div by zero, as means also that n > 0 */
+    ele /= n;
+  }
 
   return ele;
 }

@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -37,7 +37,7 @@ sprites =
 		"f.anhalt", "flags/anhalt-large"
 		"f.anishinaabe", "flags/anishinaabe-large"
 		"f.antarctica", "flags/antarctica-large"
-;		"f.antarctica_alt", "flags/antarctica_alt-large"
+		"f.antarctica_alt", "flags/antarctica_alt-large"
 		"f.antigua_and_barbuda", "flags/antigua_and_barbuda-large"
 		"f.apache", "flags/apache-large"
 		"f.arab", "flags/arab-large"
@@ -178,6 +178,7 @@ sprites =
 		"f.finland", "flags/finland-large"
 		"f.flanders", "flags/flanders-large"
 		"f.florence", "flags/florence-large"
+		"f.florida", "flags/florida-large"
 		"f.formosan", "flags/formosan-large"
 		"f.france", "flags/france-large"
 		"f.france_old", "flags/france_old-large"
@@ -304,6 +305,7 @@ sprites =
 		"f.lithuania", "flags/lithuania-large"
 		"f.lombardy", "flags/lombardy-large"
 		"f.lorraine", "flags/lorraine-large"
+		"f.luik", "flags/luik-large"
 		"f.luna", "flags/luna-large"
 		"f.lusatia", "flags/lusatia-large"
 		"f.luwian", "flags/luwian-large"
@@ -358,6 +360,7 @@ sprites =
 		"f.muskogee", "flags/muskogee-large"
 		"f.mwiska", "flags/mwiska-large"
 		"f.myanmar", "flags/myanmar-large"
+		"f.myanmar_old", "flags/myanmar_old-large"
 		"f.nagorno_karabakh", "flags/nagorno_karabakh-large"
 		"f.namibia", "flags/namibia-large"
 		"f.naples", "flags/naples-large"
@@ -395,6 +398,7 @@ sprites =
 		"f.paeonia", "flags/paeonia-large"
 		"f.pakistan", "flags/pakistan-large"
 		"f.palatinate", "flags/palatinate-large"
+		"f.palau", "flags/palau-large"
 		"f.palestine", "flags/palestine-large"
 		"f.palmyra", "flags/palmyra-large"
 		"f.panama", "flags/panama-large"
@@ -490,7 +494,7 @@ sprites =
 		"f.spain", "flags/spain-large"
 		"f.srilanka", "flags/srilanka-large"
 		"f.srivijaya", "flags/srivijaya-large"
-;		"f.stpatrick", "flags/stpatrick-large"	; Alternate Irish 
+;		"f.stpatrick", "flags/stpatrick-large"	; Alternate Irish
 		"f.sudan", "flags/sudan-large"
 		"f.suebian", "flags/suebian-large"
 		"f.sumeria", "flags/sumeria-large"
@@ -580,6 +584,7 @@ sprites =
 		"f.zhuang", "flags/zhuang-large"
 		"f.zimbabwe", "flags/zimbabwe-large"
 		"f.zulu", "flags/zulu-large"
-	}
 
 *include "override/flags-large.spec"
+
+	}

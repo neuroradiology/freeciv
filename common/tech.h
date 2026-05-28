@@ -158,7 +158,21 @@ struct advance {
 BV_DEFINE(bv_techs, A_LAST);
 
 /* General advance/technology accessor functions. */
-Tech_type_id advance_count(void);
+Tech_type_id advance_count_real(void);
+
+/**********************************************************************//**
+  Inline wrapper for advance_count_real() that makes it clear to
+  the compiler that the value returned never exceeds A_LAST.
+  Making actual advance_count_real() inline would be more
+  complicated due to header interdependencies.
+**************************************************************************/
+static inline Tech_type_id advance_count(void)
+{
+  Tech_type_id rc = advance_count_real();
+
+  return MIN(rc, A_LAST);
+}
+
 Tech_type_id advance_index(const struct advance *padvance);
 Tech_type_id advance_number(const struct advance *padvance);
 
@@ -224,32 +238,47 @@ void techs_precalc_data(void);
 
 /* Iteration */
 
-/* This iterates over almost all technologies.  It includes non-existent
+/* This iterates over almost all technologies. It includes non-existent
  * technologies, but not A_FUTURE. */
 #define advance_index_iterate(_start, _index)				\
-{									\
-  Tech_type_id _index = (_start);					\
-  for (; _index < advance_count(); _index++) {
+{                                                                       \
+  advance_index_iterate_max(_start, _index, advance_count())
 
-#define advance_index_iterate_end					\
-  }									\
+#define advance_index_iterate_end                                       \
+  advance_index_iterate_max_end                                         \
+}
+
+#define advance_index_iterate_max(_start, _index, _max)                 \
+{                                                                       \
+  Tech_type_id _index = (_start);                                       \
+  Tech_type_id _aco_##_index = (_max);                                  \
+  for (; _index < _aco_##_index; _index++) {
+
+#define advance_index_iterate_max_end                                   \
+  }                                                                     \
 }
 
 const struct advance *advance_array_last(void);
 
-#define advance_iterate(_start, _p)					\
-{									\
-  struct advance *_p = advance_by_number(_start);			\
-  if (NULL != _p) {							\
+#define advance_iterate_base(_start, _p)                                \
+{                                                                       \
+  struct advance *_p = advance_by_number(_start);                       \
+  if (NULL != _p) {                                                     \
     for (; _p <= advance_array_last(); _p++) {
 
-#define advance_iterate_end						\
-    }									\
-  }									\
+#define advance_iterate_base_end                                        \
+    }                                                                   \
+  }                                                                     \
 }
 
+#define advance_iterate(_p) advance_iterate_base(A_FIRST, _p)
+#define advance_iterate_end advance_iterate_base_end
+
+#define advance_iterate_all(_p) advance_iterate_base(A_NONE, _p)
+#define advance_iterate_all_end advance_iterate_base_end
+
 #define advance_re_active_iterate(_p)                                    \
-  advance_iterate(A_FIRST, _p) {                                         \
+  advance_iterate(_p) {                                                  \
     if (_p->require[AR_ONE] != A_NEVER) {
 
 #define advance_re_active_iterate_end                                   \

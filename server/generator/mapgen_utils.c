@@ -112,17 +112,20 @@ void set_placed_near_pos(struct tile *ptile, int dist)
 }
 
 /**********************************************************************//**
-  Change the values of the integer map, so that they contain ranking of each 
-  tile scaled to [0 .. int_map_max].
-  The lowest 20% of tiles will have values lower than 0.2 * int_map_max.
+  Change the values of the integer map, so that they contain ranking of
+  each tile scaled to [int_map_min .. int_map_max].
+  E.g. the lowest 20% of tiles will have values lower than
+    int_map_min + 0.2 * (int_map_max - int_map_min).
 
   If filter is non-null then it only tiles for which filter(ptile, data) is
   TRUE will be considered.
 **************************************************************************/
-void adjust_int_map_filtered(int *int_map, int int_map_max, void *data,
-			     bool (*filter)(const struct tile *ptile,
-					    const void *data))
+void adjust_int_map_filtered(int *int_map, int int_map_min,
+                             int int_map_max, void *data,
+                             bool (*filter)(const struct tile *ptile,
+                                            const void *data))
 {
+  const int int_map_delta = int_map_max - int_map_min;
   int minval = 0, maxval = 0, total = 0;
   bool first = TRUE;
 
@@ -150,7 +153,7 @@ void adjust_int_map_filtered(int *int_map, int int_map_max, void *data,
     INITIALIZE_ARRAY(frequencies, size, 0);
 
     /* Translate value so the minimum value is 0
-       and count the number of occurencies of all values to initialize the 
+       and count the number of occurrences of all values to initialize the
        frequencies[] */
     whole_map_iterate_filtered(ptile, data, filter) {
       int_map[tile_index(ptile)] -= minval;
@@ -160,7 +163,7 @@ void adjust_int_map_filtered(int *int_map, int int_map_max, void *data,
     /* create the linearize function as "incremental" frequencies */
     for (i =  0; i < size; i++) {
       count += frequencies[i]; 
-      frequencies[i] = (count * int_map_max) / total;
+      frequencies[i] = int_map_min + (count * int_map_delta) / total;
     }
 
     /* apply the linearize function */
@@ -281,17 +284,19 @@ static void recalculate_lake_surrounders(void)
   Due to the number of recursion for large maps a non-recursive algorithm is
   utilised.
 
-  is_land tells us whether we are assigning continent numbers or ocean 
+  is_land tells us whether we are assigning continent numbers or ocean
   numbers.
 **************************************************************************/
 static void assign_continent_flood(struct tile *ptile, bool is_land, int nr)
 {
   struct tile_list *tlist = NULL;
-  const struct terrain *pterrain = NULL;
+  const struct terrain *pterrain;
 
   fc_assert_ret(ptile != NULL);
 
+#ifndef FREECIV_NDEBUG
   pterrain = tile_terrain(ptile);
+#endif
   /* Check if the initial tile is a valid tile for continent / ocean. */
   fc_assert_ret(tile_continent(ptile) == 0
                 && T_UNKNOWN != pterrain
@@ -302,35 +307,35 @@ static void assign_continent_flood(struct tile *ptile, bool is_land, int nr)
   tile_list_append(tlist, ptile);
 
   while (tile_list_size(tlist) > 0) {
-    /* Iterate over all unchecked tiles. */
-    tile_list_iterate(tlist, ptile2) {
-      /* Iterate over the adjacent tiles. */
-      adjc_iterate(&(wld.map), ptile2, ptile3) {
-        pterrain = tile_terrain(ptile3);
+    struct tile *ptile2 = tile_list_get(tlist, 0);
 
-        /* Check if it is a valid tile for continent / ocean. */
-        if (tile_continent(ptile3) != 0
-            || T_UNKNOWN == pterrain
-            || !XOR(is_land, terrain_type_terrain_class(pterrain) == TC_OCEAN)) {
-          continue;
-        }
+    /* Iterate over the adjacent tiles. */
+    adjc_iterate(&(wld.map), ptile2, ptile3) {
+      pterrain = tile_terrain(ptile3);
 
-        /* Add the tile to the list of tiles to check. */
-        if (!tile_list_search(tlist, ptile3)) {
-          tile_list_append(tlist, ptile3);
-        }
-      } adjc_iterate_end;
-
-      /* Set the continent data and remove the tile from the list. */
-      tile_set_continent(ptile2, nr);
-      tile_list_remove(tlist, ptile2);
-      /* count the tile */
-      if (nr < 0) {
-        ocean_sizes[-nr]++;
-      } else {
-        continent_sizes[nr]++;
+      /* Check if it is a valid tile for continent / ocean. */
+      if (tile_continent(ptile3) != 0
+          || T_UNKNOWN == pterrain
+          || !XOR(is_land, terrain_type_terrain_class(pterrain) == TC_OCEAN)) {
+        continue;
       }
-    } tile_list_iterate_end;
+
+      /* Add the tile to the list of tiles to check. */
+      if (!tile_list_search(tlist, ptile3)) {
+        tile_list_append(tlist, ptile3);
+      }
+    } adjc_iterate_end;
+
+    /* Set the continent data and remove the tile from the list. */
+    tile_set_continent(ptile2, nr);
+    tile_list_remove(tlist, ptile2);
+
+    /* Count the tile */
+    if (nr < 0) {
+      ocean_sizes[-nr]++;
+    } else {
+      continent_sizes[nr]++;
+    }
   }
 
   tile_list_destroy(tlist);
@@ -438,7 +443,7 @@ int get_ocean_size(Continent_id id)
 
 /**********************************************************************//**
   Assigns continent and ocean numbers to all tiles, and set
-  map.num_continents and map.num_oceans.  Recalculates continent and
+  map.num_continents and map.num_oceans. Recalculates continent and
   ocean sizes, and lake_surrounders[] arrays.
 
   Continents have numbers 1 to map.num_continents _inclusive_.
@@ -484,7 +489,7 @@ void assign_continent_numbers(void)
 
   recalculate_lake_surrounders();
 
-  log_verbose("Map has %d continents and %d oceans", 
+  log_verbose("Map has %d continents and %d oceans",
               wld.map.num_continents, wld.map.num_oceans);
 }
 
@@ -786,4 +791,33 @@ struct terrain *pick_terrain(enum mapgen_terrain_property target,
               mapgen_terrain_property_name(target));
     return pick_terrain(MG_UNUSED, prefer, avoid);
   }
+}
+
+/**********************************************************************//**
+  Pick a random resource to put on a tile of the given terrain type.
+  May return NULL when there is no eligible resource.
+**************************************************************************/
+struct extra_type *pick_resource(const struct terrain *pterrain)
+{
+  int freq_sum = 0;
+  struct extra_type *result = NULL;
+
+  fc_assert_ret_val(NULL != pterrain, NULL);
+
+  terrain_resources_iterate(pterrain, res, freq) {
+    /* This is a standard way to get a weighted random element from
+     * pterrain->resources with weights from pterrain->resource_freq,
+     * without computing its length or total weight in advance.
+     * Note that if *(pterrain->resources) == NULL,
+     * then this loop is a no-op. */
+
+    if (res->generated && freq > 0) {
+      freq_sum += freq;
+      if (freq > fc_rand(freq_sum)) {
+        result = res;
+      }
+    }
+  } terrain_resources_iterate_end;
+
+  return result;
 }

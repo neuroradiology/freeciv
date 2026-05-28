@@ -15,13 +15,17 @@
 #include <fc_config.h>
 #endif
 
+#include <stdarg.h>
+
 /* utility */
+#include "astring.h"
 #include "fcintl.h"
 #include "log.h"
 #include "support.h"
 
 /* common */
 #include "city.h"
+#include "culture.h"
 #include "game.h"
 #include "specialist.h"
 #include "unitlist.h"
@@ -274,10 +278,16 @@ void get_city_dialog_production(struct city *pcity,
     return;
   }
 
-  if (city_production_has_flag(pcity, IF_GOLD)) {
-    int gold = MAX(0, pcity->surplus[O_SHIELD]);
-    fc_snprintf(buffer, buffer_len, PL_("%3d gold per turn",
-                                        "%3d gold per turn", gold), gold);
+  if (city_production_is_genus(pcity, IG_CONVERT)) {
+    if (city_production_has_flag(pcity, IF_GOLD)) {
+      int gold = MAX(0, pcity->surplus[O_SHIELD]);
+
+      fc_snprintf(buffer, buffer_len,
+                  PL_("%3d gold per turn", "%3d gold per turn", gold),
+                  gold);
+    } else {
+      fc_strlcpy(buffer, "---", buffer_len);
+    }
     return;
   }
 
@@ -311,7 +321,7 @@ void get_city_dialog_production(struct city *pcity,
  Pretty sprints the info about a production (name, info, cost, turns
  to build) into a single text string.
 
- This is very similar to get_city_dialog_production_row; the
+ This is very similar to get_city_dialog_production_row(); the
  difference is that instead of placing the data into an array of
  strings it all goes into one long string.  This means it can be used
  by frontends that do not use a tabled structure, but it also gives
@@ -330,10 +340,14 @@ void get_city_dialog_production_full(char *buffer, size_t buffer_len,
                city_improvement_name_translation(pcity, target->value.building),
                buffer_len);
 
-    if (improvement_has_flag(target->value.building, IF_GOLD)) {
-      cat_snprintf(buffer, buffer_len, " (--) ");
-      cat_snprintf(buffer, buffer_len, _("%d/turn"),
-                   MAX(0, pcity->surplus[O_SHIELD]));
+    if (is_convert_improvement(target->value.building)) {
+      fc_strlcat(buffer, " (--) ", buffer_len);
+      if (improvement_has_flag(target->value.building, IF_GOLD)) {
+        cat_snprintf(buffer, buffer_len, _("%d/turn"),
+                     MAX(0, pcity->surplus[O_SHIELD]));
+      } else {
+        fc_strlcat(buffer, "---", buffer_len);
+      }
       return;
     }
     break;
@@ -355,30 +369,32 @@ void get_city_dialog_production_full(char *buffer, size_t buffer_len,
 /**********************************************************************//**
   Pretty sprints the info about a production in 4 columns (name, info,
   cost, turns to build). The columns must each have a size of
-  column_size bytes.  City may be NULL.
+  column_size bytes. City may be NULL.
 **************************************************************************/
 void get_city_dialog_production_row(char *buf[], size_t column_size,
                                     struct universal *target,
                                     struct city *pcity)
 {
+  struct player *pplayer = pcity ? city_owner(pcity) : client_player();
+
   universal_name_translation(target, buf[0], column_size);
 
   switch (target->kind) {
   case VUT_UTYPE:
   {
-    struct unit_type *ptype = target->value.utype;
+    const struct unit_type *ptype = target->value.utype;
 
     fc_strlcpy(buf[1], utype_values_string(ptype), column_size);
-    fc_snprintf(buf[2], column_size, "(%d)", utype_build_shield_cost(pcity, ptype));
+    fc_snprintf(buf[2], column_size, "(%d)",
+                utype_build_shield_cost(pcity, pplayer, ptype));
     break;
   }
   case VUT_IMPROVEMENT:
   {
-    struct player *pplayer = pcity ? city_owner(pcity) : client.conn.playing;
-    struct impr_type *pimprove = target->value.building;
+    const struct impr_type *pimprove = target->value.building;
 
-    /* Total & turns left meaningless on capitalization */
-    if (improvement_has_flag(pimprove, IF_GOLD)) {
+    /* Total & turns left meaningless on coinage-like improvements */
+    if (is_convert_improvement(pimprove)) {
       buf[1][0] = '\0';
       fc_snprintf(buf[2], column_size, "---");
     } else {
@@ -416,8 +432,13 @@ void get_city_dialog_production_row(char *buf[], size_t column_size,
         }
       }
 
-      fc_snprintf(buf[2], column_size, "%d",
-                  impr_build_shield_cost(pcity, pimprove));
+      if (pcity != NULL) {
+        fc_snprintf(buf[2], column_size, "%d",
+                    impr_build_shield_cost(pcity, pimprove));
+      } else {
+        fc_snprintf(buf[2], column_size, "%d",
+                    impr_estimate_build_shield_cost(pplayer, NULL, pimprove));
+      }
     }
     break;
   }
@@ -430,9 +451,14 @@ void get_city_dialog_production_row(char *buf[], size_t column_size,
   /* Add the turns-to-build entry in the 4th position */
   if (pcity) {
     if (VUT_IMPROVEMENT == target->kind
-        && improvement_has_flag(target->value.building, IF_GOLD)) {
-      fc_snprintf(buf[3], column_size, _("%d/turn"),
-                  MAX(0, pcity->surplus[O_SHIELD]));
+        && is_convert_improvement(target->value.building)) {
+      /* Coinage-like improvements: print yield-per-turn instead */
+      if (improvement_has_flag(target->value.building, IF_GOLD)) {
+        fc_snprintf(buf[3], column_size, _("%d/turn"),
+                    MAX(0, pcity->surplus[O_SHIELD]));
+      } else {
+        buf[3][0] = '\0';
+      }
     } else {
       int turns = city_turns_to_build(pcity, target, FALSE);
 
@@ -448,30 +474,298 @@ void get_city_dialog_production_row(char *buf[], size_t column_size,
 }
 
 /**********************************************************************//**
+  Helper structure to accumulate a breakdown of the constributions
+  to some numeric city property. Contributions are returned in order,
+  with duplicates merged.
+**************************************************************************/
+struct city_sum {
+  const char *format;
+  size_t n;
+  struct {
+    /* The net value that is accumulated. */
+    double value;
+    /* Description; compared for duplicate-merging.
+     * Both of these are maintained/compared until the net 'value' is known;
+     * then posdesc is used if value>=0, negdesc if value<0 */
+    char *posdesc, *negdesc;
+    /* Whether posdesc is printed for total==0 */
+    bool suppress_if_zero;
+    /* An auxiliary value that is also accumulated, but not tested */
+    double aux;
+    /* ...and the format string for the net aux value (appended to *desc) */
+    const char *auxfmt;
+  } *sums;
+};
+
+/**********************************************************************//**
+  Create a new city_sum.
+  'format' is how to print each contribution, of the form "%+4.0f : %s"
+  (the first item is the numeric value and must have a 'f' conversion
+  spec; the second is the description).
+**************************************************************************/
+static struct city_sum *city_sum_new(const char *format)
+{
+  struct city_sum *sum = fc_malloc(sizeof(struct city_sum));
+
+  sum->format = format;
+  sum->n = 0;
+  sum->sums = NULL;
+
+  return sum;
+}
+
+/**********************************************************************//**
+  Helper: add a new contribution to the city_sum.
+  If 'posdesc'/'negdesc' and other properties match an existing entry,
+  'value' is added to the existing entry, else a new one is appended.
+**************************************************************************/
+static void city_sum_add_real(struct city_sum *sum, double value,
+                              bool suppress_if_zero,
+                              const char *auxfmt,
+                              double aux,
+                              char *posdesc,
+                              char *negdesc)
+{
+  size_t i;
+
+  /* Likely to lead to quadratic behaviour, but who cares: */
+  for (i = 0; i < sum->n; i++) {
+    fc_assert(sum->sums != NULL);
+    if ((strcmp(sum->sums[i].posdesc, posdesc) == 0)
+        && (strcmp(sum->sums[i].negdesc, negdesc) == 0)
+        && ((sum->sums[i].auxfmt == auxfmt)
+            || (auxfmt != NULL && !strcmp(sum->sums[i].auxfmt, auxfmt)))
+        && sum->sums[i].suppress_if_zero == suppress_if_zero) {
+      /* Looks like we already have an entry like this. Accumulate values. */
+      sum->sums[i].value += value;
+      sum->sums[i].aux += aux;
+      FC_FREE(posdesc);
+      FC_FREE(negdesc);
+      return;
+    }
+  }
+  
+  /* Didn't find description already, so add it to the end. */
+  sum->sums = fc_realloc(sum->sums, (sum->n + 1) * sizeof(sum->sums[0]));
+  sum->sums[sum->n].value   = value;
+  sum->sums[sum->n].posdesc = posdesc;
+  sum->sums[sum->n].negdesc = negdesc;
+  sum->sums[sum->n].suppress_if_zero = suppress_if_zero;
+  sum->sums[sum->n].aux     = aux;
+  sum->sums[sum->n].auxfmt  = auxfmt;
+  sum->n++;
+}
+
+/**********************************************************************//**
+  Add a new contribution to the city_sum (complex).
+   - Allows different descriptions for net positive and negative
+     contributions (posfmt/negfmt);
+   - Allows specifying another auxiliary number which isn't significant
+     for comparisons but will also be accumulated, and appended to the
+     description when rendered (e.g. the 50% in "+11: Bonus from
+     Marketplace+Luxury (+50%)")
+   - Allows control over whether the item will be discarded if its
+     net value is zero (suppress_if_zero).
+**************************************************************************/
+static void
+            fc__attribute((__format__(__printf__, 6, 8)))
+            fc__attribute((__format__(__printf__, 7, 8)))
+            fc__attribute((nonnull (1, 6, 7)))
+            city_sum_add_full(struct city_sum *sum, double value,
+                              bool suppress_if_zero,
+                              const char *auxfmt,
+                              double aux,
+                              const char *posfmt,
+                              const char *negfmt, 
+                              ...)
+{
+  va_list args;
+  struct astring astr = ASTRING_INIT;
+  char *posdesc, *negdesc;
+
+  /* Format both descriptions */
+  va_start(args, negfmt);  /* sic -- arguments follow negfmt */
+  astr_vadd(&astr, posfmt, args);
+  posdesc = astr_to_str(&astr);
+  va_end(args);
+  va_start(args, negfmt);
+  astr_vadd(&astr, negfmt, args);
+  negdesc = astr_to_str(&astr);
+  va_end(args);
+
+  city_sum_add_real(sum, value, suppress_if_zero, auxfmt, aux,
+                    posdesc, negdesc);
+}
+
+/**********************************************************************//**
+  Add a new contribution to the city_sum (simple).
+  Compared to city_sum_add_full():
+   - description does not depend on net value
+   - not suppressed if net value is zero (compare city_sum_add_nonzero())
+   - no auxiliary number
+**************************************************************************/
+static void
+            fc__attribute((__format__(__printf__, 3, 4)))
+            fc__attribute((nonnull (1, 3)))
+            city_sum_add(struct city_sum *sum, double value,
+                         const char *descfmt, ...)
+{
+  va_list args;
+  struct astring astr = ASTRING_INIT;
+  char *desc;
+
+  /* Format description (same used for positive or negative net value) */
+  va_start(args, descfmt);
+  astr_vadd(&astr, descfmt, args);
+  desc = astr_to_str(&astr);
+  va_end(args);
+
+  /* Descriptions will be freed individually, so need to strdup */
+  city_sum_add_real(sum, value, FALSE, NULL, 0, desc, fc_strdup(desc));
+}
+
+/**********************************************************************//**
+  Add a new contribution to the city_sum (simple).
+  Compared to city_sum_add_full():
+   - description does not depend on net value
+   - suppressed if net value is zero (compare city_sum_add())
+   - no auxiliary number
+**************************************************************************/
+static void
+            fc__attribute((__format__(__printf__, 3, 4)))
+            fc__attribute((nonnull (1, 3)))
+            city_sum_add_if_nonzero(struct city_sum *sum, double value,
+                                    const char *descfmt, ...)
+{
+  va_list args;
+  struct astring astr = ASTRING_INIT;
+  char *desc;
+
+  /* Format description (same used for positive or negative net value) */
+  va_start(args, descfmt);
+  astr_vadd(&astr, descfmt, args);
+  desc = astr_to_str(&astr);
+  va_end(args);
+
+  /* Descriptions will be freed individually, so need to strdup */
+  city_sum_add_real(sum, value, TRUE, NULL, 0, desc, fc_strdup(desc));
+}
+
+/**********************************************************************//**
+  Return the net total accumulated in the sum so far.
+**************************************************************************/
+static double city_sum_total(struct city_sum *sum)
+{
+  size_t i;
+  double total = 0;
+
+  for (i = 0; i < sum->n; i++) {
+    total += sum->sums[i].value;
+  }
+  return total;
+}
+
+/**********************************************************************//**
+  Compare two values, taking care of floating point comparison issues.
+    -1: val1 <  val2
+     0: val1 == val2 (approximately)
+    +1: val1 >  val2
+**************************************************************************/
+static inline int city_sum_compare(double val1, double val2)
+{
+  /* Fudgey epsilon -- probably the numbers we're dealing with have at
+   * most 1% or 0.1% real difference */
+  if (fabs(val1-val2) < 0.0000001) {
+    return 0;
+  }
+  return (val1 > val2 ? +1 : -1);
+}
+
+/**********************************************************************//**
+  Print out the sum, including total, and free the city_sum.
+  totalfmt's first format string must be some kind of %f, and first
+  argument must be a double (if account_for_unknown).
+  account_for_unknown is optional, as not every sum wants it (consider
+  pollution's clipping).
+**************************************************************************/
+static void
+            fc__attribute((__format__(__printf__, 5, 6)))
+            fc__attribute((nonnull (1, 2, 5)))
+            city_sum_print(struct city_sum *sum, char *buf, size_t bufsz,
+                           bool account_for_unknown,
+                           const char *totalfmt, ...)
+{
+  va_list args;
+  size_t i;
+
+  /* This probably ought not to happen in well-designed rulesets, but it's
+   * possible for incomplete client knowledge to give an inaccurate
+   * breakdown. If it does happen, at least acknowledge to the user that
+   * we are confused, rather than displaying an incorrect sum. */
+  if (account_for_unknown) {
+    double total = city_sum_total(sum);
+    double actual_total;
+
+    va_start(args, totalfmt);
+    actual_total = va_arg(args, double);
+    va_end(args);
+
+    if (city_sum_compare(total, actual_total) != 0) {
+      city_sum_add(sum, actual_total - total,
+                   /* TRANS: Client cannot explain some aspect of city
+                    * output. Should never happen. */
+                   Q_("?city_sum:(unknown)"));
+    }
+  }
+
+  for (i = 0; i < sum->n; i++) {
+    if (!sum->sums[i].suppress_if_zero
+        || city_sum_compare(sum->sums[i].value, 0) != 0) {
+      cat_snprintf(buf, bufsz,
+                   sum->format, sum->sums[i].value,
+                   (sum->sums[i].value < 0) ? sum->sums[i].negdesc
+                                            : sum->sums[i].posdesc);
+      if (sum->sums[i].auxfmt) {
+        cat_snprintf(buf, bufsz, sum->sums[i].auxfmt, sum->sums[i].aux);
+      }
+      cat_snprintf(buf, bufsz, "\n");
+    }
+    FC_FREE(sum->sums[i].posdesc);
+    FC_FREE(sum->sums[i].negdesc);
+  }
+
+  va_start(args, totalfmt);
+  fc_vsnprintf(buf + strlen(buf), bufsz - strlen(buf), totalfmt, args);
+  va_end(args);
+
+  FC_FREE(sum->sums);
+  FC_FREE(sum);
+}
+
+/**********************************************************************//**
   Return text describing the production output.
 **************************************************************************/
 void get_city_dialog_output_text(const struct city *pcity,
                                  Output_type_id otype,
                                  char *buf, size_t bufsz)
 {
-  int total = 0;
   int priority;
   int tax[O_LAST];
   struct output_type *output = &output_types[otype];
+  /* TRANS: format string for a row of the city output sum that adds up
+   * to "Total surplus" */
+  struct city_sum *sum = city_sum_new(Q_("?city_surplus:%+4.0f : %s"));
 
   buf[0] = '\0';
 
-  cat_snprintf(buf, bufsz,
-	       _("%+4d : Citizens\n"), pcity->citizen_base[otype]);
-  total += pcity->citizen_base[otype];
+  city_sum_add(sum, pcity->citizen_base[otype],
+               Q_("?city_surplus:Citizens"));
 
   /* Hack to get around the ugliness of add_tax_income. */
   memset(tax, 0, O_LAST * sizeof(*tax));
   add_tax_income(city_owner(pcity), pcity->prod[O_TRADE], tax);
-  if (tax[otype] != 0) {
-    cat_snprintf(buf, bufsz, _("%+4d : Taxed from trade\n"), tax[otype]);
-    total += tax[otype];
-  }
+  city_sum_add_if_nonzero(sum, tax[otype],
+                          Q_("?city_surplus:Taxed from trade"));
 
   /* Special cases for "bonus" production.  See set_city_production in
    * city.c. */
@@ -487,37 +781,38 @@ void get_city_dialog_output_text(const struct city *pcity,
 
       switch (proute->dir) {
       case RDIR_BIDIRECTIONAL:
-        cat_snprintf(buf, bufsz, _("%+4d : Trading %s with %s\n"), value,
+        city_sum_add(sum, value, Q_("?city_surplus:Trading %s with %s"),
                      goods_name_translation(proute->goods),
                      name);
         break;
       case RDIR_FROM:
-        cat_snprintf(buf, bufsz, _("%+4d : Trading %s to %s\n"), value,
+        city_sum_add(sum, value, Q_("?city_surplus:Trading %s to %s"),
                      goods_name_translation(proute->goods),
                      name);
         break;
       case RDIR_TO:
-        cat_snprintf(buf, bufsz, _("%+4d : Trading %s from %s\n"), value,
+        city_sum_add(sum, value, Q_("?city_surplus:Trading %s from %s"),
                      goods_name_translation(proute->goods),
                      name);
         break;
+      case RDIR_NONE:
+        fc_assert(proute->dir != RDIR_NONE);
+        break;
       }
-      total += value;
     } trade_routes_iterate_end;
   } else if (otype == O_GOLD) {
     int tithes = get_city_tithes_bonus(pcity);
 
-    if (tithes != 0) {
-      cat_snprintf(buf, bufsz, _("%+4d : Building tithes\n"), tithes);
-      total += tithes;
-    }
+    city_sum_add_if_nonzero(sum, tithes,
+                            Q_("?city_surplus:Building tithes"));
   }
 
-  for (priority = 0; priority < 2; priority++) {
-    enum effect_type eft[] = {EFT_OUTPUT_BONUS, EFT_OUTPUT_BONUS_2};
+  for (priority = 0; priority < 3; priority++) {
+    enum effect_type eft[] = {EFT_OUTPUT_BONUS, EFT_OUTPUT_BONUS_2,
+                              EFT_OUTPUT_BONUS_ABSOLUTE};
 
     {
-      int base = total, bonus = 100;
+      int base = city_sum_total(sum), bonus = 100;
       struct effect_list *plist = effect_list_new();
 
       (void) get_city_bonus_effects(plist, pcity, output, eft[priority]);
@@ -543,13 +838,23 @@ void get_city_dialog_output_text(const struct city *pcity,
         } else {
           delta = peffect->value;
         }
-        bonus += delta;
-	new_total = bonus * base / 100;
-	cat_snprintf(buf, bufsz,
-                     (delta > 0) ? _("%+4d : Bonus from %s (%+d%%)\n")
-                                 : _("%+4d : Loss from %s (%+d%%)\n"),
-		     (new_total - total), buf2, delta);
-	total = new_total;
+
+        if (eft[priority] == EFT_OUTPUT_BONUS_ABSOLUTE) {
+          new_total = bonus * base / 100 + delta;
+          city_sum_add_full(sum, new_total - city_sum_total(sum), TRUE,
+                            NULL, 0,
+                            Q_("?city_surplus:Bonus from %s"),
+                            Q_("?city_surplus:Loss from %s"), buf2);
+        } else {
+          bonus += delta;
+          new_total = bonus * base / 100;
+          city_sum_add_full(sum, new_total - city_sum_total(sum), TRUE,
+                            /* TRANS: percentage city output bonus/loss from
+                             * some source; preserve leading space */
+                            Q_("?city_surplus: (%+.0f%%)"), delta,
+                            Q_("?city_surplus:Bonus from %s"),
+                            Q_("?city_surplus:Loss from %s"), buf2);
+        }
       } effect_list_iterate_end;
       effect_list_destroy(plist);
     }
@@ -560,14 +865,14 @@ void get_city_dialog_output_text(const struct city *pcity,
     bool breakdown_ok;
     int regular_waste;
     /* FIXME: this will give the wrong answer in rulesets with waste on
-     * taxed outputs, such as 'science waste', as total includes tax whereas
-     * the equivalent bit in set_city_production() does not */
-    if (city_waste(pcity, otype, total, wastetypes) == pcity->waste[otype]) {
+     * taxed outputs, such as 'science waste', as our total so far includes
+     * contributions taxed from trade, whereas the equivalent bit in
+     * set_city_production() does not */
+    if (city_waste(pcity, otype, city_sum_total(sum), wastetypes)
+        == pcity->waste[otype]) {
       /* Our calculation matches the server's, so we trust our breakdown. */
-      if (wastetypes[OLOSS_SIZE] > 0) {
-        cat_snprintf(buf, bufsz,
-                     _("%+4d : Size penalty\n"), -wastetypes[OLOSS_SIZE]);
-      }
+      city_sum_add_if_nonzero(sum, -wastetypes[OLOSS_SIZE],
+                              Q_("?city_surplus:Size penalty"));
       regular_waste = wastetypes[OLOSS_WASTE];
       breakdown_ok = TRUE;
     } else {
@@ -577,51 +882,36 @@ void get_city_dialog_output_text(const struct city *pcity,
       breakdown_ok = FALSE;
     }
     if (regular_waste > 0) {
-      char *fmt;
+      const char *fmt;
       switch (otype) {
         case O_SHIELD:
         default: /* FIXME other output types? */
           /* TRANS: %s is normally empty, but becomes '?' if client is
            * uncertain about its accounting (should never happen) */
-          fmt = _("%+4d : Waste%s\n");
+          fmt = Q_("?city_surplus:Waste%s");
           break;
         case O_TRADE:
           /* TRANS: %s is normally empty, but becomes '?' if client is
            * uncertain about its accounting (should never happen) */
-          fmt = _("%+4d : Corruption%s\n");
+          fmt = Q_("?city_surplus:Corruption%s");
           break;
       }
-      cat_snprintf(buf, bufsz, fmt, -regular_waste, breakdown_ok ? "" : "?");
+      city_sum_add(sum, -regular_waste, fmt, breakdown_ok ? "" : "?");
     }
-    total -= pcity->waste[otype];
   }
 
-  if (pcity->unhappy_penalty[otype] != 0) {
-    cat_snprintf(buf, bufsz,
-		 _("%+4d : Disorder\n"), -pcity->unhappy_penalty[otype]);
-    total -= pcity->unhappy_penalty[otype];
-  }
+  city_sum_add_if_nonzero(sum, -pcity->unhappy_penalty[otype],
+                          Q_("?city_surplus:Disorder"));
 
   if (pcity->usage[otype] > 0) {
-    cat_snprintf(buf, bufsz,
-		 _("%+4d : Used\n"), -pcity->usage[otype]);
-    total -= pcity->usage[otype];
+    city_sum_add(sum, -pcity->usage[otype],
+                 Q_("?city_surplus:Used"));
   }
 
-  /* This should never happen, but if it does, at least acknowledge to
-   * the user that we are confused, rather than displaying an incorrect
-   * sum. */
-  if (total != pcity->surplus[otype]) {
-    cat_snprintf(buf, bufsz,
-                 /* TRANS: City output that we cannot explain.
-                  * Should never happen. */
-                 _("%+4d : (unknown)\n"), pcity->surplus[otype] - total);
-  }
-
-  cat_snprintf(buf, bufsz,
-	       _("==== : Adds up to\n"));
-  cat_snprintf(buf, bufsz,
-	       _("%4d : Total surplus"), pcity->surplus[otype]);
+  city_sum_print(sum, buf, bufsz, TRUE,
+                 Q_("?city_surplus:"
+	            "==== : Adds up to\n"
+	            "%4.0f : Total surplus"), (double) pcity->surplus[otype]);
 }
 
 /**********************************************************************//**
@@ -632,6 +922,7 @@ void get_city_dialog_illness_text(const struct city *pcity,
 {
   int illness, ill_base, ill_size, ill_trade, ill_pollution;
   struct effect_list *plist;
+  struct city_sum *sum;
 
   buf[0] = '\0';
 
@@ -640,15 +931,17 @@ void get_city_dialog_illness_text(const struct city *pcity,
     return;
   }
 
+  sum = city_sum_new(Q_("?city_plague:%+5.1f%% : %s"));
+
   illness = city_illness_calc(pcity, &ill_base, &ill_size, &ill_trade,
                               &ill_pollution);
 
-  cat_snprintf(buf, bufsz, _("%+5.1f : Risk from overcrowding\n"),
-               ((float)(ill_size) / 10.0));
-  cat_snprintf(buf, bufsz, _("%+5.1f : Risk from trade\n"),
-               ((float)(ill_trade) / 10.0));
-  cat_snprintf(buf, bufsz, _("%+5.1f : Risk from pollution\n"),
-               ((float)(ill_pollution) / 10.0));
+  city_sum_add(sum, (float)(ill_size) / 10.0,
+               Q_("?city_plague:Risk from overcrowding"));
+  city_sum_add(sum, (float)(ill_trade) / 10.0,
+               Q_("?city_plague:Risk from trade"));
+  city_sum_add(sum, (float)(ill_pollution) / 10.0,
+               Q_("?city_plague:Risk from pollution"));
 
   plist = effect_list_new();
 
@@ -675,16 +968,22 @@ void get_city_dialog_illness_text(const struct city *pcity,
       delta = peffect->value;
     }
 
-    cat_snprintf(buf, bufsz,
-                 (delta > 0) ? _("%+5.1f : Bonus from %s\n")
-                             : _("%+5.1f : Risk from %s\n"),
-                 -(0.1 * ill_base * delta / 100), buf2);
+    city_sum_add_full(sum, -(0.1 * ill_base * delta / 100), TRUE,
+                      Q_("?city_plague: (%+.0f%%)"), -delta,
+                      Q_("?city_plague:Risk from %s"),
+                      Q_("?city_plague:Bonus from %s"), buf2);
   } effect_list_iterate_end;
   effect_list_destroy(plist);
 
-  cat_snprintf(buf, bufsz, _("==== : Adds up to\n"));
-  cat_snprintf(buf, bufsz, _("%5.1f : Total chance for a plague"),
-               ((float)(illness) / 10.0));
+  /* XXX: account_for_unknown==FALSE: the displayed sum can fail to
+   * add up due to rounding. Making it always add up probably requires
+   * arbitrary assignment of 0.1% rounding figures to particular
+   * effects with something like distribute(). */
+  city_sum_print(sum, buf, bufsz, FALSE,
+                 Q_("?city_plague:"
+                    "====== : Adds up to\n"
+                    "%5.1f%% : Plague chance per turn"),
+                 ((double)(illness) / 10.0));
 }
 
 /**********************************************************************//**
@@ -694,6 +993,7 @@ void get_city_dialog_pollution_text(const struct city *pcity,
 				    char *buf, size_t bufsz)
 {
   int pollu, prod, pop, mod;
+  struct city_sum *sum = city_sum_new(Q_("?city_pollution:%+4.0f : %s"));
 
   /* On the server, pollution is calculated before production is deducted
    * for disorder; we need to compensate for that */
@@ -703,16 +1003,13 @@ void get_city_dialog_pollution_text(const struct city *pcity,
 			       &prod, &pop, &mod);
   buf[0] = '\0';
 
-  cat_snprintf(buf, bufsz,
-	       _("%+4d : Pollution from shields\n"), prod);
-  cat_snprintf(buf, bufsz,
-	       _("%+4d : Pollution from citizens\n"), pop);
-  cat_snprintf(buf, bufsz,
-	       _("%+4d : Pollution modifier\n"), mod);
-  cat_snprintf(buf, bufsz,
-	       _("==== : Adds up to\n"));
-  cat_snprintf(buf, bufsz,
-	       _("%4d : Total surplus"), pollu);
+  city_sum_add(sum, prod, Q_("?city_pollution:Pollution from shields"));
+  city_sum_add(sum, pop,  Q_("?city_pollution:Pollution from citizens"));
+  city_sum_add(sum, mod,  Q_("?city_pollution:Pollution modifier"));
+  city_sum_print(sum, buf, bufsz, FALSE,
+                 Q_("?city_pollution:"
+	            "==== : Adds up to\n"
+	            "%4.0f : Total surplus"), (double)pollu);
 }
 
 /**********************************************************************//**
@@ -722,12 +1019,13 @@ void get_city_dialog_culture_text(const struct city *pcity,
                                   char *buf, size_t bufsz)
 {
   struct effect_list *plist;
-  int total_performance = 0;
+  struct city_sum *sum = city_sum_new(Q_("?city_culture:%4.0f : %s"));
 
   buf[0] = '\0';
 
-  cat_snprintf(buf, bufsz,
-               _("%4d : History\n"), pcity->history);
+  /* XXX: no way to check whether client's idea of gain/turn is accurate */
+  city_sum_add(sum, pcity->history, Q_("?city_culture:History (%+d/turn)"),
+               city_history_gain(pcity));
 
   plist = effect_list_new();
 
@@ -753,27 +1051,144 @@ void get_city_dialog_culture_text(const struct city *pcity,
     }
 
     value = (peffect->value * mul) / 100;
-    cat_snprintf(buf, bufsz, _("%4d : %s\n"), value, buf2);
-    total_performance += value;
+    /* TRANS: text describing source of culture bonus ("Library+Republic") */
+    city_sum_add_if_nonzero(sum, value, Q_("?city_culture:%s"), buf2);
   } effect_list_iterate_end;
   effect_list_destroy(plist);
 
-  /* This probably ought not to happen in well-designed rulesets, but it's
-   * possible for incomplete client knowledge to give an inaccurate
-   * breakdown. If it does happen, at least acknowledge to the user that
-   * we are confused, rather than displaying an incorrect sum. */
-  if (total_performance != pcity->client.culture - pcity->history) {
-    cat_snprintf(buf, bufsz,
-                 /* TRANS: City culture that we cannot explain.
-                  * Unlikely to happen. */
-                 _("%4d : (unknown)\n"),
-                 pcity->client.culture - pcity->history - total_performance);
+  city_sum_print(sum, buf, bufsz, TRUE,
+                 Q_("?city_culture:"
+                    "==== : Adds up to\n"
+	            "%4.0f : Total culture"), (double)pcity->client.culture);
+}
+
+/**********************************************************************//**
+  Return text describing airlift capacity.
+**************************************************************************/
+void get_city_dialog_airlift_text(const struct city *pcity,
+                                  char *buf, size_t bufsz)
+{
+  char src[512];
+  char dest[512];
+  int unlimited = 0;
+
+  if ((game.info.airlifting_style & AIRLIFTING_UNLIMITED_SRC)
+      && (pcity->airlift >= 1 || game.info.airlift_from_always_enabled)) {
+
+    unlimited++;
+
+    /* TRANS: airlift. Possible take offs text. String is a
+     * proviso that take offs can't occur if landings spend all the
+     * remaining airlift when landings are limited and empty when they
+     * aren't limited. */
+    fc_snprintf(src, sizeof(src), _("unlimited take offs%s"),
+                game.info.airlifting_style & AIRLIFTING_UNLIMITED_DEST
+                /* TRANS: airlift unlimited take offs proviso used above.
+                 * Plural based on remaining airlift capacity. */
+                ? "" : PL_(" (until the landing has been spent)",
+                           " (until all landings have been spent)",
+                           pcity->airlift));
+  } else {
+    fc_snprintf(src, sizeof(src),
+                /* TRANS: airlift. Possible take offs text. Number is
+                 * airlift capacity. */
+                PL_("%d take off", "%d take offs", pcity->airlift),
+                pcity->airlift);
   }
 
-  cat_snprintf(buf, bufsz,
-	       _("==== : Adds up to\n"));
-  cat_snprintf(buf, bufsz,
-	       _("%4d : Total culture"), pcity->client.culture);
+  if ((game.info.airlifting_style & AIRLIFTING_UNLIMITED_DEST)
+      && (pcity->airlift >= 1 || game.info.airlift_to_always_enabled)){
+
+    unlimited++;
+
+    /* TRANS: airlift. Possible landings text. */
+    fc_snprintf(dest, sizeof(dest), _("unlimited landings"));
+  } else {
+    fc_snprintf(dest, sizeof(dest),
+                /* TRANS: airlift. Possible landings text.
+                 * Number is airlift capacity. */
+                PL_("%d landing", "%d landings", pcity->airlift),
+                pcity->airlift);
+  }
+
+  switch (unlimited) {
+  case 2:
+    /* TRANS: airlift take offs and landings */
+    fc_snprintf(buf, bufsz, _("unlimited take offs and landings"));
+    break;
+  case 1:
+    /* TRANS: airlift take offs and landings. One is unlimited. The first
+     * string is the take offs text. The 2nd string is the landings text. */
+    fc_snprintf(buf, bufsz, _("%s and %s"), src, dest);
+    break;
+  default:
+    fc_snprintf(buf, bufsz,
+                /* TRANS: airlift take offs or landings, no unlimited.
+                 * Number is airlift capacity. */
+                PL_("%d take off or landing", "%d take offs or landings",
+                    pcity->airlift),
+                pcity->airlift);
+    break;
+  }
+}
+
+/**********************************************************************//**
+  Return airlift capacity.
+**************************************************************************/
+void get_city_dialog_airlift_value(const struct city *pcity,
+                                   char *buf, size_t bufsz)
+{
+  char src[512];
+  char dest[512];
+  int unlimited = 0;
+
+  if ((game.info.airlifting_style & AIRLIFTING_UNLIMITED_SRC)
+      && (pcity->airlift >= 1 || game.info.airlift_from_always_enabled)) {
+
+    unlimited++;
+
+    /* TRANS: airlift. Possible take offs text. String is a symbol that
+     * indicates that terms and conditions apply when landings are limited
+     * and empty when they aren't limited. */
+    fc_snprintf(src, sizeof(src), _("   ∞%s"),
+                game.info.airlifting_style & AIRLIFTING_UNLIMITED_DEST
+                /* TRANS: airlift unlimited take offs may be spent symbol
+                 * used above. */
+                ? "" : Q_("?landings:*"));
+  } else {
+    /* TRANS: airlift. Possible take offs text. Number is
+     * airlift capacity. */
+    fc_snprintf(src, sizeof(src), Q_("?takeoffs:%4d"), pcity->airlift);
+  }
+
+  if ((game.info.airlifting_style & AIRLIFTING_UNLIMITED_DEST)
+      && (pcity->airlift >= 1 || game.info.airlift_to_always_enabled)){
+
+    unlimited++;
+
+    /* TRANS: airlift. Possible landings text. */
+    fc_snprintf(dest, sizeof(dest), _("   ∞"));
+  } else {
+    /* TRANS: airlift. Possible landings text. */
+    fc_snprintf(dest, sizeof(dest), Q_("?landings:%4d"), pcity->airlift);
+  }
+
+  switch (unlimited) {
+  case 2:
+    /* TRANS: unlimited airlift take offs and landings */
+    fc_snprintf(buf, bufsz, _("   ∞"));
+    break;
+  case 1:
+    /* TRANS: airlift take offs and landings. One is unlimited. The first
+     * string is the take offs text. The 2nd string is the landings text.
+     * For English, initials of d)epartures and a)rrivals were chosen. */
+    fc_snprintf(buf, bufsz, _("d: %s a: %s"), src, dest);
+    break;
+  default:
+    /* TRANS: airlift take offs or landings, no unlimited */
+    fc_snprintf(buf, bufsz, Q_("?airlifts:%s"), src);
+    break;
+  }
 }
 
 /**********************************************************************//**
@@ -1114,7 +1529,7 @@ bool city_can_buy(const struct city *pcity)
           && pcity->turn_founded != game.info.turn
           && !pcity->did_buy
           && (VUT_UTYPE == pcity->production.kind
-              || !improvement_has_flag(pcity->production.value.building, IF_GOLD))
+              || !is_convert_improvement(pcity->production.value.building))
           && !(VUT_UTYPE == pcity->production.kind
                && pcity->anarchy != 0)
           && pcity->client.buy_cost > 0);

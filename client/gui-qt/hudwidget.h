@@ -14,9 +14,15 @@
 #ifndef FC__HUDWIDGET_H
 #define FC__HUDWIDGET_H
 
+// Needed for the moc-generated meta file
+#ifdef HAVE_CONFIG_H
+#include <fc_config.h>
+#endif
+
 // Qt
 #include <QDialog>
 #include <QElapsedTimer>
+#include <QEnterEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -54,7 +60,7 @@ class hud_message_box: public QMessageBox
 public:
   hud_message_box(QWidget *parent);
   ~hud_message_box();
-  void set_text_title(QString s1, QString s2);
+  int set_text_title(QString s1, QString s2, bool return_exec = false);
 
 protected:
   void paintEvent(QPaintEvent *event);
@@ -165,7 +171,11 @@ protected:
   void mousePressEvent(QMouseEvent *e);
   void mouseMoveEvent(QMouseEvent *event);
   void leaveEvent(QEvent *event);
+#ifndef FC_QT5_MODE
+  void enterEvent(QEnterEvent *event);
+#else  // FC_QT5_MODE
   void enterEvent(QEvent *event);
+#endif // FC_QT5_MODE
 private slots:
   void on_clicked();
   void on_right_clicked();
@@ -297,7 +307,11 @@ protected:
   void paintEvent(QPaintEvent *event);
   void mousePressEvent(QMouseEvent *e);
   void leaveEvent(QEvent *event);
+#ifndef FC_QT5_MODE
+  void enterEvent(QEnterEvent *event);
+#else  // FC_QT5_MODE
   void enterEvent(QEvent *event);
+#endif // FC_QT5_MODE
 private:
   void init_images(bool redraw = false);
   int att_hp;
@@ -357,35 +371,12 @@ protected:
   void showEvent(QShowEvent *event);
 private:
   void update_size();
+  void te_inner();
+
   scale_widget *sw;
   move_widget *mw;
   QElapsedTimer m_timer;
 };
 
-/****************************************************************************
-  Widget showing image with text and sound
-****************************************************************************/
-class hud_img : public QWidget
-{
-  Q_OBJECT
-public:
-  hud_img(QPixmap *pix, QString snd, QString txt, bool fullsize,
-          QWidget *parent);
-  ~hud_img();
-  void init();
-  bool snd_playing;
-protected:
-  void paintEvent(QPaintEvent *event);
-  void mousePressEvent(QMouseEvent *event);
-private:
-  bool full_size;
-  QString text;
-  QString sound;
-  QPixmap *pixmap;
-  QRect bound_rect;
-  QFontMetrics *fm_text;
-  QFont f_text;
-};
-
-#endif /* FC__HUDWIDGET_H */
+#endif // FC__HUDWIDGET_H
 

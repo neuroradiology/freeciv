@@ -86,8 +86,10 @@ bool select_tgt_unit(struct unit *actor, struct tile *ptile,
   GtkWidget *default_option = NULL;
   GtkWidget *first_option = NULL;
   struct sprite *spr;
-  struct unit_type *actor_type = unit_type_get(actor);
+  const struct unit_type *actor_type = unit_type_get(actor);
   int tcount;
+  const struct unit *default_unit = NULL;
+  int main_row = 0;
 
   dlg = gtk_dialog_new_with_buttons(dlg_title, NULL, 0,
                                     _("Close"), GTK_RESPONSE_NO,
@@ -107,7 +109,8 @@ bool select_tgt_unit(struct unit *actor, struct tile *ptile,
   lbl = gtk_label_new(actor_label);
   gtk_grid_attach(GTK_GRID(box), lbl, 0, 0, 1, 1);
 
-  spr = get_unittype_sprite(tileset, actor_type, direction8_invalid());
+  spr = get_unittype_sprite(tileset, actor_type,
+                            actor->activity, direction8_invalid());
   if (spr != NULL) {
     icon = gtk_image_new_from_pixbuf(sprite_get_pixbuf(spr));
   } else {
@@ -118,13 +121,13 @@ bool select_tgt_unit(struct unit *actor, struct tile *ptile,
   lbl = gtk_label_new(utype_name_translation(actor_type));
   gtk_grid_attach(GTK_GRID(box), lbl, 2, 0, 1, 1);
 
-  gtk_container_add(GTK_CONTAINER(main_box), box);
+  gtk_grid_attach(GTK_GRID(main_box), box, 0, main_row++, 1, 1);
 
   sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-  gtk_container_add(GTK_CONTAINER(main_box), sep);
+  gtk_grid_attach(GTK_GRID(main_box), sep, 0, main_row++, 1, 1);
 
   lbl = gtk_label_new(tgt_label);
-  gtk_container_add(GTK_CONTAINER(main_box), lbl);
+  gtk_grid_attach(GTK_GRID(main_box), lbl, 0, main_row++, 1, 1);
 
   box = gtk_grid_new();
 
@@ -138,26 +141,21 @@ bool select_tgt_unit(struct unit *actor, struct tile *ptile,
     cbdata->tp_id = ptgt->id;
     cbdata->dlg = dlg;
 
-    radio = gtk_radio_button_new_from_widget(
-          GTK_RADIO_BUTTON(first_option));
+    radio = gtk_check_button_new();
+    gtk_check_button_set_group(GTK_CHECK_BUTTON(radio),
+                               GTK_CHECK_BUTTON(first_option));
     if (first_option == NULL) {
       first_option = radio;
       default_option = first_option;
+      default_unit = ptgt;
     }
-    /* The lists must be the same length if they contain the same
-     * elements. */
-    fc_assert_msg(g_slist_length(gtk_radio_button_get_group(
-                                   GTK_RADIO_BUTTON(radio)))
-                  == g_slist_length(gtk_radio_button_get_group(
-                                      GTK_RADIO_BUTTON(first_option))),
-                  "The radio button for '%s' is broken.",
-                  unit_rule_name(ptgt));
     g_signal_connect(radio, "toggled",
                      G_CALLBACK(unit_sel_unit_toggled), cbdata);
     g_signal_connect(radio, "destroy",
                      G_CALLBACK(unit_sel_unit_destroyed), cbdata);
     if (ptgt == suggested_tgt_unit) {
       default_option = radio;
+      default_unit = suggested_tgt_unit;
     }
     gtk_grid_attach(GTK_GRID(box), radio, 0, tcount, 1, 1);
 
@@ -175,17 +173,23 @@ bool select_tgt_unit(struct unit *actor, struct tile *ptile,
 
     tcount++;
   } unit_list_iterate_end;
-  gtk_container_add(GTK_CONTAINER(main_box), box);
+  gtk_grid_attach(GTK_GRID(main_box), box, 0, main_row++, 1, 1);
 
   fc_assert_ret_val(default_option, FALSE);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(default_option), TRUE);
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(default_option), TRUE);
 
-  gtk_container_add(
-              GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dlg))),
-              main_box);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dlg))),
+                 main_box);
 
   g_object_set_data(G_OBJECT(dlg), "actor", GINT_TO_POINTER(actor->id));
   g_object_set_data(G_OBJECT(dlg), "tile", ptile);
+
+  /* This function should never be called so that there would be no unit to select,
+   * and where there is unit to select, one of them gets selected as the default. */
+  fc_assert(default_unit != NULL);
+  if (default_unit != NULL) { /* Compiler still wants this */
+    g_object_set_data(G_OBJECT(dlg), "target", GINT_TO_POINTER(default_unit->id));
+  }
 
   g_signal_connect(dlg, "response", do_callback, actor);
 

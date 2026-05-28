@@ -76,6 +76,14 @@ bool has_zoom_support(void)
 }
 
 /**********************************************************************//**
+  Initialize canvas as mapview.
+**************************************************************************/
+void canvas_mapview_init(struct canvas *store)
+{
+  SDL_SetSurfaceBlendMode(store->surf, SDL_BLENDMODE_NONE);
+}
+
+/**********************************************************************//**
   Copies an area from the source canvas to the destination canvas.
 **************************************************************************/
 void canvas_copy(struct canvas *dest, struct canvas *src,
@@ -112,6 +120,19 @@ void canvas_put_sprite_full(struct canvas *pcanvas,
   SDL_Rect dst = {canvas_x, canvas_y, 0, 0};
 
   alphablit(GET_SURF(sprite), NULL, pcanvas->surf, &dst, 255);
+}
+
+/************************************************************************//**
+  Draw a full sprite onto the canvas, scaled to the canvas size.
+****************************************************************************/
+void canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                   int canvas_x, int canvas_y,
+                                   int canvas_w, int canvas_h,
+                                   struct sprite *sprite)
+{
+  /* This should never be called as we have not enabled support
+   * in this client yet. */
+  fc_assert(FALSE);
 }
 
 /**********************************************************************//**

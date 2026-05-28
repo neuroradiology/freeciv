@@ -38,15 +38,17 @@
 #endif
 #ifdef HAVE_NETDB_H
 #include <netdb.h>
-#endif 
+#endif
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
-#ifdef HAVE_SYS_SIGNAL_H
+#ifdef HAVE_SIGNAL_H
+#include <signal.h>
+#elif defined(HAVE_SYS_SIGNAL_H)
 #include <sys/signal.h>
 #endif
 #ifdef FREECIV_MSWINDOWS
-#include <windows.h>	/* GetTempPath */
+#include <windows.h>   /* GetTempPath */
 #endif
 
 /* utility */
@@ -78,20 +80,23 @@ static void set_socket_errno(void)
 {
   int err = WSAGetLastError();
 
-  switch(err) {
-    /* these have mappings to symbolic errno names in netintf.h */ 
-    case WSAEINTR:
-    case WSAEWOULDBLOCK:
-    case WSAECONNRESET:
-    case WSAECONNREFUSED:
-    case WSAETIMEDOUT:
-    case WSAECONNABORTED:
-      errno = err;
-      return;
-    default:
-      bugreport_request("Missing errno mapping for Winsock error #%d.", err);
+  switch (err) {
+    /* these have mappings to symbolic errno names in net_types.h */
+  case WSAEINTR:
+  case WSAEINPROGRESS:
+  case WSAEWOULDBLOCK:
+  case WSAECONNRESET:
+  case WSAECONNREFUSED:
+  case WSAEADDRNOTAVAIL:
+  case WSAETIMEDOUT:
+  case WSAECONNABORTED:
+  case WSAENOTSOCK:
+    errno = err;
+    return;
+  default:
+    bugreport_request("Missing errno mapping for Winsock error #%d.", err);
  
-      errno = 0;
+    errno = 0;
   }
 }
 #endif /* FREECIV_HAVE_WINSOCK */
@@ -245,7 +250,7 @@ void fc_nonblock(int sockfd)
   }
 #else  /* HAVE_FCNTL */
 #ifdef HAVE_IOCTL
-  long value=1;
+  long value = 1;
 
   if (ioctl(sockfd, FIONBIO, (char*)&value) == -1) {
     log_error("ioctl failed: %s", fc_strerror(fc_get_errno()));
@@ -254,7 +259,7 @@ void fc_nonblock(int sockfd)
 #endif /* HAVE_FCNTL */
 #endif /* FREECIV_HAVE_WINSOCK */
 #else  /* NONBLOCKING_SOCKETS */
-  log_debug("NONBLOCKING_SOCKETS not available");
+  log_warn("NONBLOCKING_SOCKETS not available");
 #endif /* NONBLOCKING_SOCKETS */
 }
 
@@ -544,7 +549,7 @@ fz_FILE *fc_querysocket(int sock, void *buf, size_t size)
 
 /*********************************************************************//**
   Finds the next (lowest) free port.
-*************************************************************************/ 
+*************************************************************************/
 int find_next_free_port(int starting_port, int highest_port,
                         enum fc_addr_family family,
                         char *net_interface, bool not_avail_ok)
@@ -672,4 +677,23 @@ int find_next_free_port(int starting_port, int highest_port,
   port--;
 
   return port;
+}
+
+/*********************************************************************//**
+  Return address family matching the announce type
+*************************************************************************/
+int addr_family_for_announce_type(enum announce_type announce)
+{
+  switch (announce) {
+  case ANNOUNCE_IPV6:
+    return AF_INET;
+  case ANNOUNCE_IPV4:
+    return AF_INET;
+  case ANNOUNCE_NONE:
+    return AF_UNSPEC;
+  }
+
+  fc_assert(FALSE);
+
+  return AF_UNSPEC;
 }

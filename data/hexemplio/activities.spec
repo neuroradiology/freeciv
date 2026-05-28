@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -10,6 +10,7 @@ artists = "
 	Hogne Håskjold <hogne@freeciv.org>[HH]
 	Eleazar[El]
 	GriffonSpade[GS]
+        Sveinung Kvilhaugsvik (action_decision_want)
 "
 
 [file]
@@ -34,11 +35,13 @@ tiles = { "row", "column", "tag"
   0, 4, "unit.goto"                     ;[?]
 ;  0, 5, "unit.patrol"                   ;[?]
   0, 6, "unit.convert"                  ;[?][GS]
+  0, 7, "unit.action_decision_want"
 
 ; Unit activity letters: tile commands
 
   1, 0, "unit.rest"                     ;[?]
-  1, 1, "unit.irrigate"                 ;[?]
+  1, 1, "unit.cultivate",               ;[?]
+        "unit.irrigate" ; For rulesets still using this tag
   1, 2, "unit.plant"                    ;[?]
   1, 3, "unit.transform"                ;[?]
   1, 4, "unit.pillage"                  ;[?]

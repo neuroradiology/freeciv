@@ -36,6 +36,7 @@ struct adv_choice {
   bool need_boat;     /* unit being built wants a boat */
 #ifdef ADV_CHOICE_TRACK
   char *use;
+  bool log_if_chosen;
 #endif /* ADV_CHOICE_TRACK */
 };
 
@@ -56,6 +57,7 @@ bool is_unit_choice_type(enum choice_type type);
 void adv_choice_copy(struct adv_choice *dest, struct adv_choice *src);
 void adv_choice_set_use(struct adv_choice *choice, const char *use);
 void adv_choice_log_info(struct adv_choice *choice, const char *loc1, const char *loc2);
+const char *adv_choice_get_use(const struct adv_choice *choice);
 #else  /* ADV_CHOICE_TRACK */
 static inline void adv_choice_copy(struct adv_choice *dest, struct adv_choice *src)
 {
@@ -65,6 +67,10 @@ static inline void adv_choice_copy(struct adv_choice *dest, struct adv_choice *s
 }
 #define adv_choice_set_use(_choice, _use)
 #define adv_choice_log_info(_choice, _loc1, _loc2)
+static inline const char *adv_choice_get_use(const struct adv_choice *choice)
+{
+  return "(unknown)";
+}
 #endif /* ADV_CHOICE_TRACK */
 
 #ifdef FREECIV_NDEBUG

@@ -46,6 +46,7 @@
 static char *rs_selected = NULL;
 static char *od_selected = NULL;
 static int fatal_assertions = -1;
+static bool dirty = TRUE;
 
 /**********************************************************************//**
   Parse freeciv-ruleup commandline parameters.
@@ -66,7 +67,7 @@ static void rup_parse_cmdline(int argc, char *argv[])
       cmdhelp_add(help, "F",
                   /* TRANS: "Fatal" is exactly what user must type, do not translate. */
                   _("Fatal [SIGNAL]"),
-                  _("Raise a signal on failed assertion"));
+                  _("Raise a signal on failed assertion or broken data"));
 #endif /* FREECIV_NDEBUG */
       cmdhelp_add(help, "r",
                   /* TRANS: "ruleset" is exactly what user must type, do not translate. */
@@ -76,6 +77,8 @@ static void rup_parse_cmdline(int argc, char *argv[])
 		  /* TRANS: "output" is exactly what user must type, do not translate. */
 		  _("output DIRECTORY"),
 		  _("Create directory DIRECTORY for output"));
+      cmdhelp_add(help, "c", "clean",
+                  _("Clean up the ruleset before saving it."));
 
       /* The function below prints a header and footer for the options.
        * Furthermore, the options are sorted. */
@@ -112,6 +115,8 @@ static void rup_parse_cmdline(int argc, char *argv[])
         exit(EXIT_FAILURE);
       }
 #endif /* FREECIV_NDEBUG */
+    } else if (is_option("--clean", argv[i])) {
+      dirty = FALSE;
     } else {
       fc_fprintf(stderr, _("Unrecognized option: \"%s\"\n"), argv[i]);
       cmdline_option_values_free();
@@ -136,8 +141,9 @@ static void conv_log(const char *msg)
 int main(int argc, char **argv)
 {
   enum log_level loglevel = LOG_NORMAL;
+  int exit_status = EXIT_SUCCESS;
 
-  /* Load win32 post-crash debugger */
+  /* Load Windows post-crash debugger */
 #ifdef FREECIV_MSWINDOWS
 # ifndef FREECIV_NDEBUG
   if (LoadLibrary("exchndl.dll") == NULL) {
@@ -148,13 +154,17 @@ int main(int argc, char **argv)
 # endif /* FREECIV_NDEBUG */
 #endif /* FREECIV_MSWINDOWS */
 
-  init_nls();
+  /* Initialize the fc_interface functions needed to understand rules.
+   * fc_interface_init_tool() includes low level support like
+   * guaranteeing that fc_vsnprintf() will work after it,
+   * so this need to be early. */
+  fc_interface_init_tool();
 
   registry_module_init();
   init_character_encodings(FC_DEFAULT_DATA_ENCODING, FALSE);
 
   rup_parse_cmdline(argc, argv);
-  
+
   log_init(NULL, loglevel, NULL, NULL, fatal_assertions);
 
   init_connections();
@@ -163,9 +173,6 @@ int main(int argc, char **argv)
 
   game_init(FALSE);
   i_am_tool();
-
-  /* Initialize the fc_interface functions needed to understand rules. */
-  fc_interface_init_tool();
 
   /* Set ruleset user requested to use */
   if (rs_selected == NULL) {
@@ -176,7 +183,7 @@ int main(int argc, char **argv)
   /* Reset aifill to zero */
   game.info.aifill = 0;
 
-  if (load_rulesets(NULL, TRUE, conv_log, FALSE, TRUE)) {
+  if (load_rulesets(NULL, NULL, TRUE, conv_log, FALSE, TRUE, TRUE)) {
     struct rule_data data;
     char tgt_dir[2048];
 
@@ -189,7 +196,31 @@ int main(int argc, char **argv)
     }
 
     if (!comments_load()) {
-      log_error(R__("Failed to load comments.txt"));
+      /* TRANS: 'Failed to load comments-x.y.txt' where x.y is
+       * freeciv version */
+      log_error(R__("Failed to load %s."), COMMENTS_FILE_NAME);
+
+      /* Reuse fatal_assertions for failed comment loading. */
+      if (0 <= fatal_assertions) {
+        /* Emit a signal. */
+        raise(fatal_assertions);
+      }
+    }
+
+    /* Clean up unused entities added during the ruleset upgrade. */
+    if (!dirty) {
+      int purged = ruleset_purge_unused_entities();
+
+      if (purged > 0) {
+        log_normal("Purged %d unused entities after the ruleset upgrade",
+                   purged);
+      }
+
+      purged = ruleset_purge_redundant_reqs();
+      if (purged > 0) {
+        log_normal("Purged %d redundant requirements after the ruleset"
+                   " upgrade", purged);
+      }
     }
 
     save_ruleset(tgt_dir, game.control.name, &data);
@@ -197,13 +228,15 @@ int main(int argc, char **argv)
     comments_free();
   } else {
     log_error(_("Can't load ruleset %s"), rs_selected);
+
+    /* Failed to upgrade the ruleset */
+    exit_status = EXIT_FAILURE;
   }
 
   registry_module_close();
   log_close();
-  free_libfreeciv();
-  free_nls();
+  libfreeciv_free();
   cmdline_option_values_free();
 
-  return EXIT_SUCCESS;
+  return exit_status;
 }

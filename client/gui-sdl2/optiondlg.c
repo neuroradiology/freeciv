@@ -54,7 +54,6 @@
 #include "connectdlg.h"
 #include "dialogs.h"
 #include "graphics.h"
-#include "gui_iconv.h"
 #include "gui_id.h"
 #include "gui_main.h"
 #include "gui_tilespec.h"
@@ -91,7 +90,7 @@ struct option_dialog {
   struct widget *core_widget_list;
   struct widget *main_widget_list;
   struct widget *begin_widget_list;
-  struct ADVANCED_DLG *advanced;
+  struct advanced_dialog *advanced;
   enum option_dialog_mode mode;
   union {
     struct option_dialog_optset optset;
@@ -101,7 +100,7 @@ struct option_dialog {
 
 
 static struct option_dialog *option_dialog = NULL;
-struct widget *pOptions_Button = NULL;
+struct widget *options_button = NULL;
 static bool restore_meswin_dialog = FALSE;
 
 
@@ -171,7 +170,7 @@ static void arrange_widgets(struct widget *window, int widgets_per_row,
   dirty_sdl_rect(&area);
 
   /* Resize window. */
-  logo = theme_get_background(theme, BACKGROUND_OPTIONDLG);
+  logo = theme_get_background(active_theme, BACKGROUND_OPTIONDLG);
   if (resize_window(window, logo, NULL,
                     adj_size(w + 80), adj_size(h + 80))) {
     FREESURFACE(logo);
@@ -224,9 +223,9 @@ static void arrange_widgets(struct widget *window, int widgets_per_row,
 /************************************************************************//**
   User interacted with the option dialog window.
 ****************************************************************************/
-static int main_optiondlg_callback(struct widget *pWindow)
+static int main_optiondlg_callback(struct widget *pwindow)
 {
-  if (NULL != option_dialog && Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (NULL != option_dialog && PRESSED_EVENT(main_data.event)) {
     move_window_group(option_dialog->begin_widget_list,
                       option_dialog->end_widget_list);
   }
@@ -237,9 +236,9 @@ static int main_optiondlg_callback(struct widget *pWindow)
 /************************************************************************//**
   Back requested.
 ****************************************************************************/
-static int back_callback(struct widget *pWidget)
+static int back_callback(struct widget *pwidget)
 {
-  if (NULL == option_dialog || Main.event.button.button != SDL_BUTTON_LEFT) {
+  if (NULL == option_dialog || !PRESSED_EVENT(main_data.event)) {
     return -1;
   }
 
@@ -248,8 +247,8 @@ static int back_callback(struct widget *pWidget)
       /* Back to game. */
       popdown_optiondlg(FALSE);
       enable_options_button();
-      widget_redraw(pOptions_Button);
-      widget_mark_dirty(pOptions_Button);
+      widget_redraw(options_button);
+      widget_mark_dirty(options_button);
       flush_dirty();
     } else {
       /* Back to main page. */
@@ -268,7 +267,7 @@ static int back_callback(struct widget *pWidget)
       }
     } options_iterate_end;
     option_dialog->optset.category = -1;
-    FC_FREE(option_dialog->advanced->pScroll);
+    FC_FREE(option_dialog->advanced->scroll);
     FC_FREE(option_dialog->advanced);
 
     del_group_of_widgets_from_gui_list(option_dialog->begin_widget_list,
@@ -288,7 +287,7 @@ static int back_callback(struct widget *pWidget)
 
   if (ODM_WORKLIST == option_dialog->mode
       && NULL != option_dialog->advanced) {
-    FC_FREE(option_dialog->advanced->pScroll);
+    FC_FREE(option_dialog->advanced->scroll);
     FC_FREE(option_dialog->advanced);
     option_dialog->worklist.edited_name = NULL;
   }
@@ -313,9 +312,9 @@ static int back_callback(struct widget *pWidget)
 /************************************************************************//**
   Create the client options dialog.
 ****************************************************************************/
-static int client_options_callback(struct widget *pWidget)
+static int client_options_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     option_dialog_popup(_("Local Options"), client_optset);
   }
 
@@ -325,9 +324,9 @@ static int client_options_callback(struct widget *pWidget)
 /************************************************************************//**
   Create the server options dialog.
 ****************************************************************************/
-static int server_options_callback(struct widget *pWidget)
+static int server_options_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     option_dialog_popup(_("Server options"), server_optset);
   }
 
@@ -339,7 +338,7 @@ static int server_options_callback(struct widget *pWidget)
 ****************************************************************************/
 static int work_lists_callback(struct widget *widget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     option_dialog_worklist(option_dialog);
   }
 
@@ -349,9 +348,9 @@ static int work_lists_callback(struct widget *widget)
 /************************************************************************//**
   Option set category selected.
 ****************************************************************************/
-static int save_client_options_callback(struct widget *pWidget)
+static int save_client_options_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     options_save(NULL);
   }
 
@@ -361,9 +360,9 @@ static int save_client_options_callback(struct widget *pWidget)
 /************************************************************************//**
   Save game callback.
 ****************************************************************************/
-static int save_game_callback(struct widget *pWidget)
+static int save_game_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     send_save_game(NULL);
     back_callback(NULL);
   }
@@ -376,7 +375,7 @@ static int save_game_callback(struct widget *pWidget)
 ****************************************************************************/
 static int help_browser_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popup_help_browser();
   }
 
@@ -386,9 +385,9 @@ static int help_browser_callback(struct widget *pwidget)
 /************************************************************************//**
   Client disconnect from server callback.
 ****************************************************************************/
-static int disconnect_callback(struct widget *pWidget)
+static int disconnect_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popdown_optiondlg(TRUE);
     enable_options_button();
     disconnect_from_server();
@@ -400,10 +399,11 @@ static int disconnect_callback(struct widget *pWidget)
 /************************************************************************//**
   Exit callback.
 ****************************************************************************/
-static int exit_callback(struct widget *pWidget)
+static int exit_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popdown_optiondlg(TRUE);
+    disconnect_from_server();
     force_exit_from_event_loop();
   }
 
@@ -415,8 +415,8 @@ static int exit_callback(struct widget *pWidget)
 ****************************************************************************/
 static int option_category_callback(struct widget *widget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
-    option_dialog_optset_category(option_dialog, MAX_ID - widget->ID);
+  if (PRESSED_EVENT(main_data.event)) {
+    option_dialog_optset_category(option_dialog, MAX_ID - widget->id);
   }
 
   return -1;
@@ -427,7 +427,7 @@ static int option_category_callback(struct widget *widget)
 ****************************************************************************/
 static int apply_callback(struct widget *widget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT
+  if (PRESSED_EVENT(main_data.event)
       && NULL != option_dialog
       && ODM_OPTSET == option_dialog->mode
       && -1 != option_dialog->optset.category) {
@@ -797,7 +797,7 @@ static struct option_dialog *option_dialog_new(void)
   pdialog->end_widget_list = window;
 
   /* Create close button widget. */
-  close_button = create_themeicon(current_theme->Small_CANCEL_Icon, window->dst,
+  close_button = create_themeicon(current_theme->small_cancel_icon, window->dst,
                                   WF_WIDGET_HAS_INFO_LABEL
                                   | WF_RESTORE_BACKGROUND);
   close_button->info_label = create_utf8_from_char(_("Close Dialog (Esc)"),
@@ -913,7 +913,7 @@ static void option_dialog_destroy(struct option_dialog *pdialog)
   }
 
   if (NULL != pdialog->advanced) {
-    free(pdialog->advanced->pScroll);
+    free(pdialog->advanced->scroll);
     free(pdialog->advanced);
   }
 
@@ -941,7 +941,7 @@ static int optset_category_option_count(const struct option_set *poptset,
 }
 
 /************************************************************************//**
-  Initialize a option set page.
+  Initialize an option set page.
 ****************************************************************************/
 static void option_dialog_optset(struct option_dialog *pdialog,
                                  const struct option_set *poptset)
@@ -992,7 +992,7 @@ static void option_dialog_optset(struct option_dialog *pdialog,
 }
 
 /************************************************************************//**
-  Initialize a option set category page.
+  Initialize an option set category page.
 ****************************************************************************/
 static void option_dialog_optset_category(struct option_dialog *pdialog,
                                           int category)
@@ -1018,7 +1018,7 @@ static void option_dialog_optset_category(struct option_dialog *pdialog,
   window = pdialog->end_widget_list;
 
   /* Create the apply button. */
-  apply_button = create_themeicon(current_theme->Small_OK_Icon, window->dst,
+  apply_button = create_themeicon(current_theme->small_ok_icon, window->dst,
                                   WF_WIDGET_HAS_INFO_LABEL
                                   | WF_RESTORE_BACKGROUND);
   apply_button->info_label = create_utf8_from_char(_("Apply changes"),
@@ -1040,34 +1040,34 @@ static void option_dialog_optset_category(struct option_dialog *pdialog,
 
   /* Scrollbar. */
   pdialog->advanced = fc_calloc(1, sizeof(*pdialog->advanced));
-  pdialog->advanced->pEndWidgetList = pdialog->end_widget_list;
-  pdialog->advanced->pEndActiveWidgetList = apply_button->prev;
-  pdialog->advanced->pBeginWidgetList = widget;
-  pdialog->advanced->pBeginActiveWidgetList = widget;
+  pdialog->advanced->end_widget_list = pdialog->end_widget_list;
+  pdialog->advanced->end_active_widget_list = apply_button->prev;
+  pdialog->advanced->begin_widget_list = widget;
+  pdialog->advanced->begin_active_widget_list = widget;
 
   create_vertical_scrollbar(pdialog->advanced, 2, MAX_SHOWN, TRUE, TRUE);
 
   if (i >= MAX_SHOWN) {
-    pdialog->advanced->pActiveWidgetList =
-        pdialog->advanced->pEndActiveWidgetList;
+    pdialog->advanced->active_widget_list =
+        pdialog->advanced->end_active_widget_list;
   } else {
-    hide_scrollbar(pdialog->advanced->pScroll);
+    hide_scrollbar(pdialog->advanced->scroll);
   }
 
-  pdialog->begin_widget_list = pdialog->advanced->pBeginWidgetList;
+  pdialog->begin_widget_list = pdialog->advanced->begin_widget_list;
 
   arrange_widgets(window, 2, MAX_SHOWN,
-                  pdialog->advanced->pBeginActiveWidgetList,
+                  pdialog->advanced->begin_active_widget_list,
                   apply_button, pdialog->core_widget_list,
                   apply_button, NULL);
 
   area = window->area;
-  setup_vertical_scrollbar_area(pdialog->advanced->pScroll,
+  setup_vertical_scrollbar_area(pdialog->advanced->scroll,
                                 area.x + area.w - 1, area.y + 1,
                                 area.h - adj_size(32), TRUE);
 
   redraw_group(pdialog->begin_widget_list,
-               pdialog->advanced->pActiveWidgetList, 0);
+               pdialog->advanced->active_widget_list, 0);
   widget_flush(window);
 }
 
@@ -1077,7 +1077,7 @@ static void option_dialog_optset_category(struct option_dialog *pdialog,
 ****************************************************************************/
 static int edit_worklist_callback(struct widget *widget)
 {
-  struct global_worklist *pgwl = global_worklist_by_id(MAX_ID - widget->ID);
+  struct global_worklist *pgwl = global_worklist_by_id(MAX_ID - widget->id);
 
   if (NULL == option_dialog
       || ODM_WORKLIST != option_dialog->mode
@@ -1085,40 +1085,46 @@ static int edit_worklist_callback(struct widget *widget)
     return -1;
   }
 
-  switch (Main.event.button.button) {
-  case SDL_BUTTON_LEFT:
+  if (main_data.event.type == SDL_MOUSEBUTTONDOWN) {
+    switch (main_data.event.button.button) {
+    case SDL_BUTTON_LEFT:
+      /* Edit. */
+      option_dialog->worklist.edited_name = widget;
+      popup_worklist_editor(NULL, pgwl);
+      break;
+
+    case SDL_BUTTON_RIGHT:
+      {
+        /* Delete. */
+        struct advanced_dialog *advanced = option_dialog->advanced;
+        bool scroll = (NULL != advanced->active_widget_list);
+
+        global_worklist_destroy(pgwl);
+        del_widget_from_vertical_scroll_widget_list(advanced, widget);
+
+        /* Find if there was scrollbar hide. */
+        if (scroll && advanced->active_widget_list == NULL) {
+          int len = advanced->scroll->up_left_button->size.w;
+
+          widget = advanced->end_active_widget_list->next;
+          do {
+            widget = widget->prev;
+            widget->size.w += len;
+            FREESURFACE(widget->gfx);
+          } while (widget != advanced->begin_active_widget_list);
+        }
+
+        redraw_group(option_dialog->begin_widget_list,
+                     option_dialog->end_widget_list, 0);
+        widget_mark_dirty(option_dialog->end_widget_list);
+        flush_dirty();
+      }
+      break;
+    }
+  } else if (PRESSED_EVENT(main_data.event)) {
     /* Edit. */
     option_dialog->worklist.edited_name = widget;
     popup_worklist_editor(NULL, pgwl);
-    break;
-
-  case SDL_BUTTON_RIGHT:
-    {
-      /* Delete. */
-      struct ADVANCED_DLG *advanced = option_dialog->advanced;
-      bool scroll = (NULL != advanced->pActiveWidgetList);
-
-      global_worklist_destroy(pgwl);
-      del_widget_from_vertical_scroll_widget_list(advanced, widget);
-
-      /* Find if there was scrollbar hide. */
-      if (scroll && advanced->pActiveWidgetList == NULL) {
-        int len = advanced->pScroll->pUp_Left_Button->size.w;
-
-        widget = advanced->pEndActiveWidgetList->next;
-        do {
-          widget = widget->prev;
-          widget->size.w += len;
-          FREESURFACE(widget->gfx);
-        } while (widget != advanced->pBeginActiveWidgetList);
-      }
-
-      redraw_group(option_dialog->begin_widget_list,
-                   option_dialog->end_widget_list, 0);
-      widget_mark_dirty(option_dialog->end_widget_list);
-      flush_dirty();
-    }
-    break;
   }
 
   return -1;
@@ -1129,12 +1135,12 @@ static int edit_worklist_callback(struct widget *widget)
 ****************************************************************************/
 static int add_new_worklist_callback(struct widget *widget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     struct widget *new_worklist_widget = NULL;
     struct widget *window = option_dialog->end_widget_list;
     struct global_worklist *pgwl = global_worklist_new(_("empty worklist"));
-    struct ADVANCED_DLG *advanced = option_dialog->advanced;
-    bool scroll = advanced->pActiveWidgetList == NULL;
+    struct advanced_dialog *advanced = option_dialog->advanced;
+    bool scroll = advanced->active_widget_list == NULL;
     bool redraw_all = FALSE;
 
     set_wstate(widget, FC_WS_NORMAL);
@@ -1145,7 +1151,7 @@ static int add_new_worklist_callback(struct widget *widget)
       create_iconlabel_from_chars(NULL, widget->dst,
                                   global_worklist_name(pgwl),
                                   adj_font(12), WF_RESTORE_BACKGROUND);
-    new_worklist_widget->ID = MAX_ID - global_worklist_id(pgwl);
+    new_worklist_widget->id = MAX_ID - global_worklist_id(pgwl);
     new_worklist_widget->string_utf8->style |= SF_CENTER;
     set_wstate(new_worklist_widget, FC_WS_NORMAL);
     new_worklist_widget->size.w = widget->size.w;
@@ -1158,16 +1164,16 @@ static int add_new_worklist_callback(struct widget *widget)
                      window->area.y + adj_size(17));
 
     /* Find if there was scrollbar shown. */
-    if (scroll && advanced->pActiveWidgetList != NULL) {
-      int len = advanced->pScroll->pUp_Left_Button->size.w;
+    if (scroll && advanced->active_widget_list != NULL) {
+      int len = advanced->scroll->up_left_button->size.w;
 
-      window = advanced->pEndActiveWidgetList->next;
+      window = advanced->end_active_widget_list->next;
       do {
         window = window->prev;
         window->size.w -= len;
         window->area.w -= len;
         FREESURFACE(window->gfx);
-      } while (window != advanced->pBeginActiveWidgetList);
+      } while (window != advanced->begin_active_widget_list);
     }
 
     if (redraw_all) {
@@ -1182,8 +1188,8 @@ static int add_new_worklist_callback(struct widget *widget)
       widget_redraw(widget);
       widget_mark_dirty(widget);
 
-      if (!new_worklist_widget->gfx &&
-          (get_wflags(new_worklist_widget) & WF_RESTORE_BACKGROUND)) {
+      if (!new_worklist_widget->gfx
+          && (get_wflags(new_worklist_widget) & WF_RESTORE_BACKGROUND)) {
         refresh_widget_background(new_worklist_widget);
       }
       widget_redraw(new_worklist_widget);
@@ -1252,11 +1258,11 @@ static void option_dialog_worklist(struct option_dialog *pdialog)
 
   /* Advanced dialog. */
   pdialog->advanced = fc_calloc(1, sizeof(*pdialog->advanced));
-  pdialog->advanced->pEndWidgetList = pdialog->end_widget_list;
-  pdialog->advanced->pEndActiveWidgetList =
+  pdialog->advanced->end_widget_list = pdialog->end_widget_list;
+  pdialog->advanced->end_active_widget_list =
       pdialog->main_widget_list->prev->prev;
-  pdialog->advanced->pBeginWidgetList = widget;
-  pdialog->advanced->pBeginActiveWidgetList = widget;
+  pdialog->advanced->begin_widget_list = widget;
+  pdialog->advanced->begin_active_widget_list = widget;
 
   /* Clear former area. */
   area = window->area;
@@ -1292,15 +1298,15 @@ static void option_dialog_worklist(struct option_dialog *pdialog)
   /* Create the Scrollbar. */
   scrollbar_width = create_vertical_scrollbar(pdialog->advanced,
                                               1, 13, TRUE, TRUE);
-  setup_vertical_scrollbar_area(pdialog->advanced->pScroll,
+  setup_vertical_scrollbar_area(pdialog->advanced->scroll,
                                 area.x + area.w - 1, area.y + 1,
                                 area.h - adj_size(32), TRUE);
 
   if (count > 13) {
-    pdialog->advanced->pActiveWidgetList =
-        pdialog->advanced->pEndActiveWidgetList;
+    pdialog->advanced->active_widget_list =
+        pdialog->advanced->end_active_widget_list;
   } else {
-    hide_scrollbar(pdialog->advanced->pScroll);
+    hide_scrollbar(pdialog->advanced->scroll);
     scrollbar_width = 0;
   }
 
@@ -1308,10 +1314,10 @@ static void option_dialog_worklist(struct option_dialog *pdialog)
   setup_vertical_widgets_position(1, area.x + adj_size(5),
                                   area.y + adj_size(5),
                                   area.w - adj_size(10) - scrollbar_width, 0,
-                                  pdialog->advanced->pBeginActiveWidgetList,
-                                  pdialog->advanced->pEndActiveWidgetList);
+                                  pdialog->advanced->begin_active_widget_list,
+                                  pdialog->advanced->end_active_widget_list);
 
-  pdialog->begin_widget_list = pdialog->advanced->pBeginWidgetList;
+  pdialog->begin_widget_list = pdialog->advanced->begin_widget_list;
 
   redraw_group(pdialog->begin_widget_list, pdialog->end_widget_list, 0);
   widget_flush(window);
@@ -1322,7 +1328,7 @@ static void option_dialog_worklist(struct option_dialog *pdialog)
 ****************************************************************************/
 int optiondlg_callback(struct widget *pbutton)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     set_wstate(pbutton, FC_WS_DISABLED);
     clear_surface(pbutton->dst->surface, &pbutton->size);
     widget_redraw(pbutton);
@@ -1343,7 +1349,7 @@ int optiondlg_callback(struct widget *pbutton)
 ****************************************************************************/
 void enable_options_button(void)
 {
-  set_wstate(pOptions_Button, FC_WS_NORMAL);
+  set_wstate(options_button, FC_WS_NORMAL);
 }
 
 /************************************************************************//**
@@ -1351,7 +1357,7 @@ void enable_options_button(void)
 ****************************************************************************/
 void disable_options_button(void)
 {
-  set_wstate(pOptions_Button, FC_WS_DISABLED);
+  set_wstate(options_button, FC_WS_DISABLED);
 }
 
 /************************************************************************//**
@@ -1361,18 +1367,18 @@ void init_options_button(void)
 {
   char buf[256];
 
-  pOptions_Button = create_themeicon(current_theme->Options_Icon, Main.gui,
-                                     WF_WIDGET_HAS_INFO_LABEL
-                                     | WF_RESTORE_BACKGROUND);
-  pOptions_Button->action = optiondlg_callback;
+  options_button = create_themeicon(current_theme->options_icon, main_data.gui,
+                                    WF_WIDGET_HAS_INFO_LABEL
+                                    | WF_RESTORE_BACKGROUND);
+  options_button->action = optiondlg_callback;
   fc_snprintf(buf, sizeof(buf), "%s (%s)", _("Options"), "Esc");
-  pOptions_Button->info_label = create_utf8_from_char(buf, adj_font(12));
-  pOptions_Button->key = SDLK_ESCAPE;
-  set_wflag(pOptions_Button, WF_HIDDEN);
-  widget_set_position(pOptions_Button, adj_size(5), adj_size(5));
+  options_button->info_label = create_utf8_from_char(buf, adj_font(12));
+  options_button->key = SDLK_ESCAPE;
+  set_wflag(options_button, WF_HIDDEN);
+  widget_set_position(options_button, adj_size(5), adj_size(5));
 
 #ifndef SMALL_SCREEN
-  add_to_gui_list(ID_CLIENT_OPTIONS, pOptions_Button);
+  add_to_gui_list(ID_CLIENT_OPTIONS, options_button);
 #endif
 
   enable_options_button();
@@ -1389,7 +1395,7 @@ void update_worklist_report_dialog(void)
 
   if (NULL != option_dialog && ODM_WORKLIST == option_dialog->mode) {
     pgwl = global_worklist_by_id(MAX_ID
-                                 - option_dialog->worklist.edited_name->ID);
+                                 - option_dialog->worklist.edited_name->id);
 
     if (NULL != pgwl) {
       copy_chars_to_utf8_str(option_dialog->worklist.edited_name->string_utf8,

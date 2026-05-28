@@ -2,9 +2,9 @@
 ; description.
 
 [datafile]
-description="<modpack> unit_type data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "<modpack> unit_type data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02"
+format_version = 30
 
 [control]
 ; Names for custom unit type flags. There can be up to 45 of these.
@@ -16,7 +16,7 @@ format_version=20
 ;   { "name", "helptxt"
 ;   }
 
-; Names for custom unit class flags. There can be up to 8 of these.
+; Names for custom unit class flags. There can be up to 15 of these.
 ; name          = rule name; In some circumstances user may see this
 ;                 as part of some sentences, so try to make it descriptive
 ;                 and sensible.
@@ -52,7 +52,7 @@ veteran_move_bonus = 0
 ; The number can be variable, up to 32
 ; When adding new classes, remember to check effects.ruleset also.
 ; Eg. if you divide class 'Land' to two separate classes, you may
-; want add effect giving City Walls defence bonus against new class
+; want add effect giving City Walls defense bonus against new class
 ; too.
 ;
 ; The actual tag used (the * in [unitclass_*]) does not matter, except
@@ -72,8 +72,6 @@ veteran_move_bonus = 0
 ; hp_loss_pct         = Hitpoints lost each turn if unit not in city or native base
 ; non_native_def_pct  = Defense power percentage applying when defending on
 ;                       non-native terrain (such as ship in harbour)
-; hut_behavior        = What happens to huts when unit enters tile:
-;                       "Normal", "Nothing", or "Frighten"
 ; flags               = List of unit class flags (from the following list; you
 ;                       cannot add custom unit class flags)
 ; helptext            = optional help text string; should escape all raw newlines
@@ -85,7 +83,6 @@ veteran_move_bonus = 0
 ; "TerrainDefense"    = Units gain defense bonus from terrain
 ; "DamageSlows"       = Damaged units are slowed down
 ; "CanOccupyCity"     = Military units of this class can occupy enemy cities
-; "Missile"           = Unit is destroyed when it attacks
 ; "BuildAnywhere"     = Unit can be built even in the middle of non-native terrain
 ; "Unreachable"       = Unit can be attacked only by units explicitly listing this
 ;                       class in its 'targets', unless on a city or native base.
@@ -95,15 +92,15 @@ veteran_move_bonus = 0
 ; "CollectRansom"     = Unit can collect ransom when killing lone barbarian leader
 ; "ZOC"               = Unit is subject to ZOC rules. Unit type flag "IgZOC" can
 ;                       override this
-; "CanFortify"        = Unit can fortify at land tiles. Unit type flag
-;                       "Cant_Fortify" can override this
-; "CanPillage"        = Unit can pillage tile infrastructure
 ; "DoesntOccupyTile"  = Even if this kind of enemy unit is on tile, cities can
 ;                       still work that tile
 ; "AttackNonNative"   = Unit can attack units on non-native tiles. Unit type flag
 ;                       "Only_Native_Attack" can override this
 ; "KillCitizen"       = Upon successful attack against a city unit kills one citizen.
 ;                       There's server setting, as well as effects, to disable this.
+; "HutFrighten"       = Will frighten rather than enter huts.
+; "NonNatBombardTgt"  = Certain attacks against these units are considered
+;                       Nonnative Bombard Attack type
 ;
 ; */ <-- avoid gettext warnings
 
@@ -125,7 +122,7 @@ flags         = ""
 ;
 ; The number can be variable, up to 200.
 ; However for the "official" rulesets, units should not be removed
-; because that would break backward compatability with savegames.
+; because that would break backward compatibility with savegames.
 ;
 ; The order here matters: later units are considered "better" for
 ; a given flag or role.
@@ -147,10 +144,8 @@ flags         = ""
 ;                 present; especially if preferred graphic is non-standard,
 ;                 this should be a standard tag.  Otherwise can use eg "-"
 ;                 for no alternate graphic.
-; tech_req      = required advance, names from techs.ruleset, or special:
-;                 "None" => available from start
-; impr_req	= required city improvement, names from buildings.ruleset
-; gov_req       = required government, names from governments.ruleset
+; reqs          = requirements to build the unit (see effects.ruleset
+;                 and README.effects for help on requirements)
 ; obsolete_by   = can be upgraded to and made obsolete by another unit by name
 ; build_cost    = production shields required to build
 ; pop_cost      = population removed from city when built; for 'Join City'
@@ -177,6 +172,10 @@ flags         = ""
 ; city_slots    = How many of homecity's unit maintenance slots unit takes
 ; city_size     = Initial size of the cities built by 'Found City' type units
 ;                 (but 'Join City' uses pop_cost)
+; tp_defense    = Method to decide if unit can be selected as a defender when
+;                 transported.
+;                   "Blocked" - Can't defend when transported
+;                   "Alight"  - Can defend if can alight or unload (current default)
 ; targets       = list of unit classes this unit can attack against even
 ;                 if they have Unreachable unit class flag
 ; embarks       = list of unit classes this unit may load into while not in
@@ -211,14 +210,30 @@ flags         = ""
 ;
 ; ** Bonuses **
 ;
-; "DefenseMultiplier" = Multiply defense value (1 + 'value') times.
-;                       Value of 1 means multiplication by 2, value 2 by 3...
-;                       Bonus is defined in defenders entry.
-; "DefenseDivider"    = Divide defense value with (1 + 'value').
-;                       Bonus is defined in attackers entry.
-; "FirePower1"        = Defender firepower is reduced to value 1 when
-;                       ever this has non-zero value.
-;                       Bonus is defined in attackers entry.
+; "DefenseMultiplier"    = See "DefenseMultiplierPct" below. This is
+;                          equivalent to that multiplied by 100.
+;                          Bonus is defined in defenders entry.
+; "DefenseMultiplierPct" = Multiply defense by 1 + (value / 100).
+;                          Value of 100 means multiplication by 2,
+;                          value of 50 means multiplication by 1.5, etc.
+;                          Effectively increases defense by value percent.
+;                          Bonus is defined in defenders entry.
+; "DefenseDivider"       = See "DefenseDividerPct" below. This is equivalent
+;                          to that multiplied by 100.
+;                          Bonus is defined in attackers entry.
+; "DefenseDividerPct"    = Divide defense value by 1 + (value / 100).
+;                          Value of 100 means division by 2,
+;                          value of 50 means division by 1.5, i.e.
+;                          multiplication with 2/3, etc.
+;                          Effectively increases *attack* by value percent.
+;                          Bonus is defined in attackers entry.
+; "LowFirepower"         = Defender firepower is reduced to low firepower
+;                          value defined in game.ruleset when
+;                          ever this has non-zero value.
+;                          Bonus is defined in attackers entry.
+; "CityDefensePct"       = In a city, instead of "Defend_Bonus" effect
+;                          uses this bonus.
+;                          Bonus is defined in defenders entry.
 ;
 ;
 ; ** Flags **
@@ -232,11 +247,8 @@ flags         = ""
 ; "IgTer"       = use constant move cost defined in igter_cost (terrain.ruleset)
 ;                 rather than terrain/road etc cost, unless terrain cost is
 ;                 less
-; "OneAttack"	= can only make a single attack, regardless of movement points
 ; "FieldUnit"	= cause unhappiness even when not being aggressive
 ; "AttackAny"   = can attack unreachable units
-; "BeachLander" = won't lose all its movement when moving from non-native
-;                 terrain to native terrain even if slow_invasions is on.
 ; "Settlers"	= can irrigate and build roads
 ; "Diplomat"	= can do diplomat actions (see diplchance server option)
 ; "Spy"         = strong in diplomatic battles. _Must_ be "Diplomat" also
@@ -245,7 +257,6 @@ flags         = ""
 ;                 to regularly end turn on coast
 ; "Only_Native_Attack" = cannot attack targets on non-native tiles even if
 ;                 unit class can
-; "Cant_Fortify" =  cannot fortify even if unit class has "CanFortify" flag
 ; "Fanatic"	= can only be built by governments that allow them
 ;		  (see civ2/governments.ruleset, Fundamentalism government)
 ; "Unique"	= a player can only have one of these units in the game at
@@ -261,7 +272,7 @@ flags         = ""
 ;		  it encounters another SuperSpy, in which case defender wins;
 ;		  can also be used on non-diplomat units, in which case it can
 ;		  protect cities from diplomats; also 100% spy survival chance
-; "NoHome"	= this unit has no homecity and will be free of all upkeep, and
+; "NoHome"	= this unit is built with no homecity, free of all upkeep, and
 ;		  therefore will not revolt along with its city of origin should
 ;		  it be incited
 ; "NoVeteran"   = this unit cannot gain veteran levels through experience
@@ -293,6 +304,11 @@ flags         = ""
 ;                 do so even if has better odds when defending against it
 ;                 then when attacking it. Applies when the autoattack server
 ;                 setting is enabled.
+; "NeverProtects" = doesn't protect reachable units on its tile from enemy
+;                 attackers, even if the unreachableprotects server setting
+;                 is enabled and the unit class is unreachable
+; "RandomMovement" = Unit makes random movements in the beginning of the turn,
+;                 player has no control over its movement
 ;
 ; Following actions require extra fields:
 ;  "Attack" and "Suicide Attack"
@@ -305,10 +321,6 @@ flags         = ""
 ;  "Paradrop Unit"
 ;   paratroopers_range  = the maximal range the unit can be paradropped to.
 ;                         Max range is 65534.
-;   paratroopers_mr_req = the move rate which is required at least for
-;                         paradropping (whole movement points)
-;   paratroopers_mr_sub = the move rate which is subtracted after paradropping
-;                         (whole movement points)
 ;  "Upgrade Unit"
 ;   obsolete_by = the unit type upgraded to.
 ;  "Convert Unit"
@@ -329,6 +341,8 @@ flags         = ""
 ; "BarbarianTech"         = can be created as land barbarian, if someone has
 ;		            researched its tech requirements
 ; "BarbarianBoat"         = can be created as boat for sea barbarian
+; "BarbarianBoatTech"     = can be created as boat for sea barbarian, if someone has
+;                           researched its tech requirements
 ; "BarbarianBuild"        = can be built by barbarians
 ; "BarbarianBuildTech"    = can be built by barbarians if someone has
 ;		            researched its tech requirements
@@ -354,7 +368,7 @@ flags         = ""
 [unit_generic]
 name          = _("Generic")
 class         = "Generic"
-tech_req      = "None"
+;reqs
 obsolete_by   = "None"
 graphic       = "u.warriors"
 graphic_alt   = "-"
@@ -376,6 +390,7 @@ uk_happy      = 0
 uk_shield     = 0
 uk_food       = 0
 uk_gold       = 0
+tp_defense    = "Alight"
 flags         = "Settlers"
 roles         = "ExplorerStartUnit", "Firstbuild", "CitiesStartUnit"
 helptext      = _("\
@@ -385,7 +400,7 @@ helptext      = _("\
 [unit_ship]
 name          = _("Generic Ship")
 class         = "Generic Ship"
-tech_req      = "None"
+;reqs
 obsolete_by   = "None"
 graphic       = "u.warriors"
 graphic_alt   = "-"
@@ -407,6 +422,8 @@ uk_happy      = 0
 uk_shield     = 0
 uk_food       = 0
 uk_gold       = 0
+tp_defense    = "Alight"
+cargo         = "Generic"
 flags         = ""
 roles         = "Ferryboat", "BarbarianBoat"
 helptext      = _("\

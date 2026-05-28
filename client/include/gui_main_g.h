@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 #include "gui_proto_constructor.h"
 
 GUI_FUNC_PROTO(void, ui_init, void)
-GUI_FUNC_PROTO(void, ui_main, int argc, char *argv[])
+GUI_FUNC_PROTO(int, ui_main, int argc, char *argv[])
 GUI_FUNC_PROTO(void, ui_exit, void)
 GUI_FUNC_PROTO(void, options_extra_init, void)
 
@@ -42,7 +42,6 @@ GUI_FUNC_PROTO(void, insert_client_build_info, char *outbuf, size_t outlen)
 
 GUI_FUNC_PROTO(void, gui_update_font, const char *font_name,
                const char *font_value)
-GUI_FUNC_PROTO(void, adjust_default_options, void)
 
 extern const char *client_string;
 

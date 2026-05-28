@@ -39,6 +39,7 @@ class QPushButton;
 QString apply_tags(QString str, const struct text_tag_list *tags,
                    QColor bg_color);
 template<> std::set<chat_listener *> listener<chat_listener>::instances;
+
 /***************************************************************************
   Listener for chat. See listener<> for information about how to use it
 ***************************************************************************/
@@ -62,7 +63,7 @@ public:
 
   virtual void chat_message_received(const QString &,
                                      const struct text_tag_list *);
-  virtual void chat_word_list_changed(const QStringList &);
+  virtual void chat_word_list_changed(const QStringList &cmplt_word_list);
 
   void send_chat_message(const QString &message);
 
@@ -87,7 +88,7 @@ private slots:
 public:
   explicit chat_input(QWidget *parent = nullptr);
 
-  virtual void chat_word_list_changed(const QStringList &);
+  virtual void chat_word_list_changed(const QStringList &cmplt_word_list);
 
   bool event(QEvent *event);
 };
@@ -150,4 +151,4 @@ public:
   QString get_message() const { return message; }
 };
 
-#endif                        /* FC__CHATLINE_H */
+#endif // FC__CHATLINE_H

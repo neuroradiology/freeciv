@@ -19,6 +19,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* common */
+#include "diptreaty.h"
 #include "fc_types.h"
 #include "featured_text.h"
 #include "tile.h"
@@ -30,14 +31,15 @@ extern "C" {
 /* client */
 #include "tilespec.h"
 
+struct act_confirmation_data;
+
 struct gui_funcs {
   void (*ui_init)(void);
-  void (*ui_main)(int argc, char *argv[]);
+  int (*ui_main)(int argc, char *argv[]);
   void (*ui_exit)(void);
 
   enum gui_type (*get_gui_type)(void);
   void (*insert_client_build_info)(char *outbuf, size_t outlen);
-  void (*adjust_default_options)(void);
 
   void (*version_message)(const char *vertext);
   void (*real_output_window_append)(const char *astring,
@@ -46,8 +48,8 @@ struct gui_funcs {
 
   bool (*is_view_supported)(enum ts_type type);
   void (*tileset_type_set)(enum ts_type type);
-  void (*free_intro_radar_sprites)(void);
   struct sprite * (*load_gfxfile)(const char *filename);
+  struct sprite * (*load_gfxnumber)(int num);
   struct sprite * (*create_sprite)(int width, int height, struct color *pcolor);
   void (*get_sprite_dimensions)(struct sprite *sprite, int *width, int *height);
   struct sprite * (*crop_sprite)(struct sprite *source,
@@ -64,6 +66,7 @@ struct gui_funcs {
   void (*canvas_free)(struct canvas *store);
   void (*canvas_set_zoom)(struct canvas *store, float zoom);
   bool (*has_zoom_support)(void);
+  void (*canvas_mapview_init)(struct canvas *store);
   void (*canvas_copy)(struct canvas *dest, struct canvas *src,
                       int src_x, int src_y, int dest_x, int dest_y, int width,
                       int height);
@@ -74,6 +77,10 @@ struct gui_funcs {
   void (*canvas_put_sprite_full)(struct canvas *pcanvas,
                                  int canvas_x, int canvas_y,
                                  struct sprite *psprite);
+  void (*canvas_put_sprite_full_scaled)(struct canvas *pcanvas,
+                                        int canvas_x, int canvas_y,
+                                        int canvas_w, int canvas_h,
+                                        struct sprite *psprite);
   void (*canvas_put_sprite_fogged)(struct canvas *pcanvas,
                                    int canvas_x, int canvas_y,
                                    struct sprite *psprite,
@@ -126,6 +133,7 @@ struct gui_funcs {
                             int attacker_hp, int defender_hp,
                             bool make_att_veteran, bool make_def_veteran);
   void (*update_timeout_label)(void);
+  void (*start_turn)(void);
   void (*real_city_dialog_popup)(struct city *pcity);
   void (*real_city_dialog_refresh)(struct city *pcity);
   void (*popdown_city_dialog)(struct city *pcity);
@@ -136,10 +144,24 @@ struct gui_funcs {
 
   bool (*request_transport)(struct unit *pcargo, struct tile *ptile);
 
+  void (*update_infra_dialog)(void);
+
   void (*gui_load_theme)(const char *directory, const char *theme_name);
   void (*gui_clear_theme)(void);
   char **(*get_gui_specific_themes_directories)(int *count);
   char **(*get_useable_themes_in_directory)(const char *directory, int *count);
+
+  void (*gui_init_meeting)(struct Treaty *ptreaty, struct player *they,
+                           struct player *initiator);
+  void (*gui_recv_cancel_meeting)(struct Treaty *ptreaty, struct player *they,
+                                  struct player *initiator);
+  void (*gui_prepare_clause_updt)(struct Treaty *ptreaty, struct player *they);
+  void (*gui_recv_create_clause)(struct Treaty *ptreaty, struct player *they);
+  void (*gui_recv_remove_clause)(struct Treaty *ptreaty, struct player *they);
+  void (*gui_recv_accept_treaty)(struct Treaty *ptreaty, struct player *they);
+
+  void (*request_action_confirmation)(const char *expl,
+                                      struct act_confirmation_data *data);
 };
 
 struct gui_funcs *get_gui_funcs(void);

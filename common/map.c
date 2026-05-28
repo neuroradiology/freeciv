@@ -114,9 +114,10 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
       tile_remove_extra(missingset, pextra);
       extra_type_iterate(pdependant) {
         if (tile_has_extra(ptile, pdependant)) {
-          if (!are_reqs_active(NULL, NULL, NULL, NULL, missingset,
-                               NULL, NULL, NULL, NULL, NULL,
-                               &pdependant->reqs, RPT_POSSIBLE)) {
+          if (!are_reqs_active(&(const struct req_context) {
+                                 .tile = missingset,
+                               },
+                               NULL, &pdependant->reqs, RPT_POSSIBLE)) {
             dependency = TRUE;
             break;
           }
@@ -156,6 +157,7 @@ bool map_is_empty(void)
 void map_init(struct civ_map *imap, bool server_side)
 {
   imap->topology_id = MAP_DEFAULT_TOPO;
+  imap->wrap_id = MAP_DEFAULT_WRAP;
   imap->num_continents = 0;
   imap->num_oceans = 0;
   imap->tiles = NULL;
@@ -167,6 +169,9 @@ void map_init(struct civ_map *imap, bool server_side)
    * before they're initialized. */
   imap->xsize = MAP_DEFAULT_LINEAR_SIZE;
   imap->ysize = MAP_DEFAULT_LINEAR_SIZE;
+
+  imap->north_latitude = MAP_DEFAULT_NORTH_LATITUDE;
+  imap->south_latitude = MAP_DEFAULT_SOUTH_LATITUDE;
 
   if (server_side) {
     imap->server.mapsize = MAP_DEFAULT_MAPSIZE;
@@ -185,8 +190,6 @@ void map_init(struct civ_map *imap, bool server_side)
     imap->server.startpos = MAP_DEFAULT_STARTPOS;
     imap->server.tinyisles = MAP_DEFAULT_TINYISLES;
     imap->server.separatepoles = MAP_DEFAULT_SEPARATE_POLES;
-    imap->server.single_pole = MAP_DEFAULT_SINGLE_POLE;
-    imap->server.alltemperate = MAP_DEFAULT_ALLTEMPERATE;
     imap->server.temperature = MAP_DEFAULT_TEMPERATURE;
     imap->server.have_huts = FALSE;
     imap->server.have_resources = FALSE;
@@ -238,13 +241,13 @@ static void generate_map_indices(void)
    * case we're not concerned with going too far and wrapping around, so we
    * just have to make sure we go far enough if we're at one edge of the
    * map. */
-  nat_min_x = (current_topo_has_flag(TF_WRAPX) ? 0 : (nat_center_x - wld.map.xsize + 1));
-  nat_min_y = (current_topo_has_flag(TF_WRAPY) ? 0 : (nat_center_y - wld.map.ysize + 1));
+  nat_min_x = (current_wrap_has_flag(WRAP_X) ? 0 : (nat_center_x - wld.map.xsize + 1));
+  nat_min_y = (current_wrap_has_flag(WRAP_Y) ? 0 : (nat_center_y - wld.map.ysize + 1));
 
-  nat_max_x = (current_topo_has_flag(TF_WRAPX)
+  nat_max_x = (current_wrap_has_flag(WRAP_X)
 	       ? (wld.map.xsize - 1)
 	       : (nat_center_x + wld.map.xsize - 1));
-  nat_max_y = (current_topo_has_flag(TF_WRAPY)
+  nat_max_y = (current_wrap_has_flag(WRAP_Y)
 	       ? (wld.map.ysize - 1)
 	       : (nat_center_y + wld.map.ysize - 1));
   tiles = (nat_max_x - nat_min_x + 1) * (nat_max_y - nat_min_y + 1);
@@ -355,6 +358,7 @@ static void tile_init(struct tile *ptile)
   ptile->units    = unit_list_new();
   ptile->owner    = NULL; /* Not claimed by any player. */
   ptile->extras_owner = NULL;
+  ptile->placing  = NULL;
   ptile->claimer  = NULL;
   ptile->worked   = NULL; /* No city working here. */
   ptile->spec_sprite = NULL;
@@ -394,12 +398,12 @@ static inline struct tile *base_native_pos_to_tile(const struct civ_map *nmap,
   /* Wrap in X and Y directions, as needed. */
   /* If the position is out of range in a non-wrapping direction, it is
    * unreal. */
-  if (current_topo_has_flag(TF_WRAPX)) {
+  if (current_wrap_has_flag(WRAP_X)) {
     nat_x = FC_WRAP(nat_x, wld.map.xsize);
   } else if (nat_x < 0 || nat_x >= wld.map.xsize) {
     return NULL;
   }
-  if (current_topo_has_flag(TF_WRAPY)) {
+  if (current_wrap_has_flag(WRAP_Y)) {
     nat_y = FC_WRAP(nat_y, wld.map.ysize);
   } else if (nat_y < 0 || nat_y >= wld.map.ysize) {
     return NULL;
@@ -782,29 +786,31 @@ int tile_move_cost_ptrs(const struct civ_map *nmap,
     return SINGLE_MOVE;
 
   } else if (!is_native_tile_to_class(pclass, t2)) {
-    /* Loading to transport or entering port.
-     * UTYF_IGTER units get move benefit. */
-    return (utype_has_flag(punittype, UTYF_IGTER)
-            ? MOVE_COST_IGTER : SINGLE_MOVE);
+    if (tile_city(t2) == NULL) {
+      /* Loading to transport. */
+
+      /* UTYF_IGTER units get move benefit. */
+      return (utype_has_flag(punittype, UTYF_IGTER)
+              ? MOVE_COST_IGTER : SINGLE_MOVE);
+    } else {
+      /* Entering port. (Could be "Conquer City") */
+
+      /* UTYF_IGTER units get move benefit. */
+      return (utype_has_flag(punittype, UTYF_IGTER)
+              ? MOVE_COST_IGTER : SINGLE_MOVE);
+    }
 
   } else if (!is_native_tile_to_class(pclass, t1)) {
-    if (game.info.slow_invasions
-        && !(punit && unit_has_type_flag(punit, UTYF_BEACH_LANDER))
-        && tile_city(t1) == NULL) {
-      /* If "slowinvasions" option is turned on, units moving from
-       * non-native terrain (from transport) to native terrain lose all
-       * their movement unless they have the BeachLander unit type flag.
-       * e.g. ground units moving from sea to land */
-      if (punit != NULL) {
-        return punit->moves_left;
-      } else {
-        /* Needs to be bigger than SINGLE_MOVE * move_rate * MAX(1, fuel)
-         * for the most mobile unit possible. */
-        return FC_INFINITY;
-      }
+    if (tile_city(t1) == NULL) {
+      /* Disembarking from transport. */
+
+      /* UTYF_IGTER units get move benefit. */
+      return (utype_has_flag(punittype, UTYF_IGTER)
+              ? MOVE_COST_IGTER : SINGLE_MOVE);
     } else {
-      /* Disembarking from transport or leaving port.
-       * UTYF_IGTER units get move benefit. */
+      /* Leaving port. */
+
+      /* UTYF_IGTER units get move benefit. */
       return (utype_has_flag(punittype, UTYF_IGTER)
               ? MOVE_COST_IGTER : SINGLE_MOVE);
     }
@@ -882,7 +888,7 @@ int tile_move_cost_ptrs(const struct civ_map *nmap,
                        || is_move_cardinal(nmap, t1, t2));
     }
     if (!cardinal_move) {
-      return (int) (cost * 1.41421356f);
+      return cost * 181 >> 7; /* == (int) (cost * 1.41421356f) if cost < 99 */
     }
   }
 
@@ -984,10 +990,10 @@ struct tile *nearest_real_tile(const struct civ_map *nmap, int x, int y)
   int nat_x, nat_y;
 
   MAP_TO_NATIVE_POS(&nat_x, &nat_y, x, y);
-  if (!current_topo_has_flag(TF_WRAPX)) {
+  if (!current_wrap_has_flag(WRAP_X)) {
     nat_x = CLIP(0, nat_x, wld.map.xsize - 1);
   }
-  if (!current_topo_has_flag(TF_WRAPY)) {
+  if (!current_wrap_has_flag(WRAP_Y)) {
     nat_y = CLIP(0, nat_y, wld.map.ysize - 1);
   }
   NATIVE_TO_MAP_POS(&x, &y, nat_x, nat_y);
@@ -1009,9 +1015,9 @@ int map_num_tiles(void)
   instead.
 ***********************************************************************/
 void base_map_distance_vector(int *dx, int *dy,
-			      int x0dv, int y0dv, int x1dv, int y1dv)
+                              int x0dv, int y0dv, int x1dv, int y1dv)
 {
-  if (current_topo_has_flag(TF_WRAPX) || current_topo_has_flag(TF_WRAPY)) {
+  if (current_wrap_has_flag(WRAP_X) || current_wrap_has_flag(WRAP_Y)) {
     /* Wrapping is done in native coordinates. */
     MAP_TO_NATIVE_POS(&x0dv, &y0dv, x0dv, y0dv);
     MAP_TO_NATIVE_POS(&x1dv, &y1dv, x1dv, y1dv);
@@ -1020,11 +1026,11 @@ void base_map_distance_vector(int *dx, int *dy,
      * map distance vector but is easier to wrap. */
     *dx = x1dv - x0dv;
     *dy = y1dv - y0dv;
-    if (current_topo_has_flag(TF_WRAPX)) {
+    if (current_wrap_has_flag(WRAP_X)) {
       /* Wrap dx to be in [-map.xsize/2, map.xsize/2). */
       *dx = FC_WRAP(*dx + wld.map.xsize / 2, wld.map.xsize) - wld.map.xsize / 2;
     }
-    if (current_topo_has_flag(TF_WRAPY)) {
+    if (current_wrap_has_flag(WRAP_Y)) {
       /* Wrap dy to be in [-map.ysize/2, map.ysize/2). */
       *dy = FC_WRAP(*dy + wld.map.ysize / 2, wld.map.ysize) - wld.map.ysize / 2;
     }
@@ -1134,11 +1140,13 @@ struct tile *rand_map_pos_filtered(const struct civ_map *nmap, void *data,
    * tries could use some tweaking. */
   do {
     ptile = nmap->tiles + fc_rand(MAP_INDEX_SIZE);
-  } while (filter && !filter(ptile, data) && ++tries < max_tries);
+  } while (filter != NULL && !filter(ptile, data) && ++tries < max_tries);
 
   /* If that fails, count all available spots and pick one.
    * Slow but reliable. */
-  if (tries == max_tries) {
+  if (filter == NULL) {
+    ptile = NULL;
+  } else if (tries == max_tries) {
     int count = 0, *positions;
 
     positions = fc_calloc(MAP_INDEX_SIZE, sizeof(*positions));
@@ -1277,7 +1285,7 @@ static bool is_valid_dir_calculate(enum direction8 dir)
   Returns TRUE iff the given direction is a valid one.
 
   If the direction could be out of range you should use
-  map_untrusted_dir_is_valid() in stead.
+  map_untrusted_dir_is_valid() instead.
 ***********************************************************************/
 bool is_valid_dir(enum direction8 dir)
 {
@@ -1397,6 +1405,201 @@ bool is_move_cardinal(const struct civ_map *nmap,
   return FALSE;
 }
 
+/************************************************************************//**
+  Returns the relative southness of this map position.
+  This is a value in the range of [0.0, 1.0].
+  This function handles all topology-specific information so that all
+  other generator code can work in a topology-agnostic way.
+
+  relative southness is 0.0 at the northernmost point and 1.0 at the
+  southernmost point on the map. These may or may not be polar regions
+  (depending on various generator settings).
+  On a map representing only a northern hemisphere, southness directly
+  corresponds to colatitude, going from 0.0 at the pole to 1.0 at the
+  equator.
+  On a map representing only a southern hemisphere, it directly
+  corrsponds to (negative) latitude, going from 0.0 at the equator to
+  1.0 at the pole.
+
+  See also map_signed_latitude
+****************************************************************************/
+static double map_relative_southness(const struct tile *ptile)
+{
+  int tile_x, tile_y;
+  double x, y, toroid_rel_colatitude;
+  bool toroid_flipped;
+
+  /* TODO: What should the fallback value be?
+   * Since this is not public API, it shouldn't matter anyway. */
+  fc_assert_ret_val(ptile != NULL, 0.5);
+
+  index_to_map_pos(&tile_x, &tile_y, tile_index(ptile));
+  do_in_natural_pos(ntl_x, ntl_y, tile_x, tile_y) {
+    /* Compute natural coordinates relative to world size.
+     * x and y are in the range [0.0, 1.0] */
+    x = (double)ntl_x / (NATURAL_WIDTH - 1);
+    y = (double)ntl_y / (NATURAL_HEIGHT - 1);
+  } do_in_natural_pos_end;
+
+  if (!current_wrap_has_flag(WRAP_Y)) {
+    /* In an Earth-like topology, north and south are at the top and
+     * bottom of the map.
+     * This is equivalent to a Mercator projection. */
+    return y;
+  }
+
+  if (!current_wrap_has_flag(WRAP_X) && current_wrap_has_flag(WRAP_Y)) {
+    /* In a Uranus-like topology, north and south are at the left and
+     * right side of the map.
+     * This isn't really the way Uranus is; it's the way Earth would look
+     * if you tilted your head sideways.  It's still a Mercator
+     * projection. */
+    return x;
+  }
+
+  /* Otherwise we have a torus topology.  We set it up as an approximation
+   * of a sphere with two circular polar zones and a square equatorial
+   * zone.  In this case north and south are not constant directions on the
+   * map because we have to use a more complicated (custom) projection.
+   *
+   * Generators 2 and 5 work best if the center of the map is free.  So
+   * we want to set up the map with the poles (N,S) along the sides and the
+   * equator (/,\) in between.
+   *
+   * ........
+   * :\ NN /:
+   * : \  / :
+   * :S \/ S:
+   * :S /\ S:
+   * : /  \ :
+   * :/ NN \:
+   * ''''''''
+   */
+
+  /* First we will fold the map into fourths:
+   *
+   * ....
+   * :\ N
+   * : \
+   * :S \
+   *
+   * and renormalize x and y to go from 0.0 to 1.0 again.
+   */
+  x = 2.0 * (x > 0.5 ? 1.0 - x : x);
+  y = 2.0 * (y > 0.5 ? 1.0 - y : y);
+
+  /* Now flip it along the X direction to get this:
+   *
+   * ....
+   * :N /
+   * : /
+   * :/ S
+   */
+  x = 1.0 - x;
+
+  /* To simplify the following computation, we can fold along the
+   * diagonal.  This leaves us with 1/8 of the map
+   *
+   * .....
+   * :P /
+   * : /
+   * :/
+   *
+   * where P is the polar regions and / is the equator.
+   * We must remember which hemisphere we are on for later. */
+  if (x + y > 1.0) {
+    /* This actually reflects the bottom-right half about the center point,
+     * rather than about the diagonal, but that makes no difference. */
+    x = 1.0 - x;
+    y = 1.0 - y;
+    toroid_flipped = TRUE;
+  } else {
+    toroid_flipped = FALSE;
+  }
+
+  /* toroid_rel_colatitude is 0.0 at the poles and 1.0 at the equator.
+   * This projection makes poles with a shape of a quarter-circle along
+   * "P" and the equator as a straight line along "/".
+   *
+   * The formula is
+   *   lerp(1.5 (x^2 + y^2), (x+y)^2, x+y)
+   * where
+   *   lerp(a,b,t) = a * (1-t) + b * t
+   * is the linear interpolation between a and b, with
+   *   lerp(a,b,0) = a    and    lerp(a,b,1) = b
+   *
+   * I.e. the colatitude is computed as a linear interpolation between
+   * - a = 1.5 (x^2 + y^2), proportional to the squared pythagorean
+   *   distance from the pole, which gives circular lines of latitude; and
+   * - b = (x+y)^2, the squared manhattan distance from the pole, which
+   *   gives straight, diagonal lines of latitude parallel to the equator.
+   *
+   * These are interpolated with t = (x+y), the manhattan distance, which
+   * ranges from 0 at the pole to 1 at the equator. So near the pole, the
+   * (squared) pythagorean distance wins out, giving mostly circular lines,
+   * and near the equator, the (squared) manhattan distance wins out,
+   * giving mostly straight lines.
+   *
+   * Note that the colatitude growing with the square of the distance from
+   * the pole keeps areas relatively the same as on non-toroidal maps:
+   * On non-torus maps, the area closer to a pole than a given tile, and
+   * the colatitude at that tile, both grow linearly with distance from the
+   * pole. On torus maps, since the poles are singular points rather than
+   * entire map edges, the area closer to a pole than a given tile grows
+   * with the square of the distance to the pole - and so the colatitude
+   * at that tile must also grow with the square in order to keep the size
+   * of areas in a given range of colatitude relatively the same.
+   *
+   * See OSDN#43665, as well as the original discussion (via newsreader) at
+   * news://news.gmane.io/gmane.games.freeciv.devel/42648 */
+  toroid_rel_colatitude = (1.5 * (x * x * y + x * y * y)
+                           - 0.5 * (x * x * x + y * y * y)
+                           + 1.5 * (x * x + y * y));
+
+  /* Finally, convert from colatitude to latitude and add hemisphere
+   * information back in:
+   * - if we did not flip along the diagonal before, we are in the
+   *   northern hemisphere, with relative latitude in [0.0,0.5]
+   * - if we _did_ flip, we are in the southern hemisphere, with
+   *   relative latitude in [0.5,1.0]
+   */
+  return ((toroid_flipped
+           ? 2.0 - (toroid_rel_colatitude)
+           : (toroid_rel_colatitude))
+          / 2.0);
+}
+
+/************************************************************************//**
+  Returns the latitude of this map position. This is a value in the
+  range of -MAP_MAX_LATITUDE to MAP_MAX_LATITUDE (inclusive).
+
+  latitude reaches MAP_MAX_LATITUDE in the northern polar region,
+  reaches -MAP_MAX_LATITUDE in the southern polar region,
+  and is around 0 in the tropics.
+****************************************************************************/
+int map_signed_latitude(const struct tile *ptile)
+{
+  int north_latitude, south_latitude;
+  double southness;
+
+  north_latitude = MAP_NORTH_LATITUDE(wld.map);
+  south_latitude = MAP_SOUTH_LATITUDE(wld.map);
+
+  if (north_latitude == south_latitude) {
+    /* Single-latitude / all-temperate map; no need to examine tile. */
+    return south_latitude;
+  }
+
+  fc_assert_ret_val(ptile != NULL, (north_latitude + south_latitude) / 2);
+
+  southness = map_relative_southness(ptile);
+
+  /* Linear interpolation between northernmost and southernmost latitude.
+   * Truncate / round towards zero so northern and southern hemisphere
+   * are symmetrical when south_latitude = -north_latitude. */
+  return north_latitude * (1.0 - southness) + south_latitude * southness;
+}
+
 /*******************************************************************//**
   A "SINGULAR" position is any map position that has an abnormal number of
   tiles in the radius of dist.
@@ -1414,10 +1617,10 @@ bool is_singular_tile(const struct tile *ptile, int dist)
     /* Iso-natural coordinates are doubled in scale. */
     dist *= MAP_IS_ISOMETRIC ? 2 : 1;
 
-    return ((!current_topo_has_flag(TF_WRAPX) 
-	     && (ntl_x < dist || ntl_x >= NATURAL_WIDTH - dist))
-	    || (!current_topo_has_flag(TF_WRAPY)
-		&& (ntl_y < dist || ntl_y >= NATURAL_HEIGHT - dist)));
+    return ((!current_wrap_has_flag(WRAP_X)
+             && (ntl_x < dist || ntl_x >= NATURAL_WIDTH - dist))
+            || (!current_wrap_has_flag(WRAP_Y)
+                && (ntl_y < dist || ntl_y >= NATURAL_HEIGHT - dist)));
   } do_in_natural_pos_end;
 }
 

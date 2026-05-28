@@ -33,6 +33,7 @@ struct terrain *pick_terrain_by_flag(enum terrain_flag_id flag);
 struct terrain *pick_terrain(enum mapgen_terrain_property target,
                              enum mapgen_terrain_property prefer,
                              enum mapgen_terrain_property avoid);
+struct extra_type *pick_resource(const struct terrain *pterrain);
 
 /* Provide a block to convert from native to map coordinates.  For instance
  *   do_in_map_pos(mx, my, xn, yn) {
@@ -97,12 +98,14 @@ struct terrain *pick_terrain(enum mapgen_terrain_property target,
 bool is_normal_nat_pos(int x, int y);
 
 /* int maps tools */
-void adjust_int_map_filtered(int *int_map, int int_map_max, void *data,
-				   bool (*filter)(const struct tile *ptile,
-						  const void *data));
-#define adjust_int_map(int_map, int_map_max) \
-  adjust_int_map_filtered(int_map, int_map_max, (void *)NULL, \
-	     (bool (*)(const struct tile *ptile, const void *data) )NULL)
+void adjust_int_map_filtered(int *int_map, int int_map_min,
+                             int int_map_max, void *data,
+                             bool (*filter)(const struct tile *ptile,
+                                            const void *data));
+#define adjust_int_map(int_map, int_map_min, int_map_max)         \
+  adjust_int_map_filtered(int_map, int_map_min, int_map_max,      \
+      (void *)NULL,                                               \
+      (bool (*)(const struct tile *ptile, const void *data))NULL)
 void smooth_int_map(int *int_map, bool zeroes_at_edges);
 
 /* placed_map tool */

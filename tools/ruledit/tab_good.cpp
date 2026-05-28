@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -66,17 +66,17 @@ tab_good::tab_good(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
   good_layout->addWidget(label, 0, 0);
   good_layout->addWidget(rname, 0, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
   good_layout->addWidget(label, 1, 0);
   good_layout->addWidget(same_name, 1, 1);
@@ -101,6 +101,7 @@ tab_good::tab_good(ruledit_gui *ui_in) : QWidget()
   show_experimental(delete_button);
 
   refresh();
+  update_good_info(nullptr);
 
   main_layout->addLayout(good_layout);
 
@@ -145,8 +146,8 @@ void tab_good::update_good_info(struct goods_type *pgood)
       name->setEnabled(true);
     }
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
     same_name->setChecked(true);
     name->setEnabled(false);
   }
@@ -160,7 +161,10 @@ void tab_good::select_good()
   QList<QListWidgetItem *> select_list = good_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_good_info(goods_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray gn_bytes;
+
+    gn_bytes = select_list.at(0)->text().toUtf8();
+    update_good_info(goods_by_rule_name(gn_bytes.data()));
   }
 }
 
@@ -170,9 +174,13 @@ void tab_good::select_good()
 void tab_good::name_given()
 {
   if (selected != nullptr) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
     goods_type_iterate(pgood) {
       if (pgood != selected && !pgood->ruledit_disabled) {
-        if (!strcmp(goods_rule_name(pgood), rname->text().toUtf8().data())) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(goods_rule_name(pgood), rname_bytes.data())) {
           ui->display_msg(R__("A good with that rule name already exists!"));
           return;
         }
@@ -183,9 +191,11 @@ void tab_good::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }

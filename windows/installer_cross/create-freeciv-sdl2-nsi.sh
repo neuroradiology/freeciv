@@ -1,6 +1,11 @@
 #!/bin/sh
 
-# ./create-freeciv-sdl2-nsi.sh <Freeciv files directory> <version> <win32|win64|win>
+# ./create-freeciv-sdl2-nsi.sh <Freeciv files dir> <Output dir> <version> <win32|win64|win> [unistall setup script]
+
+if test "$5" != "" && ! test -x "$5" ; then
+  echo "$5 not an executable script" >&2
+  exit 1
+fi
 
 cat <<EOF
 ; Freeciv Windows installer script
@@ -10,10 +15,10 @@ Unicode true
 SetCompressor /SOLID lzma
 
 !define APPNAME "Freeciv"
-!define VERSION $2
+!define VERSION $3
 !define GUI_ID sdl2
 !define GUI_NAME SDL2
-!define WIN_ARCH $3
+!define WIN_ARCH $4
 !define APPID "\${APPNAME}-\${VERSION}-\${GUI_ID}"
 
 !define MULTIUSER_EXECUTIONLEVEL Highest
@@ -32,7 +37,7 @@ SetCompressor /SOLID lzma
 ;General
 
 Name "\${APPNAME} \${VERSION} (\${GUI_NAME} client)"
-OutFile "Output/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
+OutFile "$2/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-\${GUI_ID}-setup.exe"
 
 ;Variables
 
@@ -50,8 +55,8 @@ Page custom DefaultLanguage DefaultLanguageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 
 ;Start Menu Folder Page Configuration
-!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX" 
-!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}" 
+!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX"
+!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}"
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "\$(^Name)"
 
@@ -73,7 +78,7 @@ Page custom HelperScriptFunction
 
 EOF
 
-### required files ###
+### Required files ###
 
 cat <<EOF
 ; The stuff to install
@@ -84,14 +89,14 @@ Section "\${APPNAME} (required)"
   SetOutPath \$INSTDIR
 EOF
 
-  # find files and directories to exclude from default installation
+  # Find files and directories to exclude from default installation
 
   echo -n "  File /nonfatal /r "
 
-  # languages
+  # Languages
   echo -n "/x locale "
 
-  # soundsets
+  # Soundsets
   find $1/data -mindepth 1 -maxdepth 1 -name *.soundspec -printf %f\\n |
   sed 's|.soundspec||' |
   while read -r name
@@ -117,8 +122,9 @@ cat <<EOF
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
   CreateDirectory "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Server.lnk" "\$INSTDIR\freeciv-server.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-server.exe" 0 SW_SHOWMINIMIZED
-  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-gtk3.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-gtk3.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv Modpack Installer.lnk" "\$INSTDIR\freeciv-mp-gtk4.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-mp-gtk4.exe" 0 SW_SHOWMINIMIZED
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Freeciv.lnk" "\$INSTDIR\freeciv-sdl2.cmd" "\$DefaultLanguageCode" "\$INSTDIR\freeciv-sdl2.exe" 0 SW_SHOWMINIMIZED
+  CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Documentation.lnk" "\$INSTDIR\doc\freeciv"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Uninstall.lnk" "\$INSTDIR\uninstall.exe"
   CreateShortCut "\$SMPROGRAMS\\\$STARTMENU_FOLDER\Website.lnk" "\$INSTDIR\Freeciv.url"
   !insertmacro MUI_STARTMENU_WRITE_END
@@ -129,13 +135,13 @@ cat <<EOF
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoModify" 1
   WriteRegDWORD "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}" "NoRepair" 1
   WriteUninstaller "uninstall.exe"
-  
+
   SetOutPath \$INSTDIR
 SectionEnd
 
 EOF
 
-### soundsets ###
+### Soundsets ###
 
 cat <<EOF
 SectionGroup "Soundsets"
@@ -164,7 +170,7 @@ SectionGroupEnd
 
 EOF
 
-### additional languages ###
+### Additional languages ###
 
 cat <<EOF
 SectionGroup "Additional languages (translation %)"
@@ -294,18 +300,26 @@ FunctionEnd
 
 EOF
 
-### uninstall section ###
+### Uninstall section ###
 
 cat <<EOF
-; special uninstall section.
+; Special uninstall section.
 Section "Uninstall"
 
-  ; remove files
+  ; Remove files
 EOF
 
 find $1 -type f |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
+while read -r name
+do
+echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
+done
+
+find $1 -type l |
+grep -v '/$' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
@@ -313,26 +327,30 @@ done
 
 find $1 -depth -type d |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  RMDir \"\$INSTDIR$name\"" | sed 's,/,\\,g'
 done
+
+if test "$5" != "" ; then
+  $5
+fi
 
 cat <<EOF
 
   ; MUST REMOVE UNINSTALLER, too
   Delete "\$INSTDIR\uninstall.exe"
 
-  ; remove install directory, if empty
+  ; Remove install directory, if empty
   RMDir "\$INSTDIR"
 
-  ; remove shortcuts, if any.
+  ; Remove shortcuts, if any.
   !insertmacro MUI_STARTMENU_GETFOLDER "Application" \$STARTMENU_FOLDER
   Delete "\$SMPROGRAMS\\\$STARTMENU_FOLDER\*.*"
   RMDir "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
 
-  ; remove registry keys
+  ; Remove registry keys
   DeleteRegKey "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}"
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}\\\${GUI_ID}
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}

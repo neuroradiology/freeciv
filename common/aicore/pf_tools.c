@@ -31,6 +31,9 @@
 #include "unit.h"
 #include "unittype.h"
 
+/* aicore */
+#include "aiactions.h"
+
 #include "pf_tools.h"
 
 /* ===================== Capability Functions ======================== */
@@ -43,6 +46,7 @@ static inline bool pf_attack_possible(const struct tile *ptile,
                                       enum known_type known,
                                       const struct pf_parameter *param)
 {
+  bool non_allied_city;
   bool attack_any;
 
   if (!can_attack_non_native(param->utype)
@@ -55,19 +59,28 @@ static inline bool pf_attack_possible(const struct tile *ptile,
     return TRUE;
   }
 
+  non_allied_city = is_non_allied_city_tile(ptile, param->owner);
   attack_any = FALSE;
+
   unit_list_iterate(ptile->units, punit) {
+    /* Any non-hostile unit will fail the whole stack*/
     if (!pplayers_at_war(unit_owner(punit), param->owner)) {
       return FALSE;
     }
 
-    /* Unit reachability test. */
+    /* Hostile unit reachability test. */
     if (BV_ISSET(param->utype->targets, uclass_index(unit_class_get(punit)))
-        || tile_has_native_base(ptile, unit_type_get(punit))) {
+        || tile_has_native_base(ptile, unit_type_get(punit))
+        || non_allied_city) {
       attack_any = TRUE;
     } else if (game.info.unreachable_protects) {
-      /* We would need to be able to attack all, this is not the case. */
-      return FALSE;
+      /* We get here if punit is unreachable to utype */
+      if (!utype_has_flag(unit_type_get(punit), UTYF_NEVER_PROTECTS)) {
+        return FALSE;
+      }
+      /* NB: if there are UTYF_NEVER_PROTECTS units on the tile, 'attack_any'
+         has to get set TRUE at least once to enable an attack to the tile,
+         which is exactly correct behaviour. */
     }
   } unit_list_iterate_end;
 
@@ -84,8 +97,7 @@ static enum pf_action pf_get_action(const struct tile *ptile,
                                     enum known_type known,
                                     const struct pf_parameter *param)
 {
-  bool non_allied_city = (NULL != is_non_allied_city_tile(ptile,
-                                                          param->owner));
+  bool non_allied_city = is_non_allied_city_tile(ptile, param->owner);
 
   if (non_allied_city) {
     if (PF_AA_TRADE_ROUTE & param->actions) {
@@ -167,7 +179,6 @@ static inline bool pf_transport_check(const struct pf_parameter *param,
                                       const struct unit_type *trans_utype)
 {
   if (!pplayers_allied(unit_owner(ptrans), param->owner)
-      || unit_has_orders(ptrans)
       || param->utype == trans_utype
       || !can_unit_type_transport(trans_utype, utype_class(param->utype))
       || can_unit_type_transport(param->utype, utype_class(trans_utype))
@@ -236,7 +247,7 @@ pf_get_move_scope(const struct tile *ptile,
           || uclass_has_flag(uclass, UCF_BUILD_ANYWHERE)
           || is_native_near_tile(param->map, uclass, ptile)
           || (1 == game.info.citymindist
-              && is_city_channel_tile(uclass, ptile, NULL)))) {
+              && is_city_channel_tile(param->map, uclass, ptile, NULL)))) {
     scope |= PF_MS_CITY;
   }
 
@@ -260,7 +271,10 @@ pf_get_move_scope(const struct tile *ptile,
       if (allied_city_tile
           || tile_has_native_base(ptile, utype)) {
         scope |= PF_MS_TRANSPORT;
-        *can_disembark = TRUE;
+
+        /* If transport is moving, we are not going to continue where we expected
+         * through it. */
+        *can_disembark = !unit_has_orders(punit);
         break;
       }
 
@@ -271,7 +285,10 @@ pf_get_move_scope(const struct tile *ptile,
       scope |= PF_MS_TRANSPORT;
 
       if (utype_can_freely_unload(param->utype, utype)) {
-        *can_disembark = TRUE;
+
+        /* If transport is moving, we are not going to continue where we expected
+         * through it. */
+        *can_disembark = !unit_has_orders(punit);
         break;
       }
     } unit_list_iterate_end;
@@ -329,7 +346,7 @@ static inline bool pf_move_possible(const struct tile *src,
 
   if (PF_MS_NATIVE == dst_scope
       && (PF_MS_NATIVE & src_scope)
-      && !is_native_move(utype_class(param->utype), src, dst)) {
+      && !is_native_move(param->map, utype_class(param->utype), src, dst)) {
     return FALSE;
   }
 
@@ -550,7 +567,7 @@ static bool is_possible_base_fuel(const struct tile *ptile,
   }
 
   uclass = utype_class(param->utype);
-  extra_type_list_iterate(uclass->cache.refuel_bases, pextra) {
+  extra_type_list_iterate(uclass->cache.refuel_extras, pextra) {
     /* All airbases are considered possible, simply attack enemies. */
     if (tile_has_extra(ptile, pextra)) {
       return TRUE;
@@ -571,6 +588,7 @@ static bool is_possible_base_fuel(const struct tile *ptile,
     const struct unit_type *trans_utype = unit_type_get(ptrans);
 
     if (pf_transport_check(param, ptrans, trans_utype)
+        && !unit_has_orders(ptrans) /* Don't load to moving carrier */
         && (utype_can_freely_load(param->utype, trans_utype)
             || tile_has_native_base(ptile, trans_utype))) {
       return TRUE;
@@ -689,44 +707,10 @@ pft_enable_default_actions(struct pf_parameter *parameter)
   }
   if (utype_may_act_at_all(parameter->utype)) {
     /* FIXME: it should consider action enablers. */
-    if (utype_can_do_action(parameter->utype, ACTION_TRADE_ROUTE)
-        || utype_can_do_action(parameter->utype, ACTION_MARKETPLACE)) {
+    if (aia_utype_is_considered_caravan_trade(parameter->utype)) {
       parameter->actions |= PF_AA_TRADE_ROUTE;
     }
-    if (utype_can_do_action(parameter->utype, ACTION_SPY_POISON)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_POISON_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_SABOTAGE_UNIT)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_SABOTAGE_UNIT_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_BRIBE_UNIT)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_SABOTAGE_CITY)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_SABOTAGE_CITY_ESC)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_TARGETED_SABOTAGE_CITY)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_TARGETED_SABOTAGE_CITY_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_INCITE_CITY)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_INCITE_CITY_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_STEAL_TECH)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_STEAL_TECH_ESC)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_TARGETED_STEAL_TECH)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_TARGETED_STEAL_TECH_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_STEAL_GOLD)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_STEAL_GOLD_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_STEAL_MAPS)
-        || utype_can_do_action(parameter->utype, ACTION_STEAL_MAPS_ESC)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_NUKE)
-        || utype_can_do_action(parameter->utype, ACTION_SPY_NUKE_ESC)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_SPY_INVESTIGATE_CITY)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_INV_CITY_SPEND)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_ESTABLISH_EMBASSY_STAY)
-        || utype_can_do_action(parameter->utype,
-                               ACTION_ESTABLISH_EMBASSY)) {
+    if (aia_utype_is_considered_spy(parameter->utype)) {
       parameter->actions |= PF_AA_DIPLOMAT;
     }
     parameter->get_action = pf_get_action;
@@ -744,7 +728,7 @@ pft_fill_utype_default_parameter(struct pf_parameter *parameter,
                                  struct player *powner)
 {
   int veteran_level = get_unittype_bonus(powner, pstart_tile, punittype,
-                                         EFT_VETERAN_BUILD);
+                                         NULL, EFT_VETERAN_BUILD);
 
   if (veteran_level >= utype_veteran_levels(punittype)) {
     veteran_level = utype_veteran_levels(punittype) - 1;
@@ -779,7 +763,7 @@ pft_fill_unit_default_parameter(struct pf_parameter *parameter,
                                 const struct unit *punit)
 {
   const struct unit *ptrans = unit_transport_get(punit);
-  struct unit_type *ptype = unit_type_get(punit);
+  const struct unit_type *ptype = unit_type_get(punit);
 
   pft_fill_default_parameter(parameter, ptype);
 
@@ -844,7 +828,7 @@ void pft_fill_utype_parameter(struct pf_parameter *parameter,
   Fill classic parameters for an unit.
 ****************************************************************************/
 void pft_fill_unit_parameter(struct pf_parameter *parameter,
-			     const struct unit *punit)
+                             const struct unit *punit)
 {
   pft_fill_unit_default_parameter(parameter, punit);
   pft_fill_parameter(parameter, unit_type_get(punit));
@@ -893,7 +877,7 @@ void pft_fill_utype_overlap_param(struct pf_parameter *parameter,
   For sea/land bombardment and for ferries.
 ****************************************************************************/
 void pft_fill_unit_overlap_param(struct pf_parameter *parameter,
-				 const struct unit *punit)
+                                 const struct unit *punit)
 {
   pft_fill_unit_default_parameter(parameter, punit);
   pft_fill_overlap_param(parameter, unit_type_get(punit));

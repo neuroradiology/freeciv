@@ -8,18 +8,21 @@ endif
 
 include $(top_srcdir)/bootstrap/Makerules.mk
 
-bin_PROGRAMS = freeciv-ruleup
+bin_PROGRAMS =
 
-if SERVER
+if FCRULEUP
+bin_PROGRAMS += freeciv-ruleup
+endif
+
 if FCMANUAL
 bin_PROGRAMS += freeciv-manual
-endif
 endif
 
 common_cppflags = \
 	-I$(top_srcdir)/dependencies/cvercmp \
 	-I$(top_srcdir)/utility \
 	-I$(top_srcdir)/common \
+	-I$(top_srcdir)/common/aicore \
 	-I$(top_srcdir)/common/networking \
 	-I$(top_srcdir)/server \
 	-I$(top_srcdir)/client \
@@ -48,7 +51,7 @@ freeciv_manual_SOURCES =                                                   \
 # but also uses some files from the client.
 freeciv_manual_LDADD = \
  $(top_builddir)/server/libfreeciv-srv.la \
- ../client/helpdata.lo \
+ $(top_builddir)/client/libfc_helpdata.la \
  $(top_builddir)/common/libfreeciv.la \
  $(top_builddir)/tools/shared/libtoolsshared.la \
  $(INTLLIBS) $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \

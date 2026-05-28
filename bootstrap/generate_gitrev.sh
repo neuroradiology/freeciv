@@ -6,13 +6,13 @@
 # See fc_gitrev_gen.h.tmpl for details.
 
 # Parameters - $1 - top srcdir
-#              $2 - top builddir
+#              $2 - output file
 #
 
 # Absolete paths
 SRCROOT="$(cd "$1" ; pwd)"
 INPUTDIR="$(cd "$1/bootstrap" ; pwd)"
-OUTPUTDIR="$(cd "$2/common" ; pwd)"
+OUTPUTFILE="$2"
 
 REVSTATE="OFF"
 REV1=""
@@ -22,7 +22,9 @@ REV2="dist"
  # Check that all commands required by this script are available
  # If not, we will not claim to know which git revision this is
  # (REVSTATE will be OFF)
- if which git && which tail && which wc ; then
+ if command -v git >/dev/null &&
+    command -v tail >/dev/null &&
+    command -v wc >/dev/null ; then
    REVTMP="$(git rev-parse --short HEAD 2>/dev/null)"
    if test "x$REVTMP" != "x" ; then
      # This is git repository. Check for local modifications
@@ -37,11 +39,11 @@ REV2="dist"
    fi
  fi
 
- sed -e "s,<GITREV1>,$REV1," -e "s,<GITREV2>,$REV2," -e "s,<GITREVSTATE>,$REVSTATE," fc_gitrev_gen.h.tmpl > "$OUTPUTDIR/fc_gitrev_gen.h.tmp"
- if ! test -f "$OUTPUTDIR/fc_gitrev_gen.h" ||
-    ! cmp "$OUTPUTDIR/fc_gitrev_gen.h" "$OUTPUTDIR/fc_gitrev_gen.h.tmp"
- then
-   mv "$OUTPUTDIR/fc_gitrev_gen.h.tmp" "$OUTPUTDIR/fc_gitrev_gen.h"
- fi
- rm -f "$OUTPUTDIR/fc_gitrev_gen.h.tmp"
-) > /dev/null
+ sed -e "s,<GITREV1>,$REV1," -e "s,<GITREV2>,$REV2," -e "s,<GITREVSTATE>,$REVSTATE," fc_gitrev_gen.h.tmpl) > "${OUTPUTFILE}.tmp"
+
+if ! test -f "${OUTPUTFILE}" ||
+   ! cmp "${OUTPUTFILE}" "${OUTPUTFILE}.tmp" >/dev/null
+then
+  mv "${OUTPUTFILE}.tmp" "${OUTPUTFILE}"
+fi
+rm -f "${OUTPUTFILE}.tmp"

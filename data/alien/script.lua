@@ -41,8 +41,8 @@ function alien_hut_get_tech(unit)
                  owner.nation:plural_translation(),
                  tech:name_translation())
     notify.research_embassies(owner, E.HUT_TECH,
-                 -- /* TRANS: first %s is leader or team name */
-                 _("%s has acquired %s from Space Capsule they found."),
+                 -- /* TRANS: first %s is nation plural or team name */
+                 _("The %s have acquired %s from Space Capsule they found."),
                  owner:research_name_translation(),
                  tech:name_translation())
     return true
@@ -80,7 +80,7 @@ function alien_hut_get_barbarians(unit)
                    _("The Space Capsule was already scavenged by someone."))
     return true
   end
-  
+
   local alive = tile:unleash_barbarians()
   if alive then
     notify.event(owner, tile, E.HUT_BARB,

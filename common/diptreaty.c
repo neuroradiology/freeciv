@@ -21,14 +21,17 @@
 
 /* common */
 #include "game.h"
+#include "nation.h"
 #include "player.h"
 
 #include "diptreaty.h"
 
 static struct clause_info clause_infos[CLAUSE_COUNT];
 
+static struct treaty_list *treaties = NULL;
+
 /**********************************************************************//**
-  Returns TRUE iff pplayer could do diplomancy in the game at all.
+  Returns TRUE iff pplayer could do diplomacy in the game at all.
 **************************************************************************/
 bool diplomacy_possible(const struct player *pplayer1,
                         const struct player *pplayer2)
@@ -87,7 +90,7 @@ bool could_intel_with_player(const struct player *pplayer,
           && (player_diplstate_get(pplayer, aplayer)->contact_turns_left > 0
               || player_diplstate_get(aplayer, pplayer)->contact_turns_left
                  > 0
-              || player_has_embassy(pplayer, aplayer)));
+              || team_has_embassy(pplayer->team, aplayer)));
 }
 
 /**********************************************************************//**
@@ -179,17 +182,15 @@ bool add_clause(struct Treaty *ptreaty, struct player *pfrom,
     return FALSE;
   }
 
-  if (!clause_infos[type].enabled) {
+  if (!clause_enabled(type)) {
     return FALSE;
   }
 
-  if (!game.info.trading_gold && type == CLAUSE_GOLD) {
-    return FALSE;
-  }
-  if (!game.info.trading_tech && type == CLAUSE_ADVANCE) {
-    return FALSE;
-  }
-  if (!game.info.trading_city && type == CLAUSE_CITY) {
+  if (!are_reqs_active(&(const struct req_context) { .player = pfrom },
+                       pto, &clause_infos[type].giver_reqs, RPT_POSSIBLE)
+      || !are_reqs_active(&(const struct req_context) { .player = pto },
+                          pfrom, &clause_infos[type].receiver_reqs,
+                          RPT_POSSIBLE)) {
     return FALSE;
   }
 
@@ -200,8 +201,8 @@ bool add_clause(struct Treaty *ptreaty, struct player *pfrom,
       /* same clause already there */
       return FALSE;
     }
-    if (is_pact_clause(type) &&
-        is_pact_clause(old_clause->type)) {
+    if (is_pact_clause(type)
+        && is_pact_clause(old_clause->type)) {
       /* pact clause already there */
       ptreaty->accept0 = FALSE;
       ptreaty->accept1 = FALSE;
@@ -242,6 +243,8 @@ void clause_infos_init(void)
   for (i = 0; i < CLAUSE_COUNT; i++) {
     clause_infos[i].type = i;
     clause_infos[i].enabled = FALSE;
+    requirement_vector_init(&(clause_infos[i].giver_reqs));
+    requirement_vector_init(&(clause_infos[i].receiver_reqs));
   }
 }
 
@@ -250,6 +253,12 @@ void clause_infos_init(void)
 **************************************************************************/
 void clause_infos_free(void)
 {
+  int i;
+
+  for (i = 0; i < CLAUSE_COUNT; i++) {
+    requirement_vector_free(&(clause_infos[i].giver_reqs));
+    requirement_vector_free(&(clause_infos[i].receiver_reqs));
+  }
 }
 
 /**********************************************************************//**
@@ -262,3 +271,106 @@ struct clause_info *clause_info_get(enum clause_type type)
   return &clause_infos[type];
 }
 
+/**********************************************************************//**
+  Is clause enabled in this game?
+  This does not consider clause requirements that may change
+  during the game, but returned value is constant for the given clause type
+  thought the game.
+**************************************************************************/
+bool clause_enabled(enum clause_type type)
+{
+  struct clause_info *info = &clause_infos[type];
+
+  if (!info->enabled) {
+    return FALSE;
+  }
+
+  if (!game.info.trading_gold && type == CLAUSE_GOLD) {
+    return FALSE;
+  }
+  if (!game.info.trading_tech && type == CLAUSE_ADVANCE) {
+    return FALSE;
+  }
+  if (!game.info.trading_city && type == CLAUSE_CITY) {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Initialize treaties module
+**************************************************************************/
+void treaties_init(void)
+{
+  treaties = treaty_list_new();
+}
+
+/**********************************************************************//**
+  Free all the resources allocated by treaties.
+**************************************************************************/
+void treaties_free(void)
+{
+  free_treaties();
+
+  treaty_list_destroy(treaties);
+  treaties = NULL;
+}
+
+/**********************************************************************//**
+  Free all the treaties currently in treaty list.
+**************************************************************************/
+void free_treaties(void)
+{
+  /* Free memory allocated for treaties */
+  treaty_list_iterate(treaties, pt) {
+    clear_treaty(pt);
+    free(pt);
+  } treaty_list_iterate_end;
+
+  treaty_list_clear(treaties);
+}
+
+/**********************************************************************//**
+  Find currently active treaty between two players.
+**************************************************************************/
+struct Treaty *find_treaty(struct player *plr0, struct player *plr1)
+{
+  treaty_list_iterate(treaties, ptreaty) {
+    if ((ptreaty->plr0 == plr0 && ptreaty->plr1 == plr1)
+        || (ptreaty->plr0 == plr1 && ptreaty->plr1 == plr0)) {
+      return ptreaty;
+    }
+  } treaty_list_iterate_end;
+
+  return NULL;
+}
+
+/**********************************************************************//**
+  Add treaty to the global list.
+**************************************************************************/
+void treaty_add(struct Treaty *ptreaty)
+{
+  treaty_list_prepend(treaties, ptreaty);
+}
+
+/**********************************************************************//**
+  Remove treaty from the global list.
+**************************************************************************/
+void treaty_remove(struct Treaty *ptreaty)
+{
+  treaty_list_remove(treaties, ptreaty);
+
+  clear_treaty(ptreaty);
+  free(ptreaty);
+}
+
+/**********************************************************************//**
+  Call callback for each treaty
+**************************************************************************/
+void treaties_iterate(treaty_cb cb, void *data)
+{
+  treaty_list_iterate(treaties, ptr) {
+    cb(ptr, data);
+  } treaty_list_iterate_end;
+}

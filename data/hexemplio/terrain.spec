@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.2-Devel-2023.Jan.01"
 
 [info]
 
@@ -11,13 +11,14 @@ artists = "
     Andreas Røsdal <andrearo@pvv.ntnu.no> (hex mode)
     Daniel Speyer <dspeyer@users.sf.net> [DS]
     Architetto Francesco [http://www.public-domain-photos.com/] [AF]
-	Peter Arbor <peter.arbor@gmail.com> [PA]
-	GriffonSpade [GS]
-	Unknown Battle For Wesnoth artists [BFW]
-	Unknown Compass Artist [CA]
-	Unknown Opengameart.org Artist(s)
-	Unknown FreeCol Artist(s)
-	Vegard Stolpnessaeter [VS]
+    Peter Arbor <peter.arbor@gmail.com> [PA]
+    GriffonSpade [GS]
+    Unknown Battle For Wesnoth artists [BFW]
+    Unknown Compass Artist [CA]
+    Unknown Opengameart.org Artist(s)
+    Unknown FreeCol Artist(s)
+    Vegard Stolpnessaeter [VS]
+    Canik
 "
 
 [file]
@@ -107,7 +108,7 @@ tiles = { "row", "column","tag"
 
 ;misc
  5, 5, "mask.tile"
- 5, 1, "t.dither_tile"										
+ 5, 1, "t.dither_tile"
  5, 1, "tx.darkness"										;[DS][?][GS]
  0, 0, "t.coast_color"										;[?]
 ; 0, 0, "t.floor_color"										;[?]
@@ -118,10 +119,11 @@ tiles = { "row", "column","tag"
  5, 0, "t.blend.floor"
  5, 0, "t.blend.lake"
  0, 4, "t.blend.arctic"										;[?]
- 5, 3, "user.attention"										;[GS]
+ 5, 3, "user.attention"                                                                         ;[GS]
  5, 4, "tx.fog"
 ; 5, 6, "t.l0.charcoal1"									;[?]
 ; 5, 7, "t.l0.compass1"										;[CA][PA]
+ 5, 8, "user.infratile"
 
 ;goto path
  6, 0, "path.step"            ; turn boundary within path
@@ -129,7 +131,7 @@ tiles = { "row", "column","tag"
  6, 2, "path.normal"          ; tip of path with MP remaining
  6, 3, "path.waypoint"
 
-; Irrigation (as special type), and whether north, south, east, west 
+; Irrigation (as special type), and whether north, south, east, west
 
  4,  3, "tx.irrigation_s_n0e0se0s0w0nw0"
  4,  3, "tx.irrigation_s_n1e0se0s0w0nw0"
@@ -196,7 +198,7 @@ tiles = { "row", "column","tag"
  4,  3, "tx.irrigation_s_n0e1se1s1w1nw1"
  4,  3, "tx.irrigation_s_n1e1se1s1w1nw1"
 
-; Farmland (as special type), and whether north, south, east, west 
+; Farmland (as special type), and whether north, south, east, west
 
  4,  4, "tx.farmland_s_n0e0se0s0w0nw0"
  4,  4, "tx.farmland_s_n1e0se0s0w0nw0"

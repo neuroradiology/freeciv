@@ -27,7 +27,7 @@
 /* utility */
 #include "fcintl.h"
 #include "log.h"
-#include "shared.h"		/* TRUE, FALSE */
+#include "shared.h"             /* TRUE, FALSE */
 
 #include "mem.h"
 
@@ -38,28 +38,28 @@
 static void handle_alloc_failure(size_t size, const char *called_as,
                                  int line, const char *file)
 {
-  log_fatal("Out of memory trying to %s %lu bytes at line %d of %s.",
-            called_as, (unsigned long) size, line, file);
+  log_fatal("Out of memory trying to %s " SIZE_T_PRINTF " bytes at line %d of %s.",
+            called_as, size, line, file);
+
   exit(EXIT_FAILURE);
 }
 
 #ifdef FREECIV_DEBUG
 /******************************************************************//**
-  Check the size for sanity.  The program will exit rather than allocate a
-  dangerously large amount of memory.
+  Check the size for sanity.
 **********************************************************************/
 static void sanity_check_size(size_t size, const char *called_as,
                               int line, const char *file)
 {
   /* There used to be a sanity check here that would abort if more than
-   * 30 megabytes were allocated.  Unfortunately this didn't work because
+   * 30 megabytes were allocated. Unfortunately this didn't work because
    * savegame loading can potentially use a huge amount of memory for large
-   * games.  Another problem is it doesn't help much because there's nothing
+   * games. Another problem is it doesn't help much because there's nothing
    * preventing a large number of smaller allocations. */
 
   if (size == 0) {
-    log_verbose("Warning: %s with size %lu at line %d of %s",
-                called_as, (unsigned long) size, line, file);
+    log_verbose("Warning: %s with size " SIZE_T_PRINTF " at line %d of %s",
+                called_as, size, line, file);
   }
 }
 #endif /* FREECIV_DEBUG */
@@ -102,7 +102,7 @@ void *fc_real_realloc(void *ptr, size_t size,
                       const char *called_as, int line, const char *file)
 {
   void *new_ptr;
-  
+
   if (!ptr) {
     return fc_real_malloc(size, called_as, line, file);
   }
@@ -115,6 +115,7 @@ void *fc_real_realloc(void *ptr, size_t size,
   if (!new_ptr) {
     handle_alloc_failure(size, called_as, line, file);
   }
+
   return new_ptr;
 }
 
@@ -123,7 +124,7 @@ void *fc_real_realloc(void *ptr, size_t size,
   No need to check return value.
 
   I'm pretty sure only the product of nelem and elsize can ever
-  matter here, and not their individual values.  (As a matter of C.)
+  matter here, and not their individual values. (As a matter of C.)
   Except this function doesn't support calloc-ing more memory than
   can be expressing using a single size_t, but that's not likely
   to be a problem.
@@ -131,11 +132,12 @@ void *fc_real_realloc(void *ptr, size_t size,
 void *fc_real_calloc(size_t nelem, size_t elsize,
                      const char *called_as, int line, const char *file)
 {
-  size_t size = nelem*elsize;	/* potential overflow */
+  size_t size = nelem * elsize; /* Potential overflow */
   void *ptr;
-    
+
   ptr = fc_real_malloc(size, called_as, line, file);
   memset(ptr, 0, size);
+
   return ptr;
 }
 
@@ -146,9 +148,10 @@ void *fc_real_calloc(size_t nelem, size_t elsize,
 char *real_fc_strdup(const char *str,
                      const char *called_as, int line, const char *file)
 {
-  char *dest = fc_real_malloc(strlen(str)+1, called_as, line, file);
+  char *dest = fc_real_malloc(strlen(str) + 1, called_as, line, file);
 
-  /* no need to check whether dest is non-NULL! */
+  /* No need to check whether dest is non-NULL! */
   strcpy(dest, str);
+
   return dest;
 }

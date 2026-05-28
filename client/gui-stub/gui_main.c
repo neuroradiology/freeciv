@@ -52,7 +52,7 @@ void gui_ui_init(void)
 int main(int argc, char **argv)
 {
   setup_gui_funcs();
-  return client_main(argc, argv);
+  return client_main(argc, argv, FALSE);
 }
 
 /**********************************************************************//**
@@ -71,7 +71,7 @@ static void print_usage(const char *argv0)
 }
 
 /**********************************************************************//**
-  Parse and enact any client-specific options.
+  Parse and enact any gui-specific command-line options.
 **************************************************************************/
 static void parse_options(int argc, char **argv)
 {
@@ -94,7 +94,7 @@ static void parse_options(int argc, char **argv)
   The main loop for the UI.  This is called from main(), and when it
   exits the client will exit.
 **************************************************************************/
-void gui_ui_main(int argc, char *argv[])
+int gui_ui_main(int argc, char *argv[])
 {
   parse_options(argc, argv);
 
@@ -104,6 +104,8 @@ void gui_ui_main(int argc, char *argv[])
   /* Main loop here */
 
   start_quitting();
+
+  return EXIT_SUCCESS;
 }
 
 /**********************************************************************//**
@@ -117,7 +119,7 @@ void gui_options_extra_init(void)
 /**********************************************************************//**
   Do any necessary UI-specific cleanup
 **************************************************************************/
-void gui_ui_exit()
+void gui_ui_exit(void)
 {
   /* PORTME */
 }
@@ -272,12 +274,4 @@ void gui_gui_update_font(const char *font_name, const char *font_value)
 void gui_insert_client_build_info(char *outbuf, size_t outlen)
 {
   /* PORTME */
-}
-
-/**********************************************************************//**
-  Make dynamic adjustments to first-launch default options.
-**************************************************************************/
-void gui_adjust_default_options(void)
-{
-  /* Nothing in case of this gui */
 }

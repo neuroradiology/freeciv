@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,17 +22,18 @@
 #ifndef FC__OPTIONDLG_H
 #define FC__OPTIONDLG_H
 
+/* client */
 #include "optiondlg_g.h"
-
-struct widget *pOptions_Button;
 
 void popup_optiondlg(void);
 void popdown_optiondlg(bool leave_game);
+
+void option_dialog_popup(const char *name, const struct option_set *poptset);
 
 void init_options_button(void);
 void enable_options_button(void);
 void disable_options_button(void);
 
-int optiondlg_callback(struct widget *pButton);
+int optiondlg_callback(struct widget *button);
 
 #endif /* FC__OPTIONDLG_H */

@@ -1,6 +1,7 @@
 # Check for mysql
 #
 # http://ac-archive.sourceforge.net/ac-archive/ax_lib_mysql.html
+# Modified for freeciv use.
 #
 # FC_CHECK_MYSQL([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND[, VERSION]]])
 
@@ -19,7 +20,8 @@ AC_DEFUN([FC_CHECK_MYSQL],
   dnl
 
   if test -z "$MYSQL_CONFIG" -o test; then
-    AC_PATH_PROG([MYSQL_CONFIG], [mysql_config], [no])
+    AC_PATH_PROGS([MYSQL_CONFIG],
+      [mysql_config mariadb-config mariadb_config], [no])
   fi
 
   if test "$MYSQL_CONFIG" != "no"; then
@@ -46,7 +48,7 @@ AC_DEFUN([FC_CHECK_MYSQL],
 
   if test "$found_mysql" = "yes" -a -n "$mysql_version_req"; then
 
-    AC_MSG_CHECKING([if MySQL version is &gt;= $mysql_version_req])
+    AC_MSG_CHECKING([if MySQL version is >= $mysql_version_req])
 
     dnl Decompose required version string of MySQL
     dnl and calculate its number representation
@@ -74,7 +76,7 @@ AC_DEFUN([FC_CHECK_MYSQL],
                           \+ $mysql_version_minor \* 1000 \
                           \+ $mysql_version_micro`
 
-    mysql_version_check=`expr $mysql_version_number \&gt;\= $mysql_version_req_number`
+    mysql_version_check=`expr $mysql_version_number \>\= $mysql_version_req_number`
     if test "$mysql_version_check" = "1"; then
       AC_MSG_RESULT([yes])
     else

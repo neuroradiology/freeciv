@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# ./create-freeciv-ruledit.sh <Freeciv files directory> <version> <win32|win64|win>
+# ./create-freeciv-ruledit.sh <Freeciv files dir> <Output dir> <version> <win32|win64|win>
 
 cat <<EOF
 ; Freeciv Windows installer script
@@ -10,8 +10,8 @@ Unicode true
 SetCompressor /SOLID lzma
 
 !define APPNAME "Freeciv-ruledit"
-!define VERSION $2
-!define WIN_ARCH $3
+!define VERSION $3
+!define WIN_ARCH $4
 !define APPID "\${APPNAME}-\${VERSION}"
 
 !define MULTIUSER_EXECUTIONLEVEL Highest
@@ -30,7 +30,7 @@ SetCompressor /SOLID lzma
 ;General
 
 Name "Freeciv Ruleset Editor \${VERSION}"
-OutFile "Output/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-setup.exe"
+OutFile "$2/\${APPNAME}-\${VERSION}-\${WIN_ARCH}-setup.exe"
 
 ;Variables
 
@@ -48,7 +48,7 @@ Page custom DefaultLanguage DefaultLanguageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 
 ;Start Menu Folder Page Configuration
-!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX" 
+!define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX"
 !define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\\\${APPNAME}\\\${VERSION}"
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "\$(^Name)"
@@ -69,7 +69,7 @@ Page custom DefaultLanguage DefaultLanguageLeave
 
 EOF
 
-### required files ###
+### Required files ###
 
 cat <<EOF
 ; The stuff to install
@@ -80,23 +80,22 @@ Section "\${APPNAME} (required)"
   SetOutPath \$INSTDIR
 EOF
 
-  # find files and directories to exclude from default installation
+  # Find files and directories to exclude from default installation
 
   echo -n "  File /nonfatal /r "
 
-  # languages
+  # Languages
   echo -n "/x locale "
 
-  # rulesets
-  find $1/data -mindepth 1 -maxdepth 1 -name *.serv -printf %f\\n |
-  sed 's|.serv||' |
+  # Rulesets
+  find $1/data -mindepth 2 -maxdepth 2 -name game.ruleset -printf %P\\n |
+  sed 's|/game.ruleset||' |
   while read -r name
   do
-  if test "x$name" != "xdefault" ; then
-  echo -n "/x $name.serv /x $name "
-  else
-  echo -n "/x $name.serv "
-  fi
+    echo -n "/x $name "
+    if test -f "$1/data/$name.modpack" ; then
+      echo -n "/x $name.modpack "
+    fi
   done
 
   echo "$1\\*.*"
@@ -129,31 +128,25 @@ SectionEnd
 
 EOF
 
-### rulesets ###
+### Rulesets ###
 
 cat <<EOF
 SectionGroup "Rulesets"
 
 EOF
 
-find $1/data -mindepth 1 -maxdepth 1 -name *.serv -printf %f\\n |
+find $1/data -mindepth 2 -maxdepth 2 -name game.ruleset -printf %P\\n |
 sort |
-sed 's|.serv||' |
+sed 's|/game.ruleset||' |
 while read -r name
 do
-if test -d $1/data/$name; then
-# 'default' directory is not optional
-if test "x$name" != "xdefault" ; then
+# Intentionally leave .modpack out. Ruledit does not use it.
 echo "  Section \"$name\""
-# Intentionally left .serv out. Ruledit does not use it.
-# This script does use it, though, to detect rulesets.
 echo "  SetOutPath \$INSTDIR/data/$name" | sed 's,/,\\,g'
 echo "  File /r $1/data/$name/*.*"
 echo "  SetOutPath \$INSTDIR"
 echo "  SectionEnd"
 echo
-fi
-fi
 done
 
 cat <<EOF
@@ -161,7 +154,7 @@ SectionGroupEnd
 
 EOF
 
-### additional languages ###
+### Additional languages ###
 
 cat <<EOF
 SectionGroup "Additional languages (translation %)"
@@ -269,18 +262,26 @@ FunctionEnd
 
 EOF
 
-### uninstall section ###
+### Uninstall section ###
 
 cat <<EOF
-; special uninstall section.
+; Special uninstall section.
 Section "Uninstall"
 
-  ; remove files
+  ; Remove files
 EOF
 
 find $1 -type f |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
+while read -r name
+do
+echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
+done
+
+find $1 -type l |
+grep -v '/$' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  Delete \"\$INSTDIR$name\"" | sed 's,/,\\,g'
@@ -288,7 +289,7 @@ done
 
 find $1 -depth -type d |
 grep -v '/$' |
-sed 's|[^/]*||' |
+sed "s|$1||" |
 while read -r name
 do
 echo "  RMDir \"\$INSTDIR$name\"" | sed 's,/,\\,g'
@@ -299,15 +300,15 @@ cat <<EOF
   ; MUST REMOVE UNINSTALLER, too
   Delete "\$INSTDIR\uninstall.exe"
 
-  ; remove install directory, if empty
+  ; Remove install directory, if empty
   RMDir "\$INSTDIR"
 
-  ; remove shortcuts, if any.
+  ; Remove shortcuts, if any.
   !insertmacro MUI_STARTMENU_GETFOLDER "Application" \$STARTMENU_FOLDER
   Delete "\$SMPROGRAMS\\\$STARTMENU_FOLDER\*.*"
   RMDir "\$SMPROGRAMS\\\$STARTMENU_FOLDER"
 
-  ; remove registry keys
+  ; Remove registry keys
   DeleteRegKey "SHCTX" "Software\Microsoft\Windows\CurrentVersion\Uninstall\\\${APPID}"
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}\\\${VERSION}
   DeleteRegKey /ifempty "SHCTX" SOFTWARE\\\${APPNAME}

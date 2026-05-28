@@ -28,29 +28,32 @@ struct editbar {
   GtkSizeGroup *size_group;
 
   GtkWidget *mode_buttons[NUM_EDITOR_TOOL_MODES];
-  GtkWidget *tool_buttons[NUM_EDITOR_TOOL_TYPES];
-  GtkWidget *player_properties_button;
+  GtkWidget *tool_buttons[NUM_EDITOR_TOOL_TYPES]; /* TODO: Make these GtkToggleButtons */
   struct tool_value_selector *tool_selectors[NUM_EDITOR_TOOL_TYPES];
 
   GtkListStore *player_pov_store;
   GtkWidget *player_pov_combobox;
 };
 
-gboolean handle_edit_mouse_button_press(GdkEvent *ev);
-gboolean handle_edit_mouse_button_release(GdkEvent *ev);
-gboolean handle_edit_mouse_move(GdkEvent *ev);
-gboolean handle_edit_key_press(GdkEvent *ev);
-gboolean handle_edit_key_release(GdkEventKey *ev);
+gboolean handle_edit_mouse_button_press(GtkGestureClick *gesture,
+                                        int editor_mouse_button,
+                                        double x, double y);
+gboolean handle_edit_mouse_button_release(GtkGestureClick *gesture,
+                                          int editor_mouse_button,
+                                          double x, double y);
+gboolean handle_edit_mouse_move(GtkEventControllerMotion *controller,
+                                gdouble x, gdouble y);
+gboolean handle_edit_key_press(guint keyval, GdkModifierType state);
 
 struct editinfobox {
   GtkWidget *widget;
 
-  GtkWidget *mode_image;
+  GtkWidget *mode_pic;
   GtkWidget *mode_label;
 
   GtkWidget *tool_label;
   GtkWidget *tool_value_label;
-  GtkWidget *tool_image;
+  GtkWidget *tool_pic;
 
   GtkWidget *size_hbox;
   GtkWidget *size_spin_button;

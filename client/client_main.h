@@ -48,7 +48,8 @@ enum client_states {
   C_S_OVER,
 };
 
-int client_main(int argc, char *argv[]);
+int client_main(int argc, char *argv[], bool postpone_tileset);
+int default_tileset_select(void);
 
 void client_packet_input(void *packet, int type);
 
@@ -74,7 +75,7 @@ extern char sound_set_name[512];
 extern char music_set_name[512];
 extern char server_host[512];
 extern char user_name[512];
-extern char password[MAX_LEN_PASSWORD];
+extern char fc_password[MAX_LEN_PASSWORD];
 extern char metaserver[512];
 extern int  server_port;
 extern bool auto_connect;
@@ -101,7 +102,12 @@ bool client_is_observer(void);
 bool client_is_global_observer(void);
 int client_player_number(void);
 bool client_has_player(void);
-struct player *client_player(void);
+
+#define client_player() client.conn.playing
+
+bool client_map_is_known_and_seen(const struct tile *ptile,
+                                  const struct player *pplayer,
+                                  enum vision_layer vlayer);
 void set_seconds_to_turndone(double seconds);
 int get_seconds_to_turndone(void);
 bool is_waiting_turn_change(void);
@@ -114,8 +120,10 @@ bool can_client_issue_orders(void);
 bool can_client_change_view(void);
 bool can_meet_with_player(const struct player *pplayer);
 bool can_intel_with_player(const struct player *pplayer);
+const char *title_for_player(const struct player *pplayer,
+                             char *buf, size_t buf_len);
 
-void client_exit(void);
+void fc__noreturn client_exit(int return_value);
 
 bool is_client_quitting(void);
 void start_quitting(void);

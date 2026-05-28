@@ -24,7 +24,7 @@ extern "C" {
  * structure below. When changing mandatory capability part, check that
  * there's enough reserved_xx pointers in the end of the structure for
  * taking to use without need to bump mandatory capability again. */
-#define FC_AI_MOD_CAPSTR "+Freeciv-3.1-ai-module-2019.Feb.16"
+#define FC_AI_MOD_CAPSTR "+Freeciv-3.2-ai-module-2021.Mar.01"
 
 /* Timers for all AI activities. Define it to get statistics about the AI. */
 #ifdef FREECIV_DEBUG
@@ -43,9 +43,7 @@ struct section_file;
 struct adv_data;
 
 enum incident_type {
-  INCIDENT_DIPLOMAT = 0, INCIDENT_WAR, INCIDENT_PILLAGE,
-  INCIDENT_NUCLEAR, INCIDENT_NUCLEAR_NOT_TARGET,
-  INCIDENT_NUCLEAR_SELF, INCIDENT_LAST
+  INCIDENT_ACTION = 0, INCIDENT_WAR, INCIDENT_LAST
 };
 
 struct ai_type
@@ -115,7 +113,7 @@ struct ai_type
     /* Called for AI type of the player who gets split to two. */
     void (*split_by_civil_war)(struct player *original, struct player *created);
 
-   /* Called for AI type of the player who got created from the split. */
+    /* Called for AI type of the player who got created from the split. */
     void (*created_by_civil_war)(struct player *original, struct player *created);
 
     /* Called for player AI type when player phase begins. This is in the
@@ -201,7 +199,7 @@ struct ai_type
     void (*unit_got)(struct unit *punit);
 
     /* Called for player AI type when unit changes type. */
-    void (*unit_transformed)(struct unit *punit, struct unit_type *old_type);
+    void (*unit_transformed)(struct unit *punit, const struct unit_type *old_type);
 
     /* Called for player AI type when player loses control of unit. */
     void (*unit_lost)(struct unit *punit);
@@ -274,9 +272,11 @@ struct ai_type
     void (*first_contact)(struct player *pplayer, struct player *aplayer);
 
     /* Called for player AI type of the victim when someone does some violation
-     * against him/her. */
-    void (*incident)(enum incident_type type, struct player *violator,
-                     struct player *victim);
+     * against them. */
+    void (*incident)(enum incident_type type, enum casus_belli_range scope,
+                     const struct action *paction,
+                     struct player *receiver,
+                     struct player *violator, struct player *victim);
 
     /* Called for player AI type of city owner when logging requires city debug
      * information. */

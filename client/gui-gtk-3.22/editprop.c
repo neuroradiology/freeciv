@@ -33,6 +33,7 @@
 #include "government.h"
 #include "map.h"
 #include "movement.h"
+#include "nation.h"
 #include "research.h"
 #include "tile.h"
 
@@ -91,7 +92,7 @@ static int get_next_unique_tag(void);
 #include "spechash.h"
 
 /* NB: If packet definitions change, be sure to
- * update objbind_pack_current_values!!! */
+ * update objbind_pack_current_values()!!! */
 union packetdata {
   struct {
     gpointer v_pointer1;
@@ -219,7 +220,7 @@ static const char *valtype_get_name(enum value_types valtype);
   To add a new member to union propval_data, see the steps for adding a
   new value type above.
 
-  New property values are "constructed" by objbind_get_value_from_object.
+  New property values are "constructed" by objbind_get_value_from_object().
 ****************************************************************************/
 union propval_data {
   gpointer v_pointer;
@@ -288,7 +289,7 @@ static struct propval *propstate_get_value(struct propstate *ps);
   6. Add a case handler in objbind_pack_modified_value.
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! 7. Add code to set the packet field in  !!!
-  !!!    objbind_pack_current_values.         !!!
+  !!!    objbind_pack_current_values().       !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   8. Add code to handle changes in the packet field in
      server/edithand.c handle_edit_<objtype>.
@@ -363,10 +364,10 @@ enum object_property_ids {
 #endif /* FREECIV_DEBUG */
   OPID_PLAYER_INVENTIONS,
   OPID_PLAYER_SCENARIO_RESERVED,
+  OPID_PLAYER_SELECT_WEIGHT,
   OPID_PLAYER_SCIENCE,
   OPID_PLAYER_GOLD,
 
-  OPID_GAME_YEAR,
   OPID_GAME_SCENARIO,
   OPID_GAME_SCENARIO_NAME,
   OPID_GAME_SCENARIO_AUTHORS,
@@ -478,7 +479,7 @@ static bool objbind_get_allowed_value_span(struct objbind *ob,
                                            double *pmax,
                                            double *pstep,
                                            double *pbig_step);
-static void objbind_set_modified_value(struct objbind *ob,
+static bool objbind_set_modified_value(struct objbind *ob,
                                        struct objprop *op,
                                        struct propval *pv);
 static struct propval *objbind_get_modified_value(struct objbind *ob,
@@ -1188,9 +1189,10 @@ static bool propval_equal(struct propval *pva,
   case VALTYPE_BOOL:
     return pva->data.v_bool == pvb->data.v_bool;
   case VALTYPE_STRING:
-    if (pva->data.v_const_string && pvb->data.v_const_string) {
-      return 0 == strcmp(pva->data.v_const_string,
-                         pvb->data.v_const_string);
+    if (pva->data.v_const_string != NULL
+        && pvb->data.v_const_string != NULL) {
+      return !strcmp(pva->data.v_const_string,
+                     pvb->data.v_const_string);
     }
     return pva->data.v_const_string == pvb->data.v_const_string;
   case VALTYPE_PIXBUF:
@@ -1429,7 +1431,7 @@ static void objbind_request_destroy_object(struct objbind *ob)
   Returns a newly allocated property value for the given object property
   on the object referenced by the given object bind, or NULL on failure.
 
-  NB: You must call propval_free on the non-NULL return value when it
+  NB: You must call propval_free() on the non-NULL return value when it
   no longer needed.
 ****************************************************************************/
 static struct propval *objbind_get_value_from_object(struct objbind *ob,
@@ -1785,6 +1787,9 @@ static struct propval *objbind_get_value_from_object(struct objbind *ob,
       case OPID_PLAYER_SCENARIO_RESERVED:
         pv->data.v_bool = player_has_flag(pplayer, PLRF_SCENARIO_RESERVED);
         break;
+      case OPID_PLAYER_SELECT_WEIGHT:
+        pv->data.v_int = pplayer->autoselect_weight;
+        break;
       case OPID_PLAYER_SCIENCE:
         presearch = research_get(pplayer);
         pv->data.v_int = presearch->bulbs_researched;
@@ -1810,9 +1815,6 @@ static struct propval *objbind_get_value_from_object(struct objbind *ob,
       }
 
       switch (propid) {
-      case OPID_GAME_YEAR:
-        pv->data.v_int = pgame->info.year;
-        break;
       case OPID_GAME_SCENARIO:
         pv->data.v_bool = pgame->scenario.is_scenario;
         break;
@@ -1932,7 +1934,7 @@ static bool objbind_get_allowed_value_span(struct objbind *ob,
       switch (propid) {
       case OPID_UNIT_MOVES_LEFT:
         *pmin = 0;
-        *pmax = 65535; /* packets.def MOVEFRAGS */
+        *pmax = MAX_MOVE_FRAGS;
         *pstep = 1;
         *pbig_step = 5;
         return TRUE;
@@ -2019,6 +2021,12 @@ static bool objbind_get_allowed_value_span(struct objbind *ob,
       *pstep = 1;
       *pbig_step = 100;
       return TRUE;
+    case OPID_PLAYER_SELECT_WEIGHT:
+      *pmin = -1;
+      *pmax = 10000; /* Keep it under SINT16 */
+      *pstep = 1;
+      *pbig_step = 10;
+      return TRUE;
     default:
       break;
     }
@@ -2028,16 +2036,6 @@ static bool objbind_get_allowed_value_span(struct objbind *ob,
     return FALSE;
 
   case OBJTYPE_GAME:
-    switch (propid) {
-    case OPID_GAME_YEAR:
-      *pmin = -30000;
-      *pmax = 30000;
-      *pstep = 1;
-      *pbig_step = 25;
-      return TRUE;
-    default:
-      break;
-    }
     log_error("%s(): Unhandled request for value range of property %d (%s) "
               "from object of type \"%s\".", __FUNCTION__,
               propid, objprop_get_name(op), objtype_get_name(objtype));
@@ -2111,8 +2109,10 @@ static void objbind_clear_all_modified_values(struct objbind *ob)
 /************************************************************************//**
   Store a modified property value, but only if it is different from the
   current value. Always makes a copy of the given value when storing.
+
+  Returns whether anything changed.
 ****************************************************************************/
-static void objbind_set_modified_value(struct objbind *ob,
+static bool objbind_set_modified_value(struct objbind *ob,
                                        struct objprop *op,
                                        struct propval *pv)
 {
@@ -2122,14 +2122,14 @@ static void objbind_set_modified_value(struct objbind *ob,
   enum object_property_ids propid;
 
   if (!ob || !op) {
-    return;
+    return FALSE;
   }
 
   propid = objprop_get_id(op);
 
   pv_old = objbind_get_value_from_object(ob, op);
   if (!pv_old) {
-    return;
+    return FALSE;
   }
 
   equal = propval_equal(pv, pv_old);
@@ -2137,7 +2137,7 @@ static void objbind_set_modified_value(struct objbind *ob,
 
   if (equal) {
     objbind_clear_modified_value(ob, op);
-    return;
+    return FALSE;
   }
 
   pv_copy = propval_copy(pv);
@@ -2148,6 +2148,8 @@ static void objbind_set_modified_value(struct objbind *ob,
     ps = propstate_new(op, pv_copy);
     propstate_hash_insert(ob->propstate_table, propid, ps);
   }
+
+  return TRUE;
 }
 
 /************************************************************************//**
@@ -2321,8 +2323,10 @@ static void objbind_pack_current_values(struct objbind *ob,
         packet->inventions[tech]
             = TECH_KNOWN == research_invention_state(presearch, tech);
       } advance_index_iterate_end;
+      packet->autoselect_weight = pplayer->autoselect_weight;
       packet->gold = pplayer->economic.gold;
       packet->government = government_index(pplayer->government);
+      packet->scenario_reserved = player_has_flag(pplayer, PLRF_SCENARIO_RESERVED);
       /* TODO: Set more packet fields. */
     }
     return;
@@ -2336,7 +2340,6 @@ static void objbind_pack_current_values(struct objbind *ob,
         return;
       }
 
-      packet->year = pgame->info.year;
       packet->scenario = pgame->scenario.is_scenario;
       sz_strlcpy(packet->scenario_name, pgame->scenario.name);
       sz_strlcpy(packet->scenario_authors, pgame->scenario.authors);
@@ -2555,6 +2558,9 @@ static void objbind_pack_modified_value(struct objbind *ob,
       case OPID_PLAYER_SCENARIO_RESERVED:
         packet->scenario_reserved = pv->data.v_bool;
         return;
+      case OPID_PLAYER_SELECT_WEIGHT:
+        packet->autoselect_weight = pv->data.v_int;
+        return;
       case OPID_PLAYER_SCIENCE:
         packet->bulbs_researched = pv->data.v_int;
         return;
@@ -2575,9 +2581,6 @@ static void objbind_pack_modified_value(struct objbind *ob,
       struct packet_edit_game *packet = pd.game.game;
 
       switch (propid) {
-      case OPID_GAME_YEAR:
-        packet->year = pv->data.v_int;
-        return;
       case OPID_GAME_SCENARIO:
         packet->scenario = pv->data.v_bool;
         return;
@@ -3020,9 +3023,9 @@ static void objprop_setup_widget(struct objprop *op)
   case OPID_CITY_SIZE:
   case OPID_CITY_HISTORY:
   case OPID_CITY_SHIELD_STOCK:
+  case OPID_PLAYER_SELECT_WEIGHT:
   case OPID_PLAYER_SCIENCE:
   case OPID_PLAYER_GOLD:
-  case OPID_GAME_YEAR:
     spin = gtk_spin_button_new_with_range(0.0, 100.0, 1.0);
     gtk_widget_set_hexpand(spin, TRUE);
     gtk_widget_set_halign(spin, GTK_ALIGN_END);
@@ -3129,8 +3132,8 @@ static void objprop_refresh_widget(struct objprop *op,
   propid = objprop_get_id(op);
 
   /* NB: We must take care to propval_free the return value of
-   * objbind_get_value_from_object, since it always makes a
-   * copy, but to NOT free the result of objbind_get_modified_value
+   * objbind_get_value_from_object(), since it always makes a
+   * copy, but to NOT free the result of objbind_get_modified_value()
    * since it returns its own stored value. */
   pv = objbind_get_value_from_object(ob, op);
   modified = objbind_property_is_modified(ob, op);
@@ -3224,9 +3227,9 @@ static void objprop_refresh_widget(struct objprop *op,
   case OPID_CITY_SIZE:
   case OPID_CITY_HISTORY:
   case OPID_CITY_SHIELD_STOCK:
+  case OPID_PLAYER_SELECT_WEIGHT:
   case OPID_PLAYER_SCIENCE:
   case OPID_PLAYER_GOLD:
-  case OPID_GAME_YEAR:
     spin = objprop_get_child_widget(op, "spin");
     if (pv) {
       disable_gobject_callback(G_OBJECT(spin),
@@ -4011,7 +4014,7 @@ static void extviewer_refresh_widgets(struct extviewer *ev,
 
   case OPID_PLAYER_INVENTIONS:
     gtk_list_store_clear(store);
-    advance_iterate(A_FIRST, padvance) {
+    advance_iterate(padvance) {
       id = advance_index(padvance);
       present = BV_ISSET(pv->data.v_bv_inventions, id);
       name = advance_name_translation(padvance);
@@ -4543,6 +4546,10 @@ static void property_page_setup_objprops(struct property_page *pp)
             VALTYPE_INVENTIONS_ARRAY);
     ADDPROP(OPID_PLAYER_SCENARIO_RESERVED, _("Reserved"), NULL,
             OPF_HAS_WIDGET | OPF_EDITABLE, VALTYPE_BOOL);
+    ADDPROP(OPID_PLAYER_SELECT_WEIGHT, _("Select Weight"),
+            _("How likely user is to get this player by autoselect. '-1' for default behavior."),
+            OPF_HAS_WIDGET | OPF_EDITABLE,
+            VALTYPE_INT);
     ADDPROP(OPID_PLAYER_SCIENCE, _("Science"), NULL,
             OPF_HAS_WIDGET | OPF_EDITABLE, VALTYPE_INT);
     ADDPROP(OPID_PLAYER_GOLD, _("Gold"), NULL,
@@ -4551,9 +4558,6 @@ static void property_page_setup_objprops(struct property_page *pp)
     return;
 
   case OBJTYPE_GAME:
-    ADDPROP(OPID_GAME_YEAR, _("Year"), NULL,
-            OPF_IN_LISTVIEW | OPF_HAS_WIDGET | OPF_EDITABLE,
-            VALTYPE_INT);
     ADDPROP(OPID_GAME_SCENARIO, _("Scenario"), NULL,
             OPF_IN_LISTVIEW | OPF_HAS_WIDGET | OPF_EDITABLE,
             VALTYPE_BOOL);
@@ -4741,7 +4745,7 @@ property_page_new(enum editor_object_type objtype,
   const char *attr_type_str, *name, *tooltip;
   gchar *title;
 
-  if (!(0 <= objtype && objtype < NUM_OBJTYPES)) {
+  if (!(objtype < NUM_OBJTYPES)) {
     return NULL;
   }
 
@@ -4932,7 +4936,7 @@ property_page_new(enum editor_object_type objtype,
   gtk_container_set_border_width(GTK_CONTAINER(hbox2), 4);
   gtk_container_add(GTK_CONTAINER(vbox2), hbox2);
 
-  button = gtk_button_new_with_label(_("Close"));
+  button = gtk_button_new_with_mnemonic(_("_Close"));
   gtk_size_group_add_widget(sizegroup, button);
   g_signal_connect_swapped(button, "clicked",
       G_CALLBACK(gtk_widget_hide_on_delete), pe->widget);
@@ -5003,7 +5007,7 @@ property_page_new(enum editor_object_type objtype,
   gtk_grid_set_column_spacing(GTK_GRID(hbox2), 4);
   gtk_container_add(GTK_CONTAINER(vbox), hbox2);
 
-  button = gtk_button_new_with_label(_("Refresh"));
+  button = gtk_button_new_with_mnemonic(_("_Refresh"));
   gtk_size_group_add_widget(sizegroup, button);
   gtk_widget_set_tooltip_text(button,
       _("Pressing this button will reset all modified properties of "
@@ -5013,7 +5017,7 @@ property_page_new(enum editor_object_type objtype,
                    G_CALLBACK(property_page_refresh_button_clicked), pp);
   gtk_container_add(GTK_CONTAINER(hbox2), button);
 
-  button = gtk_button_new_with_label(_("Apply"));
+  button = gtk_button_new_with_mnemonic(_("_Apply"));
   gtk_size_group_add_widget(sizegroup, button);
   gtk_widget_set_tooltip_text(button,
       _("Pressing this button will send all modified properties of "
@@ -5468,6 +5472,7 @@ static void property_page_change_value(struct property_page *pp,
   GtkTreePath *path;
   GtkTreeIter iter;
   struct objbind *ob;
+  bool changed = FALSE;
 
   if (!pp || !op || !pp->object_view) {
     return;
@@ -5484,14 +5489,16 @@ static void property_page_change_value(struct property_page *pp,
     path = p->data;
     if (gtk_tree_model_get_iter(model, &iter, path)) {
       gtk_tree_model_get(model, &iter, 0, &ob, -1);
-      objbind_set_modified_value(ob, op, pv);
+      changed |= objbind_set_modified_value(ob, op, pv);
     }
     gtk_tree_path_free(path);
   }
   g_list_free(rows);
 
-  ob = property_page_get_focused_objbind(pp);
-  objprop_refresh_widget(op, ob);
+  if (changed) {
+    ob = property_page_get_focused_objbind(pp);
+    objprop_refresh_widget(op, ob);
+  }
 }
 
 /************************************************************************//**
@@ -6114,7 +6121,7 @@ static bool property_editor_add_page(struct property_editor *pe,
     return FALSE;
   }
 
-  if (!(0 <= objtype && objtype < NUM_OBJTYPES)) {
+  if (!(objtype < NUM_OBJTYPES)) {
     return FALSE;
   }
 
@@ -6140,7 +6147,7 @@ static struct property_page *
 property_editor_get_page(struct property_editor *pe,
                          enum editor_object_type objtype)
 {
-  if (!pe || !(0 <= objtype && objtype < NUM_OBJTYPES)) {
+  if (!pe || !(objtype < NUM_OBJTYPES)) {
     return NULL;
   }
 
@@ -6250,7 +6257,7 @@ void property_editor_popup(struct property_editor *pe,
   gtk_widget_show_all(pe->widget);
 
   gtk_window_present(GTK_WINDOW(pe->widget));
-  if (0 <= objtype && objtype < NUM_OBJTYPES) {
+  if (objtype < NUM_OBJTYPES) {
     gtk_notebook_set_current_page(GTK_NOTEBOOK(pe->notebook), objtype);
   }
 }
@@ -6281,7 +6288,7 @@ void property_editor_handle_object_changed(struct property_editor *pe,
     return;
   }
 
-  if (!(0 <= objtype && objtype < NUM_OBJTYPES)) {
+  if (!(objtype < NUM_OBJTYPES)) {
     return;
   }
 

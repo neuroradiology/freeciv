@@ -44,7 +44,7 @@
 #include "luaconsole_common.h"
 
 /* client/luascript */
-#include "tolua_client_gen.h"
+#include <tolua_client_gen.h> /* <> so looked from the build directory first. */
 
 #include "script_client.h"
 
@@ -209,7 +209,7 @@ bool script_client_init(void)
   }
 
   tolua_common_a_open(main_fcl->state);
-  api_specenum_open(main_fcl->state);
+  api_game_specenum_open(main_fcl->state);
   tolua_game_open(main_fcl->state);
   tolua_signal_open(main_fcl->state);
 

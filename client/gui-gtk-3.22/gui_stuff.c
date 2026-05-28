@@ -298,6 +298,10 @@ void setup_dialog(GtkWidget *shell, GtkWidget *parent)
 
   /* Close dialog window on Escape keypress. */
   if (GTK_IS_DIALOG(shell)) {
+    g_signal_connect(shell, "focus_out_event",
+                   G_CALLBACK(fc_lost_focus), NULL);
+    g_signal_connect(shell, "focus_in_event",
+                   G_CALLBACK(fc_gained_focus), NULL);
     g_signal_connect_after(shell, "close", G_CALLBACK(close_callback), shell);
   }
 }
@@ -434,8 +438,10 @@ static void gui_dialog_switch_page_handler(GtkNotebook *notebook,
   n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->vbox);
 
   if (n == num) {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(dlg->v.tab.label),
-                                   "alert");
+    GtkStyleContext *context = gtk_widget_get_style_context(dlg->v.tab.label);
+
+    gtk_style_context_remove_class(context, "alert");
+    gtk_style_context_remove_class(context, "notice");
   }
 }
 
@@ -541,8 +547,8 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
   action_area = gtk_grid_new();
   gtk_grid_set_row_spacing(GTK_GRID(action_area), 4);
   gtk_grid_set_column_spacing(GTK_GRID(action_area), 4);
-  if (GUI_GTK_OPTION(enable_tabs) &&
-      (check_top && notebook != GTK_NOTEBOOK(top_notebook))
+  if (GUI_GTK_OPTION(enable_tabs)
+      && (check_top && notebook != GTK_NOTEBOOK(top_notebook))
       && !GUI_GTK_OPTION(small_display_layout)) {
     /* We expect this to be short (as opposed to tall); maximise usable
      * height by putting buttons down the right hand side */
@@ -846,7 +852,7 @@ void gui_dialog_present(struct gui_dialog *dlg)
 	GtkWidget *label = dlg->v.tab.label;
 
         gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+                                    "notice");
       }
     }
     break;
@@ -896,9 +902,11 @@ void gui_dialog_alert(struct gui_dialog *dlg)
 
       if (current != n) {
         GtkWidget *label = dlg->v.tab.label;
+        GtkStyleContext *context = gtk_widget_get_style_context(label);
 
-        gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+        /* Have only alert - remove notice if it exist. */
+        gtk_style_context_remove_class(context, "notice");
+        gtk_style_context_add_class(context, "alert");
       }
     }
     break;
@@ -1146,6 +1154,9 @@ void dlg_tab_provider_prepare(void)
   gtk_css_provider_load_from_data(dlg_tab_provider,
                                   ".alert {\n"
                                   "color: rgba(255, 0, 0, 255);\n"
+                                  "}\n"
+                                  ".notice {\n"
+                                  "color: rgba(0, 0, 255, 255);\n"
                                   "}\n",
                                   -1, NULL);
 }

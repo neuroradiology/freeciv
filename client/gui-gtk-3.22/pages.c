@@ -101,13 +101,16 @@ static void connection_state_reset(void);
 **************************************************************************/
 static void start_new_game_callback(GtkWidget *w, gpointer data)
 {
-  if (is_server_running() || client_start_server()) {
-    /* saved settings are sent in client/options.c load_settable_options() */
+  if (!is_server_running()) {
+    client_start_server();
+
+    /* Saved settings are sent in client/options.c
+     * resend_desired_settable_options() */
   }
 }
 
 /**********************************************************************//**
-  Go to the scenario page, spawning a server,
+  Go to the scenario page, spawning a server.
 **************************************************************************/
 static void start_scenario_callback(GtkWidget *w, gpointer data)
 {
@@ -255,8 +258,8 @@ GtkWidget *create_main_page(void)
   }
 
   space_needed = 250;
-#if IS_BETA_VERSION
-  /* Beta notice takes extra space */
+#if IS_BETA_VERSION || IS_DEVEL_VERSION
+  /* Alpha or Beta notice takes extra space */
   space_needed += 50;
 #endif
 
@@ -284,18 +287,18 @@ GtkWidget *create_main_page(void)
                    G_CALLBACK(intro_free), intro);
   gtk_container_add(GTK_CONTAINER(frame), darea);
 
-#if IS_BETA_VERSION
+#if IS_BETA_VERSION || IS_DEVEL_VERSION
   {
     GtkWidget *label;
 
-    label = gtk_label_new(beta_message());
+    label = gtk_label_new(unstable_message());
     gtk_widget_set_name(label, "beta_label");
     gtk_widget_set_halign(label, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
     gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
     gtk_container_add(GTK_CONTAINER(vbox), label);
   }
-#endif /* IS_BETA_VERSION */
+#endif /* IS_BETA_VERSION || IS_DEVEL_VERSION */
 
   table = gtk_grid_new();
   g_object_set(table, "margin", 12, NULL);
@@ -337,7 +340,7 @@ GtkWidget *create_main_page(void)
   gtk_grid_attach(GTK_GRID(table), button, 1, 1, 1, 1);
   g_signal_connect(button, "clicked", open_settings, NULL);
 
-  button = icon_label_button_new("application-exit", _("Exit"));
+  button = icon_label_button_new("application-exit", _("E_xit"));
   gtk_size_group_add_widget(size, button);
   g_object_unref(size);
   gtk_grid_attach(GTK_GRID(table), button, 1, 2, 1, 1);
@@ -450,9 +453,9 @@ static void save_dialog_file_chooser_popup(const char *title,
 
   /* Create the chooser */
   filechoose = gtk_file_chooser_dialog_new(title, GTK_WINDOW(toplevel), action,
-                                           _("Cancel"), GTK_RESPONSE_CANCEL,
+                                           _("_Cancel"), GTK_RESPONSE_CANCEL,
                                            (action == GTK_FILE_CHOOSER_ACTION_SAVE) ?
-                                           _("Save") : _("Open"),
+                                           _("_Save") : _("_Open"),
                                            GTK_RESPONSE_OK, NULL);
   setup_dialog(filechoose, toplevel);
   gtk_window_set_position(GTK_WINDOW(filechoose), GTK_WIN_POS_MOUSE);
@@ -579,9 +582,9 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
   /* Shell. */
   shell = gtk_dialog_new_with_buttons(title, NULL, 0,
                                       _("_Browse..."), SD_RES_BROWSE,
-                                      _("Delete"), SD_RES_DELETE,
-                                      _("Cancel"), GTK_RESPONSE_CANCEL,
-                                      _("Save"), SD_RES_SAVE,
+                                      _("_Delete"), SD_RES_DELETE,
+                                      _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                      _("_Save"), SD_RES_SAVE,
                                       NULL);
   g_object_set_data_full(G_OBJECT(shell), "save_dialog", pdialog,
                          (GDestroyNotify) free);
@@ -720,7 +723,7 @@ static void update_server_list(enum server_scan_type sstype,
   port = atoi(portstr);
 
   server_list_iterate(list, pserver) {
-    char buf[20];
+    char buf[35];
 
     if (pserver->humans >= 0) {
       fc_snprintf(buf, sizeof(buf), "%d", pserver->humans);
@@ -786,11 +789,11 @@ static gboolean check_server_scan(gpointer data)
 
     type = server_scan_get_type(scan);
     srvrs = server_scan_get_list(scan);
-    fc_allocate_mutex(&srvrs->mutex);
+    fc_mutex_allocate(&srvrs->mutex);
     holding_srv_list_mutex = TRUE;
     update_server_list(type, srvrs->servers);
     holding_srv_list_mutex = FALSE;
-    fc_release_mutex(&srvrs->mutex);
+    fc_mutex_release(&srvrs->mutex);
   }
 
   if (stat == SCAN_STATUS_ERROR || stat == SCAN_STATUS_DONE) {
@@ -996,12 +999,12 @@ void handle_authentication_req(enum authentication_type type,
     set_connection_state(NEW_PASSWORD_TYPE);
     return;
   case AUTH_LOGIN_FIRST:
-    /* if we magically have a password already present in 'password'
+    /* if we magically have a password already present in 'fc_password'
      * then, use that and skip the password entry dialog */
-    if (password[0] != '\0') {
+    if (fc_password[0] != '\0') {
       struct packet_authentication_reply reply;
 
-      sz_strlcpy(reply.password, password);
+      sz_strlcpy(reply.password, fc_password);
       send_packet_authentication_reply(&client.conn, &reply);
       return;
     } else {
@@ -1042,18 +1045,18 @@ static void connect_callback(GtkWidget *w, gpointer data)
     return; 
   case NEW_PASSWORD_TYPE:
     if (w != network_password) {
-      sz_strlcpy(password,
+      sz_strlcpy(fc_password,
 	  gtk_entry_get_text(GTK_ENTRY(network_password)));
       sz_strlcpy(reply.password,
 	  gtk_entry_get_text(GTK_ENTRY(network_confirm_password)));
-      if (strncmp(reply.password, password, MAX_LEN_NAME) == 0) {
-	password[0] = '\0';
+      if (strncmp(reply.password, fc_password, MAX_LEN_NAME) == 0) {
+	fc_password[0] = '\0';
 	send_packet_authentication_reply(&client.conn, &reply);
 
 	set_connection_state(WAITING_TYPE);
       } else { 
 	append_network_statusbar(_("Passwords don't match, enter password."),
-	    TRUE);
+                                 TRUE);
 
 	set_connection_state(NEW_PASSWORD_TYPE);
       }
@@ -1138,15 +1141,16 @@ static void network_list_callback(GtkTreeSelection *select, gpointer data)
     path = gtk_tree_model_get_path(model, &it);
     if (!holding_srv_list_mutex) {
       /* We are not yet inside mutex protected block */
-      fc_allocate_mutex(&srvrs->mutex);
+      fc_mutex_allocate(&srvrs->mutex);
     }
     if (srvrs->servers && path) {
       gint pos = gtk_tree_path_get_indices(path)[0];
+
       pserver = server_list_get(srvrs->servers, pos);
     }
     if (!holding_srv_list_mutex) {
       /* We are not yet inside mutex protected block */
-      fc_release_mutex(&srvrs->mutex);
+      fc_mutex_release(&srvrs->mutex);
     }
     gtk_tree_path_free(path);
   }
@@ -1417,7 +1421,7 @@ GtkWidget *create_network_page(void)
   g_signal_connect(button, "clicked",
       G_CALLBACK(update_network_lists), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
   gtk_container_add(GTK_CONTAINER(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
@@ -2069,8 +2073,7 @@ static bool conn_list_selection(struct player **ppplayer,
 }
 
 /**********************************************************************//**
-  Returns TRUE if a row is selected in the connection/player list. Fills
-  the not null data.
+  Selects connection's row in the connection/player list.
 **************************************************************************/
 static void conn_list_select_conn(struct connection *pconn)
 {
@@ -2187,17 +2190,17 @@ static void update_start_page_buttons(void)
 
   /*** Ready button. ***/
   if (can_client_control()) {
-    sensitive = TRUE;
+    sensitive = client_player()->is_alive;
     if (client_player()->is_ready) {
       text = _("Not _ready");
     } else {
       int num_unready = 0;
 
-      players_iterate(pplayer) {
+      players_iterate_alive(pplayer) {
         if (is_human(pplayer) && !pplayer->is_ready) {
           num_unready++;
         }
-      } players_iterate_end;
+      } players_iterate_alive_end;
 
       if (num_unready > 1) {
         text = _("_Ready");
@@ -2211,14 +2214,14 @@ static void update_start_page_buttons(void)
     text = _("_Start");
     if (can_client_access_hack()) {
       sensitive = TRUE;
-      players_iterate(plr) {
+      players_iterate_alive(plr) {
         if (is_human(plr)) {
           /* There's human controlled player(s) in game, so it's their
            * job to start the game. */
           sensitive = FALSE;
           break;
         }
-      } players_iterate_end;
+      } players_iterate_alive_end;
     } else {
       sensitive = FALSE;
     }
@@ -2792,7 +2795,7 @@ GtkWidget *create_start_page(void)
   toolkit_view = inputline_toolkit_view_new();
   gtk_container_add(GTK_CONTAINER(box), toolkit_view);
 
-  button = gtk_button_new_with_label(_("Cancel"));
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
   inputline_toolkit_view_append_button(toolkit_view, button);
   g_signal_connect(button, "clicked", G_CALLBACK(main_callback), NULL);
 
@@ -2825,7 +2828,7 @@ void handle_game_load(bool load_successful, const char *filename)
     set_client_page(PAGE_START);
 
     if (game.info.is_new_game) {
-      /* It's pregame. Create a player and connect to him */
+      /* It's pregame. Create a player and connect to it */
       send_chat("/take -");
     }
   }
@@ -2949,12 +2952,12 @@ GtkWidget *create_load_page(void)
   g_signal_connect(button, "clicked",
                    G_CALLBACK(load_browse_callback), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
   gtk_container_add(GTK_CONTAINER(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
 
-  button = gtk_button_new_with_label(_("OK"));
+  button = gtk_button_new_with_mnemonic(_("_OK"));
   gtk_container_add(GTK_CONTAINER(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(load_callback), NULL);
@@ -2992,7 +2995,13 @@ static void scenario_list_callback(void)
       maj = ver / 1000000;
       ver %= 1000000;
       min = ver / 10000;
-      fc_snprintf(vername, sizeof(vername), "%d.%d", maj, min);
+      ver %= 10000;
+      if (ver >= 9000) {
+        /* Development version, have '+' */
+        fc_snprintf(vername, sizeof(vername), "%d.%d+", maj, min);
+      } else {
+        fc_snprintf(vername, sizeof(vername), "%d.%d", maj, min);
+      }
     } else {
       /* TRANS: Old scenario format version */
       fc_snprintf(vername, sizeof(vername), _("pre-2.6"));
@@ -3056,7 +3065,15 @@ static void update_scenario_page(void)
         && secfile_lookup_bool_default(sf, TRUE, "scenario.is_scenario")) {
       const char *sname, *sdescription, *sauthors;
       int fcver;
+      int fcdev;
       int current_ver = MAJOR_VERSION * 1000000 + MINOR_VERSION * 10000;
+      int current_dev;
+
+      current_dev = current_ver;
+      if (PATCH_VERSION >= 90) {
+        /* Patch level matters on development versions */
+        current_dev += PATCH_VERSION * 100;
+      }
 
       fcver = secfile_lookup_int_default(sf, 0, "scenario.game_version");
       if (fcver < 30000) {
@@ -3065,15 +3082,19 @@ static void update_scenario_page(void)
          * multiply by 100. */
         fcver *= 100;
       }
-      fcver -= (fcver % 10000); /* Patch level does not affect compatibility */
+      if (fcver % 10000 >= 9000) {
+        fcdev = fcver - (fcver % 100);   /* Emergency version does not count. */
+      } else {
+        fcdev = fcver - (fcver % 10000); /* Patch version does not count. */
+      }
       sname = secfile_lookup_str_default(sf, NULL, "scenario.name");
       sdescription = secfile_lookup_str_default(sf, NULL,
                                                 "scenario.description");
       sauthors = secfile_lookup_str_default(sf, NULL, "scenario.authors");
       log_debug("scenario file: %s from %s", sname, pfile->fullname);
 
-      /* Ignore scenarios for newer freeciv versions than we are */
-      if (fcver <= current_ver) {
+      /* Ignore scenarios for newer freeciv versions than we are. */
+      if (fcdev <= current_dev) {
         bool add_new = TRUE;
 
         if (sname != NULL) {
@@ -3289,12 +3310,12 @@ GtkWidget *create_scenario_page(void)
   g_signal_connect(button, "clicked",
       G_CALLBACK(scenario_browse_callback), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
   gtk_container_add(GTK_CONTAINER(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
 
-  button = gtk_button_new_with_label(_("OK"));
+  button = gtk_button_new_with_mnemonic(_("_OK"));
   gtk_container_add(GTK_CONTAINER(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(scenario_callback), NULL);
@@ -3536,10 +3557,10 @@ void mapimg_client_save(const char *filename)
     char msg[512];
 
     fc_snprintf(msg, sizeof(msg), "(%s)", mapimg_error());
-    popup_notify_dialog("Error", "Error Creating the Map Image!", msg);
+    popup_notify_dialog(_("Error"),
+                        _("Error Creating the Map Image!"), msg);
   }
 }
-
 
 /**********************************************************************//**
   Set the list of available rulesets.  The default ruleset should be
@@ -3552,7 +3573,7 @@ void set_rulesets(int num_rulesets, char **rulesets)
   int def_idx = -1;
 
   gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(ruleset_combo));
-  for (i = 0; i < num_rulesets; i++){
+  for (i = 0; i < num_rulesets; i++) {
 
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(ruleset_combo), rulesets[i]);
     if (!strcmp("default", rulesets[i])) {

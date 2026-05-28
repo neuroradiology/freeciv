@@ -21,11 +21,14 @@
 // Qt
 #include <QWidget>
 
+// ruledit
+#include "req_vec_fix.h"
+
+class QPushButton;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QMenu;
-class QRadioButton;
 class QToolButton;
 
 class ruledit_gui;
@@ -45,6 +48,10 @@ class tab_enabler : public QWidget
 
     QToolButton *type_button;
     QMenu *type_menu;
+    QPushButton *act_reqs_button;
+    QPushButton *tgt_reqs_button;
+    QPushButton *delete_button;
+    QPushButton *repair_button;
     QListWidget *enabler_list;
 
     struct action_enabler *selected;
@@ -52,11 +59,12 @@ class tab_enabler : public QWidget
   private slots:
     void select_enabler();
     void add_now();
+    void repair_now();
+    void incoming_req_vec_change(const requirement_vector *vec);
     void delete_now();
     void edit_type(QAction *action);
     void edit_target_reqs();
     void edit_actor_reqs();
 };
-
 
 #endif // FC__TAB_ENABLERS_H

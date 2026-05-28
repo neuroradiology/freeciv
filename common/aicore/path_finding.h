@@ -195,7 +195,7 @@ extern "C" {
  * You may call pf_map_path() multiple times with the same pfm.
  *
  * B) the caller doesn't know the map position of the goal yet (but knows
- * what he is looking for, e.g. a port) and wants to iterate over
+ * what they are looking for, e.g. a port) and wants to iterate over
  * all paths in order of increasing costs (total_CC):
  *
  *    struct pf_parameter parameter;
@@ -261,7 +261,8 @@ extern "C" {
 
 /* MC for an impossible step. If this value is returned by get_MC it
  * is treated like TB_IGNORE for this step. This won't change the TB
- * for any other step to this tile. */
+ * for any other step to this tile. This is assumed to be negative,
+ * i.e., to be catched by "if (cost < 0)" */
 #define PF_IMPOSSIBLE_MC -1
 
 /* The factor which is used to multiple total_EC in the total_CC
@@ -270,6 +271,16 @@ extern "C" {
  * than MAX_INT (and a power of 2 for easy multiplication). */
 #define PF_TURN_FACTOR  65536
 
+/* Debugging control if we arrange waits sanely in advisor paths
+ * value & 1 means checking move costs
+ * value & 2 means checking fuel left
+ * value & 4 means checking health */
+#ifndef PF_WAIT_DEBUG
+#ifdef FREECIV_DEBUG
+/* Disabled by default - the assert enabled can be overzealous with some rulesets */
+/* #define PF_WAIT_DEBUG 3 */
+#endif
+#endif
 /* =========================== Structures ================================ */
 
 /* Specifies the type of the action. */
@@ -331,7 +342,7 @@ struct pf_position {
 
 /* Full specification of a path. */
 struct pf_path {
-  int length;                   /* Number of steps in the path */
+  unsigned length;                /* Number of steps in the path */
   struct pf_position *positions;
 };
 

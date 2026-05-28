@@ -88,22 +88,6 @@ local function sqlite_connect()
   dbh = assert(sql:connect(database))
 end
 
--- DIRTY: return a string to put in a database query which gets the
--- current time (in seconds since the epoch, UTC).
--- (This should be replaced with Lua os.time() once the script has access
--- to this, see <https://www.hostedredmine.com/issues/657141>.)
-function sql_time()
-  local backend = get_option("backend")
-  if backend == 'mysql' then
-    return 'UNIX_TIMESTAMP()'
-  elseif backend == 'sqlite' then
-    return 'strftime(\'%s\',\'now\')'
-  else
-    log.error('Don\'t know how to do timestamps for database backend \'%s\'', backend)
-    return 'ERROR'
-  end
-end
-
 -- Set up tables for an SQLite database.
 -- (Since there`s no concept of user rights, we can do this directly from Lua,
 -- without needing a separate script like MySQL. The server operator can do
@@ -245,7 +229,7 @@ function user_verify(conn, plaintext)
   return row.password == md5sum(plaintext)
 end
 
--- save a user to the database
+-- Save a new user to the database
 function user_save(conn, password)
   local table_user = get_option("table_user")
 
@@ -257,18 +241,18 @@ function user_save(conn, password)
   local ipaddr = auth.get_ipaddr(conn)
 
   -- insert the user
-  --local now = os.time()
+  local now = os.time()
   local query = string.format([[INSERT INTO %s VALUES (NULL, '%s', '%s',
                                 NULL, %s, %s, '%s', '%s', 0)]],
                               table_user, username, md5sum(password),
-                              sql_time(), sql_time(),
+                              now, now,
                               ipaddr, ipaddr)
   assert(dbh:execute(query))
 
   user_log(conn, true)
 end
 
--- log the session
+-- Log the connection attempt (success is boolean)
 function user_log(conn, success)
   local query   -- sql query
 
@@ -287,14 +271,14 @@ function user_log(conn, success)
   --local now = os.time()
   query = string.format([[UPDATE %s SET accesstime = %s, address = '%s',
                           logincount = logincount + 1
-                          WHERE name = '%s']], table_user, sql_time(),
+                          WHERE name = '%s']], table_user, os.time(),
                           ipaddr, username)
   assert(dbh:execute(query))
 
   -- insert the log row for this user
   query = string.format([[INSERT INTO %s (name, logintime, address, succeed)
                           VALUES ('%s', %s, '%s', '%s')]],
-                        table_log, username, sql_time(), ipaddr, success_str)
+                        table_log, username, os.time(), ipaddr, success_str)
   assert(dbh:execute(query))
 end
 
@@ -302,7 +286,7 @@ end
 -- freeciv database entry functions
 -- **************************************************************************
 
--- test and initialise the database connection
+-- Test and initialise the database connection
 function database_init()
   options_init()
 
@@ -323,7 +307,7 @@ function database_init()
     backend))
 end
 
--- free the database connection
+-- Free the database connection
 function database_free()
   log.verbose('Closing database connection...')
 
@@ -331,3 +315,8 @@ function database_free()
     dbh:close()
   end
 end
+
+-- Example of changing connection access level.
+-- function conn_established(conn)
+--   auth.set_cmdlevel(conn, ALLOW.info)
+-- end

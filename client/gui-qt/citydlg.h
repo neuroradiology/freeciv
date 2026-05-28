@@ -18,30 +18,13 @@
 #endif
 
 // Qt
-#include <QDialog>
 #include <QElapsedTimer>
 #include <QItemDelegate>
 #include <QLabel>
+#include <QProgressBar>
+#include <QTableView>
 #include <QtMath>
-
-class city_dialog;
-class QCheckBox;
-class QComboBox;
-class QDialog;
-class QGridLayout;
-class QGroupBox;
-class QHBoxLayout;
-class QProgressBar;
-class QPushButton;
-class QRadioButton;
-class QSplitter;
-class QTableView;
-class QTableWidget;
-class QTabWidget;
-class QVariant;
-class QVBoxLayout;
-
-#define NUM_INFO_FIELDS 14
+#include <QVariant>
 
 // common
 #include "unittype.h"
@@ -53,19 +36,62 @@ class QVBoxLayout;
 #include "fonts.h"
 #include "dialogs.h"
 
-// Qt
-#include <QProgressBar>
-#include <QTableWidget>
-#include <QToolTip>
+class QCheckBox;
+class QComboBox;
+class QGridLayout;
+class QGroupBox;
+class QHBoxLayout;
+class QPushButton;
+class QRadioButton;
+class QSplitter;
+class QTableWidget;
+class QVBoxLayout;
+
+#define SPECENUM_NAME city_info
+
+#define SPECENUM_VALUE0 INFO_CITIZEN
+#define SPECENUM_VALUE0NAME N_("Size:")
+#define SPECENUM_VALUE1 INFO_FOOD
+#define SPECENUM_VALUE1NAME N_("Food:")
+#define SPECENUM_VALUE2 INFO_SHIELD
+#define SPECENUM_VALUE2NAME N_("Prod:")
+#define SPECENUM_VALUE3 INFO_TRADE
+#define SPECENUM_VALUE3NAME N_("Trade:")
+#define SPECENUM_VALUE4 INFO_GOLD
+#define SPECENUM_VALUE4NAME N_("Gold:")
+#define SPECENUM_VALUE5 INFO_LUXURY
+#define SPECENUM_VALUE5NAME N_("Luxury:")
+#define SPECENUM_VALUE6 INFO_SCIENCE
+#define SPECENUM_VALUE6NAME N_("Science:")
+#define SPECENUM_VALUE7 INFO_GRANARY
+#define SPECENUM_VALUE7NAME N_("Granary:")
+#define SPECENUM_VALUE8 INFO_GROWTH
+#define SPECENUM_VALUE8NAME N_("Change in:")
+#define SPECENUM_VALUE9 INFO_CORRUPTION
+#define SPECENUM_VALUE9NAME N_("Corruption:")
+#define SPECENUM_VALUE10 INFO_WASTE
+#define SPECENUM_VALUE10NAME N_("Waste:")
+#define SPECENUM_VALUE11 INFO_CULTURE
+#define SPECENUM_VALUE11NAME N_("Culture:")
+#define SPECENUM_VALUE12 INFO_POLLUTION
+#define SPECENUM_VALUE12NAME N_("Pollution:")
+#define SPECENUM_VALUE13 INFO_ILLNESS
+#define SPECENUM_VALUE13NAME N_("Plague risk:")
+#define SPECENUM_VALUE14 INFO_STEAL
+#define SPECENUM_VALUE14NAME N_("Tech Stolen:")
+#define SPECENUM_VALUE15 INFO_AIRLIFT
+#define SPECENUM_VALUE15NAME N_("Airlift:")
+
+#define SPECENUM_COUNT    NUM_INFO_FIELDS // number of city_info panel enumerated fields
+#include "specenum_gen.h"
 
 class QImage;
 
 QString get_tooltip(QVariant qvar);
-QString get_tooltip_improvement(impr_type *building,
+QString get_tooltip_improvement(const impr_type *building,
                                 struct city *pcity = nullptr,
                                 bool ext = false);
-QString get_tooltip_unit(struct unit_type *unit, bool ext = false);
-QString bold(QString text);
+QString get_tooltip_unit(const struct unit_type *utype, bool ext = false);
 
 class fc_tooltip : public QObject
 {
@@ -128,7 +154,8 @@ class unit_item: public QLabel
   QMenu *unit_menu;
 
 public:
-  unit_item(QWidget *parent ,struct unit *punit, bool supp = false, int happy_cost = 0);
+  unit_item(QWidget *parent, struct unit *punit, bool supp = false,
+            int happy_cost = 0);
   ~unit_item();
   void init_pix();
 
@@ -156,7 +183,11 @@ protected:
   void wheelEvent(QWheelEvent *event);
   void mousePressEvent(QMouseEvent *event);
   void leaveEvent(QEvent *event);
+#ifndef FC_QT5_MODE
+  void enterEvent(QEnterEvent *event);
+#else  // FC_QT5_MODE
   void enterEvent(QEvent *event);
+#endif // FC_QT5_MODE
 };
 
 /****************************************************************************
@@ -192,25 +223,29 @@ class impr_item: public QLabel
   Q_OBJECT
 
 public:
-  impr_item(QWidget *parent ,struct impr_type *building, struct city *pcity);
+  impr_item(QWidget *parent, const struct impr_type *building, struct city *pcity);
   ~impr_item();
   void init_pix();
 
 private:
-  struct impr_type *impr;
+  const struct impr_type *impr;
   struct canvas *impr_pixmap;
-  struct city *pcity;
+  struct city *dlgcity;
 
 protected:
   void wheelEvent(QWheelEvent *event);
   void mouseDoubleClickEvent(QMouseEvent *event);
   void leaveEvent(QEvent *event);
+#ifndef FC_QT5_MODE
+  void enterEvent(QEnterEvent *event);
+#else  // FC_QT5_MODE
   void enterEvent(QEvent *event);
+#endif // FC_QT5_MODE
 };
 
 
 /****************************************************************************
-  Shows list of improvemrnts
+  Shows list of improvements
 ****************************************************************************/
 class impr_info: public QFrame
 {
@@ -343,7 +378,7 @@ private:
 };
 
 /****************************************************************************
-  Class for popup avaialable production
+  Class for popup available production
 ****************************************************************************/
 class production_widget: public QTableView
 {
@@ -400,10 +435,9 @@ protected:
 ****************************************************************************/
 class city_dialog: public qfc_dialog
 {
-
   Q_OBJECT
 
-  bool happines_shown;
+  bool happiness_shown;
   QHBoxLayout *single_page_layout;
   QHBoxLayout *happiness_layout;
   QSplitter *prod_unit_splitter;
@@ -433,6 +467,7 @@ class city_dialog: public qfc_dialog
   QTableWidget *nationality_table;
   QTableWidget *cma_table;
   QCheckBox *cma_celeb_checkbox;
+  QCheckBox *cma_max_growth;
   QCheckBox *future_targets;
   QCheckBox *show_units;
   QCheckBox *show_buildings;
@@ -447,7 +482,6 @@ class city_dialog: public qfc_dialog
   QPushButton *work_prev_but;
   QPushButton *work_add_but;
   QPushButton *work_rem_but;
-  QPushButton *but_menu_worklist;
   QPushButton *happiness_button;
   QPushButton *zoom_in_button;
   QPushButton *zoom_out_button;
@@ -464,7 +498,7 @@ public:
   ~city_dialog();
   void setup_ui(struct city *qcity);
   void refresh();
-  struct city *pcity;
+  struct city *dlgcity;
   int scroll_height;
   float zoom;
 
@@ -494,7 +528,6 @@ private slots:
   void show_happiness();
   void buy();
   void dbl_click_p(QTableWidgetItem *item);
-  void delete_prod();
   void item_selected(const QItemSelection &sl, const QItemSelection &ds);
   void clear_worklist();
   void save_worklist();
@@ -502,9 +535,9 @@ private slots:
   void worklist_down();
   void worklist_del();
   void display_worklist_menu(const QPoint &p);
-  void disband_state_changed(int state);
+  void disband_state_changed(bool allow_disband);
   void cma_slider(int val);
-  void cma_celebrate_changed(int val);
+  void cma_toggle_changed(int val);
   void cma_remove();
   void cma_enable();
   void cma_changed();
@@ -525,4 +558,4 @@ protected:
 void destroy_city_dialog();
 void city_font_update();
 
-#endif                          /* FC__CITYDLG_H */
+#endif // FC__CITYDLG_H

@@ -1,5 +1,5 @@
 #!/bin/bash
-#/**********************************************************************
+#/***********************************************************************
 # Freeciv - Copyright (C) 2017
 #   This program is free software; you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -41,9 +41,19 @@ fi
 
 RET=0
 
-if grep "CROSSER_QT" $DLLSPATH/crosser.txt | grep yes > /dev/null
+if grep "CROSSER_QT5" $DLLSPATH/crosser.txt | grep yes > /dev/null
 then
-  CROSSER_QT=yes
+  CROSSER_QT5=yes
+fi
+
+if grep "CROSSER_QT6" $DLLSPATH/crosser.txt | grep yes > /dev/null
+then
+  CROSSER_QT6=yes
+fi
+
+if grep "CROSSER_GTK4" $DLLSPATH/crosser.txt | grep yes > /dev/null
+then
+  CROSSER_GTK4=yes
 fi
 
 if ! ./installer_build.sh $DLLSPATH gtk3.22 ; then
@@ -53,23 +63,44 @@ else
   GTK322="Success"
 fi
 
-if test "x$CROSSER_QT" != "xyes" ; then
-  QT="N/A"
-elif ! ./installer_build.sh $DLLSPATH qt ; then
+if test "x$CROSSER_QT5" != "xyes" ; then
+  QT5="N/A"
+elif ! ./installer_build.sh $DLLSPATH qt5 ; then
   RET=1
-  QT="Fail"
+  QT5="Fail"
 else
-  QT="Success"
+  QT5="Success"
 fi
 
-if ! ./installer_build.sh $DLLSPATH sdl2 ; then
+if test "x$CROSSER_QT6" != "xyes" ; then
+  QT6="N/A"
+elif ! ./installer_build.sh $DLLSPATH qt6 ; then
+  RET=1
+  QT6="Fail"
+else
+  QT6="Success"
+fi
+
+# sdl2-client comes with gtk4 modpack installer
+if test "x$CROSSER_GTK4" != "xyes" ; then
+  SDL2="N/A"
+elif ! ./installer_build.sh $DLLSPATH sdl2 ; then
   RET=1
   SDL2="Fail"
 else
   SDL2="Success"
 fi
 
-if test "x$CROSSER_QT" != "xyes" ; then
+if test "$CROSSER_GTK4" != "yes" ; then
+  GTK4="N/A"
+elif ! ./installer_build.sh "$DLLSPATH" gtk4 ; then
+  RET=1
+  GTK4="Fail"
+else
+  GTK4="Success"
+fi
+
+if test "$CROSSER_QT6" != "yes" ; then
   RULEDIT="N/A"
 elif ! ./installer_build.sh $DLLSPATH ruledit ; then
   RET=1
@@ -79,7 +110,9 @@ else
 fi
 
 echo "Gtk3.22: $GTK322"
-echo "Qt:      $QT"
+echo "Gtk4:    $GTK4"
+echo "Qt5:     $QT5"
+echo "Qt6:     $QT6"
 echo "Sdl2:    $SDL2"
 echo "Ruledit: $RULEDIT"
 

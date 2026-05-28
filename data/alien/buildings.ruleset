@@ -12,9 +12,21 @@
 ; than minor changes.
 
 [datafile]
-description="Alien World buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Alien World buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02"
+format_version = 30
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+;building_flags =
+;  { "name", "helptxt"
+;  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -34,7 +46,8 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
 ; graphic	= icon of improvement (used in city dialog)
@@ -55,7 +68,7 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
@@ -132,7 +145,7 @@ reqs    =
     {
       "type", "name", "range"
       "Tech", "Underground Habitat", "Player"
-      "TerrainClass", "Land", "Local"
+      "TerrainClass", "Land", "Tile"
     }
 graphic         = "b.bunker"
 graphic_alt     = "b.sam_battery"
@@ -155,7 +168,7 @@ genus           = "Improvement"
 reqs    =
     { "type", "name", "range"
       "Tech", "Mining", "Player"
-      "TerrainClass", "Land", "Local"
+      "TerrainClass", "Land", "Tile"
     }
 graphic         = "b.central_mine"
 graphic_alt     = "b.mfg_plant"
@@ -272,7 +285,7 @@ obsolete_by	=
     { "type", "name", "range"
     }
 build_cost	= 80
-upkeep		= 1
+upkeep		= 0
 sabotage	= 0
 sound		= "b_palace"
 sound_alt	= "b_generic"
@@ -316,7 +329,7 @@ obsolete_by	=
     { "type", "name", "range"
     }
 build_cost	= 280
-upkeep		= 1
+upkeep		= 0
 sabotage	= 100
 sound		= "w_isaac_newtons_college"
 sound_alt	= "w_generic"
@@ -523,7 +536,7 @@ Makes two unhappy citizens content.\
 
 [building_coinage]
 name		= _("Coinage")
-genus		= "Special"
+genus		= "Convert"
 flags		= "Gold"
 reqs	=
     { "type", "name", "range"
@@ -696,7 +709,7 @@ genus		= "GreatWonder"
 reqs	=
     { "type", "name", "range"
       "Tech", "Ocean Cities", "Player"
-      "TerrainClass", "Oceanic", "Local"
+      "TerrainClass", "Oceanic", "Tile"
     }
 graphic         = "b.oceanic_downtown"
 graphic_alt     = "b.asmiths_trading_co"

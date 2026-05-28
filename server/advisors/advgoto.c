@@ -90,6 +90,26 @@ bool adv_unit_execute_path(struct unit *punit, struct pf_path *path)
     int id = punit->id;
 
     if (same_pos(unit_tile(punit), ptile)) {
+#ifdef PF_WAIT_DEBUG
+      fc_assert_msg(
+#if PF_WAIT_DEBUG & 1
+                    punit->moves_left < unit_move_rate(punit)
+#if PF_WAIT_DEBUG & (2 | 4)
+                   ||
+#endif
+#endif
+#if PF_WAIT_DEBUG & 2
+                   punit->fuel < utype_fuel(unit_type_get(punit))
+#if PF_WAIT_DEBUG & 4
+                   ||
+#endif
+#endif
+#if PF_WAIT_DEBUG & 4
+                   punit->hp < unit_type_get(punit)->hp
+#endif
+                    , "%s waits at %d,%d for no visible profit",
+                    unit_rule_name(punit), TILE_XY(ptile));
+#endif
       UNIT_LOG(LOG_DEBUG, punit, "execute_path: waiting this turn");
       return TRUE;
     }
@@ -131,8 +151,9 @@ bool adv_unit_execute_path(struct unit *punit, struct pf_path *path)
 **************************************************************************/
 static bool adv_unit_move(struct unit *punit, struct tile *ptile)
 {
+  struct action *paction;
   struct player *pplayer = unit_owner(punit);
-  int mcost;
+  struct unit *ptrans = NULL;
 
   /* if enemy, stop and give a chance for the human player to
      handle this case */
@@ -142,20 +163,148 @@ static bool adv_unit_move(struct unit *punit, struct tile *ptile)
     return FALSE;
   }
 
+  /* Select move kind. */
+  if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+      && ((ptrans = transporter_for_unit_at(punit, ptile)))
+      && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK,
+                                        punit, ptrans)) {
+    /* "Transport Embark". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK2,
+                                               punit, ptrans)) {
+    /* "Transport Embark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK2);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK3,
+                                               punit, ptrans)) {
+    /* "Transport Embark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK3);
+  } else if (!can_unit_survive_at_tile(&(wld.map), punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(ACTION_TRANSPORT_EMBARK4,
+                                               punit, ptrans)) {
+    /* "Transport Embark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK1,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK1);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK2,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK3,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_TRANSPORT_DISEMBARK4,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut". */
+    paction = action_by_number(ACTION_HUT_ENTER);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER2,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 2". */
+    paction = action_by_number(ACTION_HUT_ENTER2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER3,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 3". */
+    paction = action_by_number(ACTION_HUT_ENTER3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_ENTER4,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 4". */
+    paction = action_by_number(ACTION_HUT_ENTER4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN2,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 2". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN2);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN3,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 3". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN3);
+  } else if (is_action_enabled_unit_on_tile(ACTION_HUT_FRIGHTEN4,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 4". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN4);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move". */
+    paction = action_by_number(ACTION_UNIT_MOVE);
+  } else if (is_action_enabled_unit_on_tile(ACTION_UNIT_MOVE2,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move 2". */
+    paction = action_by_number(ACTION_UNIT_MOVE2);
+  } else {
+    /* "Unit Move 3". */
+    paction = action_by_number(ACTION_UNIT_MOVE3);
+  }
+
   /* Try not to end move next to an enemy if we can avoid it by waiting */
-  mcost = map_move_cost_unit(&(wld.map), punit, ptile);
-  if (punit->moves_left <= mcost
-      && unit_move_rate(punit) > mcost
-      && adv_danger_at(punit, ptile)
-      && !adv_danger_at(punit, unit_tile(punit))) {
-    UNIT_LOG(LOG_DEBUG, punit, "ending move early to stay out of trouble");
-    return FALSE;
+  if (action_has_result(paction, ACTRES_UNIT_MOVE)
+      || action_has_result(paction, ACTRES_TRANSPORT_DISEMBARK)) {
+    /* The unit will have to move it self rather than being moved. */
+    int mcost = map_move_cost_unit(&(wld.map), punit, ptile);
+
+    if (paction) {
+      struct tile *from_tile;
+
+      /* Ugly hack to understand the OnNativeTile unit state requirements
+       * used in the Action_Success_Actor_Move_Cost effect. */
+      fc_assert(utype_is_moved_to_tgt_by_action(paction,
+                                                unit_type_get(punit)));
+      from_tile = unit_tile(punit);
+      punit->tile = ptile;
+
+      mcost += unit_pays_mp_for_action(paction, punit);
+
+      punit->tile = from_tile;
+    }
+
+    if (punit->moves_left <= mcost
+        && unit_move_rate(punit) > mcost
+        && adv_danger_at(punit, ptile)
+        && !adv_danger_at(punit, unit_tile(punit))) {
+      UNIT_LOG(LOG_DEBUG, punit,
+               "ending move early to stay out of trouble");
+      return FALSE;
+    }
   }
 
   /* go */
   unit_activity_handling(punit, ACTIVITY_IDLE);
   /* Move */
-  (void) unit_move_handling(punit, ptile, FALSE, TRUE, NULL);
+  /* TODO: Differentiate (server side AI) player from server side agent
+   * working for (possibly AI) player by using ACT_REQ_PLAYER and
+   * ACT_REQ_SS_AGENT */
+  if (paction && ptrans
+      && action_has_result(paction, ACTRES_TRANSPORT_EMBARK)) {
+      /* "Transport Embark". */
+      unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                     0, "", action_number(paction));
+    } else if (paction
+               && (action_has_result(paction,
+                                     ACTRES_TRANSPORT_DISEMBARK)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_ENTER)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_FRIGHTEN)
+                   || action_has_result(paction,
+                                        ACTRES_UNIT_MOVE))) {
+    /* "Transport Disembark", "Transport Disembark 2", "Enter Hut",
+     * "Frighten Hut" or "Unit Move". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", action_number(paction));
+  }
 
   return TRUE;
 }
@@ -200,7 +349,7 @@ int adv_could_unit_move_to_tile(struct unit *punit, struct tile *dest_tile)
   enum unit_move_result reason =
     unit_move_to_tile_test(&(wld.map), punit, ACTIVITY_IDLE, unit_tile(punit),
                            dest_tile, unit_has_type_flag(punit, UTYF_IGZOC),
-                           NULL, FALSE);
+                           TRUE, NULL, FALSE);
 
   switch (reason) {
   case MR_OK:
@@ -296,8 +445,10 @@ bool adv_danger_at(struct unit *punit, struct tile *ptile)
     }
     unit_list_iterate(ptile1->units, enemy) {
       if (pplayers_at_war(unit_owner(enemy), unit_owner(punit))
-          && unit_attack_unit_at_tile_result(enemy, punit, ptile) == ATT_OK
-          && unit_attack_units_at_tile_result(enemy, ptile) == ATT_OK) {
+          && (unit_attack_unit_at_tile_result(enemy, NULL, punit, ptile)
+              == ATT_OK)
+          && (unit_attack_units_at_tile_result(enemy, NULL, ptile)
+              == ATT_OK)) {
         a += adv_unit_att_rating(enemy);
         if ((a * a * 10) >= d) {
           /* The enemies combined strength is too big! */

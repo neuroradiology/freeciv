@@ -70,12 +70,7 @@ static gboolean quit_dialog_callback(void);
 **************************************************************************/
 static void modinst_quit(void)
 {
-  close_mpdbs();
-
-  fcmp_deinit();
-  cmdline_option_values_free();
-
-  exit(EXIT_SUCCESS);
+  gtk_main_quit();
 }
 
 /**********************************************************************//**
@@ -117,7 +112,7 @@ static gboolean quit_dialog_callback(void)
     gtk_window_present(GTK_WINDOW(dialog));
 
   } else {
-    /* User loses no work by quitting, so let's not annoy him/her
+    /* User loses no work by quitting, so let's not annoy them
      * with confirmation dialog. */
     modinst_quit();
   }
@@ -147,7 +142,7 @@ static void pbar_callback(int downloaded, int max)
 }
 
 struct msg_data {
-  const char *msg;
+  char *msg;
 };
 
 /**********************************************************************//**
@@ -159,6 +154,7 @@ static gboolean msg_main_thread(gpointer user_data)
 
   msg_callback(data->msg);
 
+  FC_FREE(data->msg);
   FC_FREE(data);
 
   return G_SOURCE_REMOVE;
@@ -171,7 +167,7 @@ static void msg_dl_thread(const char *msg)
 {
   struct msg_data *data = fc_malloc(sizeof(*data));
 
-  data->msg = msg;
+  data->msg = fc_strdup(msg);
 
   gdk_threads_add_idle(msg_main_thread, data);
 }
@@ -592,39 +588,43 @@ int main(int argc, char *argv[])
     load_install_info_lists(&fcmp);
 
     /* Process GTK arguments */
-    gtk_init(&ui_options, &argv);
+    if (gtk_init_check(&ui_options, &argv)) {
+      toplevel = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 
-    toplevel = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+      gtk_widget_realize(toplevel);
+      gtk_widget_set_name(toplevel, "Freeciv-modpack");
+      gtk_window_set_title(GTK_WINDOW(toplevel),
+                           _("Freeciv modpack installer (gtk3)"));
 
-    gtk_widget_realize(toplevel);
-    gtk_widget_set_name(toplevel, "Freeciv-modpack");
-    gtk_window_set_title(GTK_WINDOW(toplevel),
-                         _("Freeciv modpack installer (gtk3)"));
-
-    /* Keep the icon of the executable on Windows */
+      /* Keep the icon of the executable on Windows */
 #ifndef FREECIV_MSWINDOWS
-    {
-      /* Unlike main client, this only works if installed. Ignore any
-       * errors loading the icon. */
-      GError *err;
+      {
+        /* Unlike main client, this only works if installed. Ignore any
+         * errors loading the icon. */
+        GError *err;
 
-      (void) gtk_window_set_icon_from_file(GTK_WINDOW(toplevel), MPICON_PATH,
-                                           &err);
-    }
+        (void) gtk_window_set_icon_from_file(GTK_WINDOW(toplevel), MPICON_PATH,
+                                             &err);
+      }
 #endif /* FREECIV_MSWINDOWS */
 
-    g_signal_connect(toplevel, "delete_event",
-                     G_CALLBACK(quit_dialog_callback), NULL);
+      g_signal_connect(toplevel, "delete_event",
+                       G_CALLBACK(quit_dialog_callback), NULL);
 
-    modinst_setup_widgets(toplevel);
+      modinst_setup_widgets(toplevel);
 
-    gtk_widget_show_all(toplevel);
+      gtk_widget_show_all(toplevel);
 
-    if (fcmp.autoinstall != NULL) {
-      gui_download_modpack(fcmp.autoinstall);
+      if (fcmp.autoinstall != NULL) {
+        gui_download_modpack(fcmp.autoinstall);
+      }
+
+      gtk_main();
+
+      gtk_widget_destroy(toplevel);
+    } else {
+      log_fatal(_("Failed to open graphical mode."));
     }
-
-    gtk_main();
 
     close_mpdbs();
   }

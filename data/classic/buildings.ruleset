@@ -11,9 +11,22 @@
 ; than minor changes.
 
 [datafile]
-description="Classic buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02 web-compatible"
-format_version=20
+description = "Classic buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.2-Devel-2022.Feb.02 web-compatible"
+format_version = 30
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+building_flags =
+  { "name", "helptxt"
+    "Barracks"
+  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -33,7 +46,8 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
 ; graphic	= icon of improvement (used in city dialog)
@@ -54,7 +68,7 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
@@ -158,13 +172,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_i"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_ii]
@@ -186,13 +202,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_ii"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_iii]
@@ -212,13 +230,15 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_iii"
 sound_alt	= "b_generic"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 With a Barracks, each new land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_cathedral]
@@ -1752,14 +1772,6 @@ sound_alt	= "w_generic"
 helptext	= _("\
 All your units regain two extra hitpoints per turn.\
 ")
-; NOTE: 
-; This does not match Civ1 or Civ2, but diplomatic effects are 
-; not very effective in multiplayer, and hitpoints effects do not
-; apply for Civ1.  Note in Civ1 Pyramids have a gov-change effect,
-; but become obsolete, and the Statue of Liberty does not exist.
-; NOTE:
-; In Civ2 this provides embassies, forces peaceful enemies and
-; allows Democracy to declare war 50% of the time.
 
 [building_womens_suffrage]
 name		= _("Women's Suffrage")
@@ -1792,7 +1804,7 @@ Counts as a Police Station in every city. (That is, for each city, it\
 
 [building_capitalization]
 name		= _("Coinage")
-genus		= "Special"
+genus		= "Convert"
 flags		= "Gold"
 reqs	=
     { "type", "name", "range"

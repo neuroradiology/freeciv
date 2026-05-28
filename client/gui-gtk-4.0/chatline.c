@@ -49,7 +49,7 @@
 
 #include "chatline.h"
 
-#define	MAX_CHATLINE_HISTORY 20
+#define MAX_CHATLINE_HISTORY 20
 
 static struct genlist *history_list = NULL;
 static int history_pos = -1;
@@ -140,9 +140,10 @@ static bool is_plain_public_message(const char *s)
 static void inputline_return(GtkEntry *w, gpointer data)
 {
   const char *theinput;
+  GtkEntryBuffer *buffer = gtk_entry_get_buffer(w);
 
-  theinput = gtk_entry_get_text(w);
-  
+  theinput = gtk_entry_buffer_get_text(buffer);
+
   if (*theinput) {
     if (client_state() == C_S_RUNNING
         && GUI_GTK_OPTION(allied_chat_only)
@@ -164,10 +165,10 @@ static void inputline_return(GtkEntry *w, gpointer data)
     }
 
     genlist_prepend(history_list, fc_strdup(theinput));
-    history_pos=-1;
+    history_pos = -1;
   }
 
-  gtk_entry_set_text(w, "");
+  gtk_entry_buffer_set_text(buffer, "", -1);
 }
 
 /**********************************************************************//**
@@ -194,12 +195,11 @@ static const char *get_player_or_user_name(int id)
 /**********************************************************************//**
   Find a player or a user by prefix.
 
-  prefix - The prefix.
-  matches - A string array to set the matches result.
-  max_matches - The maximum of matches.
-  match_len - The length of the string used to returns matches.
+  @param prefix       The prefix.
+  @param matches      A string array to set the matches result.
+  @param max_matches  The maximum of matches.
 
-  Returns the number of the matches names.
+  @return the number of the matches names.
 **************************************************************************/
 static int check_player_or_user_name(const char *prefix,
                                      const char **matches,
@@ -344,16 +344,17 @@ static bool chatline_autocomplete(GtkEditable *editable)
 /**********************************************************************//**
   Called when a key is pressed.
 **************************************************************************/
-static gboolean inputline_handler(GtkWidget *w, GdkEvent *ev)
+static gboolean inputline_handler(GtkEventControllerKey *controller,
+                                  guint keyval,
+                                  guint keycode,
+                                  GdkModifierType state,
+                                  gpointer data)
 {
-  GdkModifierType state;
+  GtkWidget *w = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
 
-  gdk_event_get_state(ev, &state);
   if ((state & GDK_CONTROL_MASK)) {
     /* Chatline featured text support. */
-    guint keyval;
 
-    gdk_event_get_keyval(ev, &keyval);
     switch (keyval) {
     case GDK_KEY_b:
       inputline_make_tag(GTK_ENTRY(w), TTT_BOLD);
@@ -381,14 +382,14 @@ static gboolean inputline_handler(GtkWidget *w, GdkEvent *ev)
 
   } else {
     /* Chatline history controls. */
-    guint keyval;
+    GtkEntryBuffer *buffer = gtk_entry_get_buffer(GTK_ENTRY(w));
 
-    gdk_event_get_keyval(ev, &keyval);
     switch (keyval) {
     case GDK_KEY_Up:
       if (history_pos < genlist_size(history_list) - 1) {
-        gtk_entry_set_text(GTK_ENTRY(w),
-                           genlist_get(history_list, ++history_pos));
+        gtk_entry_buffer_set_text(buffer,
+                                  genlist_get(history_list, ++history_pos),
+                                  -1);
         gtk_editable_set_position(GTK_EDITABLE(w), -1);
       }
       return TRUE;
@@ -399,10 +400,11 @@ static gboolean inputline_handler(GtkWidget *w, GdkEvent *ev)
       }
 
       if (history_pos >= 0) {
-        gtk_entry_set_text(GTK_ENTRY(w),
-                           genlist_get(history_list, history_pos));
+        gtk_entry_buffer_set_text(buffer,
+                                  genlist_get(history_list, history_pos),
+                                  -1);
       } else {
-        gtk_entry_set_text(GTK_ENTRY(w), "");
+        gtk_entry_buffer_set_text(buffer, "", -1);
       }
       gtk_editable_set_position(GTK_EDITABLE(w), -1);
       return TRUE;
@@ -591,24 +593,15 @@ void scroll_if_necessary(GtkTextView *textview, GtkTextMark *scroll_target)
 /**********************************************************************//**
   Click a link.
 **************************************************************************/
-static gboolean event_after(GtkWidget *text_view, GdkEvent *event)
+static gboolean event_after(GtkGestureClick *gesture, int n_press,
+                            double x, double y, gpointer data)
 {
+  GtkWidget *text_view = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   GtkTextIter start, end, iter;
   GtkTextBuffer *buffer;
   GSList *tags, *tagp;
-  gint x, y;
+  gint bx, by;
   struct tile *ptile = NULL;
-  guint button;
-  gdouble e_x, e_y;
-
-  if (gdk_event_get_event_type(event) != GDK_BUTTON_RELEASE) {
-    return FALSE;
-  }
-
-  gdk_event_get_button(event, &button);
-  if (button != 1) {
-    return FALSE;
-  }
 
   buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
 
@@ -618,12 +611,11 @@ static gboolean event_after(GtkWidget *text_view, GdkEvent *event)
     return FALSE;
   }
 
-  gdk_event_get_coords(event, &e_x, &e_y);
-  gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW (text_view), 
+  gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW (text_view),
                                         GTK_TEXT_WINDOW_WIDGET,
-                                        e_x, e_y, &x, &y);
+                                        x, y, &bx, &by);
 
-  gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(text_view), &iter, x, y);
+  gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(text_view), &iter, bx, by);
 
   if ((tags = gtk_text_iter_get_tags(&iter))) {
     for (tagp = tags; tagp; tagp = tagp->next) {
@@ -700,12 +692,10 @@ static void set_cursor_if_appropriate(GtkTextView *text_view, gint x, gint y)
 
   /* Initialize the cursors. */
   if (!hand_cursor) {
-    hand_cursor = gdk_cursor_new_for_display(
-        gtk_widget_get_display(GTK_WIDGET(text_view)), GDK_HAND2);
+    hand_cursor = gdk_cursor_new_from_name("pointer", NULL);
   }
   if (!regular_cursor) {
-    regular_cursor = gdk_cursor_new_for_display(
-        gtk_widget_get_display(GTK_WIDGET(text_view)), GDK_XTERM);
+    regular_cursor = gdk_cursor_new_from_name("text", NULL);
   }
 
   gtk_text_view_get_iter_at_location(text_view, &iter, x, y);
@@ -725,13 +715,9 @@ static void set_cursor_if_appropriate(GtkTextView *text_view, gint x, gint y)
     hovering_over_link = hovering;
 
     if (hovering_over_link) {
-      gdk_window_set_cursor(gtk_text_view_get_window(text_view,
-                                                     GTK_TEXT_WINDOW_TEXT),
-                            hand_cursor);
+      gtk_widget_set_cursor(GTK_WIDGET(text_view), hand_cursor);
     } else {
-      gdk_window_set_cursor(gtk_text_view_get_window(text_view,
-                                                     GTK_TEXT_WINDOW_TEXT),
-                            regular_cursor);
+      gtk_widget_set_cursor(GTK_WIDGET(text_view), regular_cursor);
     }
   }
 
@@ -749,8 +735,8 @@ static gboolean motion_notify_event(GtkWidget *text_view,
   gint x, y;
   gdouble e_x, e_y;
 
-  gdk_event_get_coords(event, &e_x, &e_y);
-  gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(text_view), 
+  gdk_event_get_position(event, &e_x, &e_y);
+  gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(text_view),
                                         GTK_TEXT_WINDOW_WIDGET,
                                         e_x, e_y, &x, &y);
   set_cursor_if_appropriate(GTK_TEXT_VIEW(text_view), x, y);
@@ -763,8 +749,15 @@ static gboolean motion_notify_event(GtkWidget *text_view,
 **************************************************************************/
 void set_message_buffer_view_link_handlers(GtkWidget *view)
 {
-  g_signal_connect(view, "event-after",
-		   G_CALLBACK(event_after), NULL);
+  GtkGesture *gesture;
+  GtkEventController *controller;
+
+  gesture = gtk_gesture_click_new();
+  controller = GTK_EVENT_CONTROLLER(gesture);
+  g_signal_connect(controller, "released",
+                   G_CALLBACK(event_after), NULL);
+  gtk_widget_add_controller(view, controller);
+
   g_signal_connect(view, "motion-notify-event",
 		   G_CALLBACK(motion_notify_event), NULL);
 }
@@ -775,10 +768,10 @@ void set_message_buffer_view_link_handlers(GtkWidget *view)
 void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
                     ft_offset_t text_start_offset, const char *text)
 {
-  static bool initalized = FALSE;
+  static bool initialized = FALSE;
   GtkTextIter start, stop;
 
-  if (!initalized) {
+  if (!initialized) {
     gtk_text_buffer_create_tag(buf, "bold",
                                "weight", PANGO_WEIGHT_BOLD, NULL);
     gtk_text_buffer_create_tag(buf, "italic",
@@ -787,7 +780,7 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
                                "strikethrough", TRUE, NULL);
     gtk_text_buffer_create_tag(buf, "underline",
                                "underline", PANGO_UNDERLINE_SINGLE, NULL);
-    initalized = TRUE;
+    initialized = TRUE;
   }
 
   /* Get the position. */
@@ -847,7 +840,6 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
         break; /* No color. */
       }
       gtk_text_buffer_apply_tag(buf, tag, &start, &stop);
-      g_object_unref(G_OBJECT(tag));
     }
     break;
   case TTT_LINK:
@@ -871,7 +863,7 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
         break; /* Not a valid link type case. */
       }
 
-      tag = gtk_text_buffer_create_tag(buf, NULL, 
+      tag = gtk_text_buffer_create_tag(buf, NULL,
                                        "foreground-rgba", &pcolor->color,
                                        "underline", PANGO_UNDERLINE_SINGLE,
                                        NULL);
@@ -883,7 +875,6 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
       g_object_set_data(G_OBJECT(tag), "id",
                         GINT_TO_POINTER(text_tag_link_id(ptag)));
       gtk_text_buffer_apply_tag(buf, tag, &start, &stop);
-      g_object_unref(G_OBJECT(tag));
       break;
     }
   }
@@ -917,11 +908,11 @@ void real_output_window_append(const char *astring,
   if (GUI_GTK_OPTION(show_chat_message_time)) {
     char timebuf[64];
     time_t now;
-    struct tm *now_tm;
+    struct tm now_tm;
 
     now = time(NULL);
-    now_tm = localtime(&now);
-    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", now_tm);
+    fc_localtime(&now, &now_tm);
+    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", &now_tm);
     gtk_text_buffer_insert(buf, &iter, timebuf, -1);
   }
 
@@ -1052,7 +1043,7 @@ void chatline_scroll_to_bottom(bool delayed)
 /**********************************************************************//**
   Tool button clicked.
 **************************************************************************/
-static void make_tag_callback(GtkToolButton *button, gpointer data)
+static void make_tag_callback(GtkButton *button, gpointer data)
 {
   inputline_make_tag(GTK_ENTRY(data),
                      GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button),
@@ -1060,10 +1051,10 @@ static void make_tag_callback(GtkToolButton *button, gpointer data)
 }
 
 /**********************************************************************//**
-  Set the color for an object.  Update the button if not NULL.
+  Set the color for an object. Update the button if not NULL.
 **************************************************************************/
 static void color_set(GObject *object, const gchar *color_target,
-                      GdkRGBA *color, GtkToolButton *button)
+                      GdkRGBA *color, GtkButton *button)
 {
   GdkRGBA *current_color = g_object_get_data(object, color_target);
 
@@ -1073,7 +1064,7 @@ static void color_set(GObject *object, const gchar *color_target,
       gdk_rgba_free(current_color);
       g_object_set_data(object, color_target, NULL);
       if (NULL != button) {
-        gtk_tool_button_set_icon_widget(button, NULL);
+        gtk_button_set_child(button, NULL);
       }
     }
   } else {
@@ -1092,6 +1083,8 @@ static void color_set(GObject *object, const gchar *color_target,
       GdkPixbuf *pixbuf;
       GtkWidget *image;
 
+      gtk_button_set_child(button, NULL);
+
       {
         cairo_surface_t *surface = cairo_image_surface_create(
             CAIRO_FORMAT_RGB24, 16, 16);
@@ -1103,7 +1096,7 @@ static void color_set(GObject *object, const gchar *color_target,
         cairo_surface_destroy(surface);
       }
       image = gtk_image_new_from_pixbuf(pixbuf);
-      gtk_tool_button_set_icon_widget(button, image);
+      gtk_button_set_child(button, image);
       gtk_widget_show(image);
       g_object_unref(G_OBJECT(pixbuf));
     }
@@ -1115,14 +1108,13 @@ static void color_set(GObject *object, const gchar *color_target,
 **************************************************************************/
 static void color_selected(GtkDialog *dialog, gint res, gpointer data)
 {
-  GtkToolButton *button =
-    GTK_TOOL_BUTTON(g_object_get_data(G_OBJECT(dialog), "button"));
   const gchar *color_target =
-    g_object_get_data(G_OBJECT(button), "color_target");
+    g_object_get_data(G_OBJECT(data), "color_target");
+  GObject *entry = g_object_get_data(G_OBJECT(data), "entry");
 
   if (res == GTK_RESPONSE_REJECT) {
     /* Clears the current color. */
-    color_set(G_OBJECT(data), color_target, NULL, button);
+    color_set(entry, color_target, NULL, data);
   } else if (res == GTK_RESPONSE_OK) {
     /* Apply the new color. */
     GtkColorChooser *chooser =
@@ -1130,16 +1122,16 @@ static void color_selected(GtkDialog *dialog, gint res, gpointer data)
     GdkRGBA new_color;
 
     gtk_color_chooser_get_rgba(chooser, &new_color);
-    color_set(G_OBJECT(data), color_target, &new_color, button);
+    color_set(entry, color_target, &new_color, data);
   }
 
-  gtk_widget_destroy(GTK_WIDGET(dialog));
+  gtk_window_destroy(GTK_WINDOW(dialog));
 }
 
 /**********************************************************************//**
-  Color selection tool button clicked.
+  Color selection button clicked.
 **************************************************************************/
-static void select_color_callback(GtkToolButton *button, gpointer data)
+static void select_color_callback(GtkButton *button, gpointer data)
 {
   GtkWidget *dialog, *chooser;
   /* "fg_color" or "bg_color". */
@@ -1152,18 +1144,19 @@ static void select_color_callback(GtkToolButton *button, gpointer data)
               (const char *) g_object_get_data(G_OBJECT(button),
                                                "color_info"));
   dialog = gtk_dialog_new_with_buttons(buf, NULL, GTK_DIALOG_MODAL,
-                                       _("Cancel"), GTK_RESPONSE_CANCEL,
-                                       _("Clear"), GTK_RESPONSE_REJECT,
-                                       _("OK"), GTK_RESPONSE_OK, NULL);
+                                       _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                       _("C_lear"), GTK_RESPONSE_REJECT,
+                                       _("_OK"), GTK_RESPONSE_OK, NULL);
   setup_dialog(dialog, toplevel);
-  g_object_set_data(G_OBJECT(dialog), "button", button);
-  g_signal_connect(dialog, "response", G_CALLBACK(color_selected), data);
+  g_object_set_data(G_OBJECT(button), "entry", data);
+  g_signal_connect(dialog, "response", G_CALLBACK(color_selected), button);
 
   chooser = gtk_color_chooser_widget_new();
-  gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
-                     chooser);
+  gtk_box_insert_child_after(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
+                             chooser, NULL);
   g_object_set_data(G_OBJECT(dialog), "chooser", chooser);
-  if (current_color) {
+
+  if (current_color != NULL) {
     gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(chooser), current_color);
   }
 
@@ -1174,14 +1167,13 @@ static void select_color_callback(GtkToolButton *button, gpointer data)
 /**********************************************************************//**
   Moves the tool kit to the toolkit view.
 **************************************************************************/
-static gboolean move_toolkit(GtkWidget *toolkit_view,
-                             gpointer data)
+static gboolean move_toolkit(GtkWidget *toolkit_view, gpointer data)
 {
   struct inputline_toolkit *ptoolkit = (struct inputline_toolkit *) data;
   GtkWidget *parent = gtk_widget_get_parent(ptoolkit->main_widget);
   GtkWidget *button_box = GTK_WIDGET(g_object_get_data(G_OBJECT(toolkit_view),
                                                        "button_box"));
-  GList *list, *iter;
+  GtkWidget *iter;
 
   if (parent) {
     if (parent == toolkit_view) {
@@ -1195,8 +1187,8 @@ static gboolean move_toolkit(GtkWidget *toolkit_view,
     }
     g_object_ref(ptoolkit->main_widget); /* Make sure reference count stays above 0
                                           * during the transition to new parent. */
-    gtk_container_remove(GTK_CONTAINER(parent), ptoolkit->main_widget);
-    gtk_container_add(GTK_CONTAINER(toolkit_view), ptoolkit->main_widget);
+    gtk_box_remove(GTK_BOX(parent), ptoolkit->main_widget);
+    gtk_box_append(GTK_BOX(toolkit_view), ptoolkit->main_widget);
     g_object_unref(ptoolkit->main_widget);
     if (ptoolkit->toolbar_displayed) {
       gtk_widget_show(ptoolkit->toolbar);
@@ -1204,28 +1196,26 @@ static gboolean move_toolkit(GtkWidget *toolkit_view,
 
     if (!gtk_widget_get_parent(button_box)) {
       /* Attach to the toolkit button_box. */
-      gtk_container_add(GTK_CONTAINER(ptoolkit->button_box), button_box);
+      gtk_box_append(GTK_BOX(ptoolkit->button_box), button_box);
     }
-    gtk_widget_show(ptoolkit->main_widget);
+    gtk_widget_show(button_box);
     if (!ptoolkit->toolbar_displayed) {
       gtk_widget_hide(ptoolkit->toolbar);
     }
 
     /* Hide all other buttons boxes. */
-    list = gtk_container_get_children(GTK_CONTAINER(ptoolkit->button_box));
-    for (iter = list; iter != NULL; iter = g_list_next(iter)) {
-      GtkWidget *widget = GTK_WIDGET(iter->data);
-
-      if (widget != button_box) {
-        gtk_widget_hide(widget);
+    for (iter = gtk_widget_get_first_child(GTK_WIDGET(ptoolkit->button_box));
+         iter != NULL;
+         iter = gtk_widget_get_next_sibling(iter)) {
+      if (iter != button_box) {
+        gtk_widget_hide(iter);
       }
     }
-    g_list_free(list);
 
   } else {
     /* First time attached to a parent. */
-    gtk_container_add(GTK_CONTAINER(toolkit_view), ptoolkit->main_widget);
-    gtk_container_add(GTK_CONTAINER(ptoolkit->button_box), button_box);
+    gtk_box_append(GTK_BOX(toolkit_view), ptoolkit->main_widget);
+    gtk_box_append(GTK_BOX(ptoolkit->button_box), button_box);
     gtk_widget_show(ptoolkit->main_widget);
   }
 
@@ -1235,8 +1225,7 @@ static gboolean move_toolkit(GtkWidget *toolkit_view,
 /**********************************************************************//**
   Show/Hide the toolbar.
 **************************************************************************/
-static gboolean set_toolbar_visibility(GtkWidget *w,
-                                       gpointer data)
+static gboolean set_toolbar_visibility(GtkWidget *w, gpointer data)
 {
   struct inputline_toolkit *ptoolkit = (struct inputline_toolkit *) data;
   GtkToggleButton *button = GTK_TOGGLE_BUTTON(toolkit.toggle_button);
@@ -1246,15 +1235,15 @@ static gboolean set_toolbar_visibility(GtkWidget *w,
       /* button_toggled() will be called and the toolbar shown. */
       gtk_toggle_button_set_active(button, TRUE);
     } else {
-      /* Unsure the widget is visible. */
+      /* Ensure the widget is visible. */
       gtk_widget_show(ptoolkit->toolbar);
     }
   } else {
     if (gtk_toggle_button_get_active(button)) {
-      /* button_toggled() will be called and the toolbar hiden. */
+      /* button_toggled() will be called and the toolbar hidden. */
       gtk_toggle_button_set_active(button, FALSE);
     } else {
-      /* Unsure the widget is visible. */
+      /* Ensure the widget is not visible. */
       gtk_widget_hide(ptoolkit->toolbar);
     }
   }
@@ -1287,22 +1276,19 @@ static void button_toggled(GtkToggleButton *button, gpointer data)
   inputline.
 
   This widget has the following datas:
-  "button_box": pointer to the GtkHBox where to append buttons.
+  "button_box": pointer to the GtkBox where to append buttons.
 **************************************************************************/
 GtkWidget *inputline_toolkit_view_new(void)
 {
   GtkWidget *toolkit_view, *bbox;
 
   /* Main widget. */
-  toolkit_view = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(toolkit_view),
-                                 GTK_ORIENTATION_VERTICAL);
+  toolkit_view = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
   g_signal_connect_after(toolkit_view, "map",
-                   G_CALLBACK(move_toolkit), &toolkit);
+                         G_CALLBACK(move_toolkit), &toolkit);
 
   /* Button box. */
-  bbox = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(bbox), 12);
+  bbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
   g_object_set_data(G_OBJECT(toolkit_view), "button_box", bbox);
 
   return toolkit_view;
@@ -1314,8 +1300,8 @@ GtkWidget *inputline_toolkit_view_new(void)
 void inputline_toolkit_view_append_button(GtkWidget *toolkit_view,
                                           GtkWidget *button)
 {
-  gtk_container_add(GTK_CONTAINER(g_object_get_data(G_OBJECT(toolkit_view),
-                    "button_box")), button);
+  gtk_box_append(GTK_BOX(g_object_get_data(G_OBJECT(toolkit_view),
+                                           "button_box")), button);
 }
 
 /**********************************************************************//**
@@ -1323,9 +1309,13 @@ void inputline_toolkit_view_append_button(GtkWidget *toolkit_view,
 **************************************************************************/
 void chatline_init(void)
 {
-  GtkWidget *vbox, *toolbar, *hbox, *button, *entry, *bbox;
-  GtkToolItem *item;
+  GtkWidget *vbox, *hgrid, *entry, *bbox;
+  GtkWidget *button;
+  GtkWidget *toolbar;
+  GtkWidget *item;
   GdkRGBA color;
+  int grid_col = 0;
+  GtkEventController *chat_controller;
 
   /* Chatline history. */
   if (!history_list) {
@@ -1336,79 +1326,86 @@ void chatline_init(void)
   /* Inputline toolkit. */
   memset(&toolkit, 0, sizeof(toolkit));
 
-  vbox = gtk_grid_new();
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 2);
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
-                                 GTK_ORIENTATION_VERTICAL);
+  vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+
   toolkit.main_widget = vbox;
   g_signal_connect_after(vbox, "map",
-                   G_CALLBACK(set_toolbar_visibility), &toolkit);
+                         G_CALLBACK(set_toolbar_visibility), &toolkit);
 
   entry = gtk_entry_new();
-  g_object_set(entry, "margin", 2, NULL);
+  gtk_widget_set_margin_bottom(entry, 2);
+  gtk_widget_set_margin_end(entry, 2);
+  gtk_widget_set_margin_start(entry, 2);
+  gtk_widget_set_margin_top(entry, 2);
   gtk_widget_set_hexpand(entry, TRUE);
   toolkit.entry = entry;
 
+  hgrid = gtk_grid_new();
+  gtk_grid_set_column_spacing(GTK_GRID(hgrid), 4);
+
   /* First line: toolbar */
-  toolbar = gtk_toolbar_new();
-  gtk_container_add(GTK_CONTAINER(vbox), toolbar);
-  gtk_toolbar_set_show_arrow(GTK_TOOLBAR(toolbar), FALSE);
-  gtk_toolbar_set_style(GTK_TOOLBAR(toolbar), GTK_TOOLBAR_BOTH_HORIZ);
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(toolbar),
-                                 GTK_ORIENTATION_HORIZONTAL);
+  toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_box_append(GTK_BOX(vbox), toolbar);
   toolkit.toolbar = toolbar;
 
   /* Bold button. */
-  item = gtk_tool_button_new(gtk_image_new_from_icon_name("format-text-bold", 0),
-                             _("Bold"));
+  item = gtk_button_new_from_icon_name("format-text-bold");
 
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  /* _("Bold")); */
+
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "text_tag_type",
                     GINT_TO_POINTER(TTT_BOLD));
   g_signal_connect(item, "clicked", G_CALLBACK(make_tag_callback), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Bold (Ctrl-B)"));
 
   /* Italic button. */
-  item = gtk_tool_button_new(gtk_image_new_from_icon_name("format-text-italic", 0),
-                             _("Italic"));
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new_from_icon_name("format-text-italic");
+
+  /* _("Italic")); */
+
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "text_tag_type",
                     GINT_TO_POINTER(TTT_ITALIC));
   g_signal_connect(item, "clicked", G_CALLBACK(make_tag_callback), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Italic (Ctrl-I)"));
 
   /* Strike button. */
-  item = gtk_tool_button_new(gtk_image_new_from_icon_name("format-text-strikethrough", 0),
-                             _("Strikethrough"));
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new_from_icon_name("format-text-strikethrough");
+
+  /* _("Strikethrough")); */
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "text_tag_type",
                     GINT_TO_POINTER(TTT_STRIKE));
   g_signal_connect(item, "clicked", G_CALLBACK(make_tag_callback), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Strikethrough (Ctrl-S)"));
 
   /* Underline button. */
-  item = gtk_tool_button_new(gtk_image_new_from_icon_name("format-text-underline", 0),
-                             _("Underline"));
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new_from_icon_name("format-text-underline");
+
+  /* _("Underline")); */
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "text_tag_type",
                     GINT_TO_POINTER(TTT_UNDERLINE));
   g_signal_connect(item, "clicked", G_CALLBACK(make_tag_callback), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Underline (Ctrl-U)"));
 
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
   /* Color button. */
-  item = gtk_tool_button_new(NULL, _("Color"));
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new_with_label(_("Color"));
+
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "text_tag_type",
                     GINT_TO_POINTER(TTT_COLOR));
   g_signal_connect(item, "clicked", G_CALLBACK(make_tag_callback), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Color (Ctrl-C)"));
 
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar),
-                     gtk_separator_tool_item_new(), -1);
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
   /* Foreground selector. */
-  item = gtk_tool_button_new(NULL, "");
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new();
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "color_target", fc_strdup("fg_color"));
   g_object_set_data(G_OBJECT(item), "color_info",
                     fc_strdup(_("foreground")));
@@ -1417,14 +1414,14 @@ void chatline_init(void)
   gtk_widget_set_tooltip_text(GTK_WIDGET(item), _("Select the text color"));
   if (gdk_rgba_parse(&color, "#000000")) {
     /* Set default foreground color. */
-    color_set(G_OBJECT(entry), "fg_color", &color, GTK_TOOL_BUTTON(item));
+    color_set(G_OBJECT(entry), "fg_color", &color, GTK_BUTTON(item));
   } else {
     log_error("Failed to set the default foreground color.");
   }
 
   /* Background selector. */
-  item = gtk_tool_button_new(NULL, "");
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new();
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_object_set_data(G_OBJECT(item), "color_target", fc_strdup("bg_color"));
   g_object_set_data(G_OBJECT(item), "color_info",
                     fc_strdup(_("background")));
@@ -1434,17 +1431,16 @@ void chatline_init(void)
                               _("Select the background color"));
   if (gdk_rgba_parse(&color, "#ffffff")) {
     /* Set default background color. */
-    color_set(G_OBJECT(entry), "bg_color", &color, GTK_TOOL_BUTTON(item));
+    color_set(G_OBJECT(entry), "bg_color", &color, GTK_BUTTON(item));
   } else {
     log_error("Failed to set the default background color.");
   }
 
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar),
-                     gtk_separator_tool_item_new(), -1);
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
   /* Return button. */
-  item = gtk_tool_button_new(NULL, _("OK"));
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+  item = gtk_button_new_with_label(_("OK"));
+  gtk_box_append(GTK_BOX(toolbar), item);
   g_signal_connect_swapped(item, "clicked",
                            G_CALLBACK(inputline_return), entry);
   gtk_widget_set_tooltip_text(GTK_WIDGET(item),
@@ -1452,28 +1448,32 @@ void chatline_init(void)
                               _("Send the chat (Return)"));
 
   /* Second line */
-  hbox = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hbox), 4);
-  gtk_container_add(GTK_CONTAINER(vbox), hbox);
+  gtk_box_append(GTK_BOX(vbox), hgrid);
 
   /* Toggle button. */
   button = gtk_toggle_button_new();
-  g_object_set(button, "margin", 2, NULL);
-  gtk_container_add(GTK_CONTAINER(hbox), button);
-  gtk_button_set_icon_name(GTK_BUTTON(button), "gtk-edit");
+  gtk_widget_set_margin_bottom(button, 2);
+  gtk_widget_set_margin_end(button, 2);
+  gtk_widget_set_margin_start(button, 2);
+  gtk_widget_set_margin_top(button, 2);
+  gtk_grid_attach(GTK_GRID(hgrid), button, grid_col++, 0, 1, 1);
+  gtk_button_set_icon_name(GTK_BUTTON(button), "insert-link");
   g_signal_connect(button, "toggled", G_CALLBACK(button_toggled), &toolkit);
   gtk_widget_set_tooltip_text(GTK_WIDGET(button), _("Chat tools"));
   toolkit.toggle_button = button;
 
   /* Entry. */
-  gtk_container_add(GTK_CONTAINER(hbox), entry);
+  gtk_grid_attach(GTK_GRID(hgrid), entry, grid_col++, 0, 1, 1);
   g_signal_connect(entry, "activate", G_CALLBACK(inputline_return), NULL);
-  g_signal_connect(entry, "key_press_event",
+
+  chat_controller = gtk_event_controller_key_new();
+  g_signal_connect(chat_controller, "key-pressed",
                    G_CALLBACK(inputline_handler), NULL);
+  gtk_widget_add_controller(entry, chat_controller);
 
   /* Button box. */
-  bbox = gtk_grid_new();
-  gtk_container_add(GTK_CONTAINER(hbox), bbox);
+  bbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_grid_attach(GTK_GRID(hgrid), bbox, grid_col++, 0, 1, 1);
   toolkit.button_box = bbox;
 }
 

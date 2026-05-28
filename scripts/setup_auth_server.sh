@@ -16,9 +16,9 @@
 # is much simpler and does not need this setup script.)
 # See doc/README.fcdb.
 # I know that this will not work with bare sh. Tested with bash,
-# so I set it in use above. 
+# so I set it in use above.
 
-if which basename >/dev/null
+if command -v basename >/dev/null
 then
   PROGRAM_NAME="$(basename $0)"
 else
@@ -190,7 +190,7 @@ fi
 echo
 echo "First we populate the player database on the MySQL server"
 
-if ! which mysql >/dev/null
+if ! command -v mysql >/dev/null
 then
   echo "mysql command not found. Aborting!"
   exit 1
@@ -516,7 +516,7 @@ if test "x$MYSQL_PASSWORD" != "x" &&
 then
   # User has given password for this script, should it also
   # go to config script? If user has not given password even
-  # to this script, (s)he definitely does not want it saved.
+  # to this script, they definitely do not want it saved.
   echo "Freeciv server needs MySQL password from config file"
   echo "in order to access database."
   echo "It has to be added to config file before authentication"
